@@ -102,7 +102,7 @@ export function subscribeToDailySales(businessId, callback) {
         accumulator[method] = (accumulator[method] || 0) + (Number(sale.total) || 0);
         return accumulator;
       },
-      { cash: 0, transfer: 0, card: 0 }
+      { cash: 0, transfer: 0, card: 0, nequi: 0, daviplata: 0 }
     );
 
     callback({

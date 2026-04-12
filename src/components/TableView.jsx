@@ -31,7 +31,9 @@ export default function TableView({
   const [tables, setTables] = useState([]);
 
   useEffect(() => {
-    const unsubscribe = subscribeToTables(businessId, setTables);
+    const unsubscribe = subscribeToTables(businessId, (nextTables) => {
+      setTables(nextTables.filter((table) => !table.deletedAt));
+    });
     return () => unsubscribe();
   }, [businessId]);
 

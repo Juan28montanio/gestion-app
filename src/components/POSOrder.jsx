@@ -6,11 +6,18 @@ import { formatCOP } from "../utils/formatters";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "Efectivo" },
-  { value: "transfer", label: "Transferencia" },
   { value: "card", label: "Tarjeta" },
+  { value: "transfer", label: "Transferencia" },
+  { value: "nequi", label: "Nequi" },
+  { value: "daviplata", label: "Daviplata" },
 ];
 
-export default function POSOrder({ businessId, selectedTable, onOrderPaid }) {
+export default function POSOrder({
+  businessId,
+  selectedTable,
+  onOrderPaid,
+  onPaymentSuccess,
+}) {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -102,6 +109,7 @@ export default function POSOrder({ businessId, selectedTable, onOrderPaid }) {
         orderId: activeOrder.id,
         paymentMethod,
       });
+      onPaymentSuccess?.(paymentMethod);
       clearCart();
       onOrderPaid?.();
     } finally {
@@ -248,17 +256,25 @@ export default function POSOrder({ businessId, selectedTable, onOrderPaid }) {
             <span>{formatCOP(total)}</span>
           </div>
 
-          <select
-            value={paymentMethod}
-            onChange={(event) => setPaymentMethod(event.target.value)}
-            className="mb-4 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm"
-          >
-            {PAYMENT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <div className="mb-4">
+            <p className="mb-3 text-sm text-slate-300">Metodo de pago</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {PAYMENT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setPaymentMethod(option.value)}
+                  className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${
+                    paymentMethod === option.value
+                      ? "border-emerald-400 bg-emerald-500 text-white"
+                      : "border-slate-700 bg-slate-900 text-slate-200 hover:border-slate-500"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <button

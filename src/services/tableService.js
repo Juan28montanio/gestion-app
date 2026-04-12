@@ -1,7 +1,9 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -44,6 +46,42 @@ export async function createTable(businessId, tableNumber, capacity) {
   const payload = normalizeTablePayload(tableNumber, capacity, businessId);
   const createdTable = await addDoc(tablesCollection, payload);
   return createdTable.id;
+}
+
+export async function updateTable(tableId, businessId, tableNumber, capacity) {
+  if (!tableId) {
+    throw new Error("El id de la mesa es obligatorio para editar.");
+  }
+
+  const payload = normalizeTablePayload(tableNumber, capacity, businessId);
+
+  await updateDoc(doc(db, "tables", tableId), {
+    number: payload.number,
+    capacity: payload.capacity,
+    business_id: payload.business_id,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteTable(tableId) {
+  if (!tableId) {
+    throw new Error("El id de la mesa es obligatorio para eliminar.");
+  }
+
+  const tableRef = doc(db, "tables", tableId);
+  const tableSnapshot = await getDoc(tableRef);
+
+  if (!tableSnapshot.exists()) {
+    throw new Error("La mesa indicada no existe.");
+  }
+
+  const tableData = tableSnapshot.data();
+
+  if (tableData.status === "ocupada" || tableData.status === "occupied") {
+    throw new Error("No se puede eliminar una mesa ocupada.");
+  }
+
+  await deleteDoc(tableRef);
 }
 
 export function subscribeToTables(businessId, callback) {

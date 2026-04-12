@@ -47,6 +47,7 @@ function normalizeProductPayload(product, businessId) {
     category,
     stock,
     business_id: normalizedBusinessId,
+    is_available: product?.is_available ?? true,
   };
 }
 
@@ -64,6 +65,12 @@ export function subscribeToProducts(businessId, callback) {
 
   return onSnapshot(productsQuery, (snapshot) => {
     callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+  });
+}
+
+export function subscribeToAvailableProducts(businessId, callback) {
+  return subscribeToProducts(businessId, (products) => {
+    callback(products.filter((product) => product.is_available === true));
   });
 }
 

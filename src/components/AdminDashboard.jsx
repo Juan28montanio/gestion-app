@@ -6,6 +6,8 @@ const PAYMENT_LABELS = {
   cash: "Efectivo",
   transfer: "Transferencia",
   card: "Tarjeta",
+  nequi: "Nequi",
+  daviplata: "Daviplata",
 };
 
 export default function AdminDashboard({ businessId }) {
