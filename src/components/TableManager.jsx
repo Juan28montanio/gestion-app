@@ -294,77 +294,81 @@ export default function TableManager({ businessId, onNotify }) {
               return (
                 <article
                   key={table.id}
-                  className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                  className="grid aspect-square overflow-hidden rounded-3xl bg-white shadow-lg ring-1 ring-slate-200 md:grid-cols-2"
                 >
-                  <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
-                    <div className="min-w-0">
+                  <div className="flex flex-col items-start justify-between gap-y-2 p-6">
+                    <div>
                       <p className="text-sm font-medium text-slate-500">Mesa {table.number}</p>
-                      <h4 className="mt-2 text-2xl font-bold text-slate-900">
-                        {table.capacity || table.seats} puestos
-                      </h4>
-                      <div className="mt-3">
+                      <div className="mt-4">
+                        <p className="text-5xl font-extrabold leading-none text-slate-950">
+                          {table.capacity || table.seats}
+                        </p>
+                        <p className="mt-2 text-base text-slate-600">puestos</p>
+                      </div>
+                      <div className="mt-4">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
                         >
                           {formatTableStatus(table.status)}
                         </span>
                       </div>
-                      <p className="mt-4 break-all text-xs leading-5 text-slate-500">
-                        {menuUrl}
-                      </p>
                     </div>
 
-                    <div className="flex w-full justify-center md:w-auto md:justify-end">
+                    <div className="mt-4 w-full">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                        Scan to view menu
+                      </p>
+                      <div className="mt-4 flex flex-row gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(table)}
+                          className="flex flex-1 items-center justify-center gap-x-2 rounded-2xl bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                        >
+                          <Pencil size={16} />
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(table)}
+                          className="flex flex-1 items-center justify-center gap-x-2 rounded-2xl bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
+                        >
+                          <Trash2 size={16} />
+                          Eliminar
+                        </button>
+                      </div>
+                      <div className="mt-2 flex flex-row gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadQr(table)}
+                          className="flex flex-1 items-center justify-center gap-x-2 rounded-2xl bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                        >
+                          <Download size={16} />
+                          Descargar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePrintQr(table)}
+                          className="flex flex-1 items-center justify-center gap-x-2 rounded-2xl bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                        >
+                          <Printer size={16} />
+                          Imprimir
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center border-l border-slate-100 bg-slate-50 p-6">
+                    <div className="flex items-center justify-center rounded-r-3xl">
                       <div
-                        className="shrink-0 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200"
+                        className="flex h-32 w-32 items-center justify-center rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200"
                         ref={(node) => {
                           if (node) {
                             qrRefs.current[table.id] = node.querySelector("svg");
                           }
                         }}
                       >
-                        <QRCodeSVG value={menuUrl} size={104} includeMargin />
+                        <QRCodeSVG value={menuUrl} size={104} includeMargin className="h-24 w-24" />
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex flex-col gap-y-3 border-t border-slate-100 pt-4">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => handleEdit(table)}
-                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
-                      >
-                        <Pencil size={16} />
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(table)}
-                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
-                      >
-                        <Trash2 size={16} />
-                        Eliminar
-                      </button>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadQr(table)}
-                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
-                      >
-                        <Download size={16} />
-                        Descargar QR
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handlePrintQr(table)}
-                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
-                      >
-                        <Printer size={16} />
-                        Imprimir QR
-                      </button>
                     </div>
                   </div>
                 </article>
