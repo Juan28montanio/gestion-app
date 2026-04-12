@@ -167,3 +167,40 @@ export async function requestPayment({
     tableId,
   });
 }
+
+export async function cancelOrder({ tableId, orderId }) {
+  const normalizedOrderId = String(orderId || "").trim();
+  const normalizedTableId = String(tableId || "").trim();
+
+  if (!normalizedOrderId || !normalizedTableId) {
+    throw new Error("Para cancelar se requiere orderId y tableId.");
+  }
+
+  const orderRef = doc(db, "orders", normalizedOrderId);
+  const tableRef = doc(db, "tables", normalizedTableId);
+
+  await runTransaction(db, async (transaction) => {
+    const orderSnapshot = await transaction.get(orderRef);
+    const tableSnapshot = await transaction.get(tableRef);
+
+    if (!orderSnapshot.exists()) {
+      throw new Error("La orden indicada no existe.");
+    }
+
+    if (!tableSnapshot.exists()) {
+      throw new Error("La mesa indicada no existe.");
+    }
+
+    transaction.update(orderRef, {
+      status: "cancelada",
+      cancelled_at: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    transaction.update(tableRef, {
+      status: "disponible",
+      current_order_id: null,
+      updatedAt: serverTimestamp(),
+    });
+  });
+}

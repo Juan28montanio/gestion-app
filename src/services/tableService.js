@@ -15,10 +15,20 @@ import { db } from "../firebase/firebaseConfig";
 
 const tablesCollection = collection(db, "tables");
 
-function normalizeTablePayload(tableNumber, capacity, businessId) {
-  const number = Number(tableNumber);
-  const normalizedCapacity = Number(capacity);
+function normalizeTablePayload(tableInput, capacity, businessId) {
+  const source =
+    typeof tableInput === "object" && tableInput !== null
+      ? tableInput
+      : {
+          number: tableInput,
+          capacity,
+        };
+
+  const number = Number(source.number);
+  const normalizedCapacity = Number(source.capacity);
   const normalizedBusinessId = String(businessId || "").trim();
+  const name = String(source.name || "").trim();
+  const icon = String(source.icon || "").trim();
 
   if (!normalizedBusinessId) {
     throw new Error("El business_id de la mesa es obligatorio.");
@@ -35,6 +45,8 @@ function normalizeTablePayload(tableNumber, capacity, businessId) {
   return {
     number,
     capacity: normalizedCapacity,
+    name: name || `Mesa ${number}`,
+    icon: icon || "UtensilsCrossed",
     status: "disponible",
     business_id: normalizedBusinessId,
     current_order_id: null,
@@ -42,22 +54,24 @@ function normalizeTablePayload(tableNumber, capacity, businessId) {
   };
 }
 
-export async function createTable(businessId, tableNumber, capacity) {
-  const payload = normalizeTablePayload(tableNumber, capacity, businessId);
+export async function createTable(businessId, tableInput, capacity) {
+  const payload = normalizeTablePayload(tableInput, capacity, businessId);
   const createdTable = await addDoc(tablesCollection, payload);
   return createdTable.id;
 }
 
-export async function updateTable(tableId, businessId, tableNumber, capacity) {
+export async function updateTable(tableId, businessId, tableInput, capacity) {
   if (!tableId) {
     throw new Error("El id de la mesa es obligatorio para editar.");
   }
 
-  const payload = normalizeTablePayload(tableNumber, capacity, businessId);
+  const payload = normalizeTablePayload(tableInput, capacity, businessId);
 
   await updateDoc(doc(db, "tables", tableId), {
     number: payload.number,
     capacity: payload.capacity,
+    name: payload.name,
+    icon: payload.icon,
     business_id: payload.business_id,
     updatedAt: serverTimestamp(),
   });

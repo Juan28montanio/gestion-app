@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCart } from "../context/CartContext";
 import { subscribeToProducts } from "../services/productService";
-import { requestPayment, submitOrder, subscribeToActiveOrder } from "../services/orderService";
+import {
+  cancelOrder,
+  requestPayment,
+  submitOrder,
+  subscribeToActiveOrder,
+} from "../services/orderService";
 import { formatCOP } from "../utils/formatters";
 
 const PAYMENT_OPTIONS = [
@@ -16,6 +21,7 @@ export default function POSOrder({
   businessId,
   selectedTable,
   onOrderPaid,
+  onOrderCancelled,
   onPaymentSuccess,
 }) {
   const [products, setProducts] = useState([]);
@@ -112,6 +118,25 @@ export default function POSOrder({
       onPaymentSuccess?.(paymentMethod);
       clearCart();
       onOrderPaid?.();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!selectedTable?.id || !activeOrder?.id) {
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await cancelOrder({
+        tableId: selectedTable.id,
+        orderId: activeOrder.id,
+      });
+      clearCart();
+      onOrderCancelled?.();
     } finally {
       setLoading(false);
     }
@@ -294,6 +319,15 @@ export default function POSOrder({
               Pagar
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleCancelOrder}
+            disabled={loading || !selectedTable || !activeOrder?.id}
+            className="mt-3 w-full rounded-2xl bg-rose-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancelar orden
+          </button>
         </div>
       </div>
     </section>

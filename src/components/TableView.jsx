@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Armchair, Coffee, DoorClosed, GlassWater, Store, UtensilsCrossed } from "lucide-react";
 import { subscribeToTables } from "../services/tableService";
 
 const TABLE_STATUS_STYLES = {
@@ -23,6 +24,15 @@ const TABLE_STATUS_LABELS = {
   paid: "Pagada",
 };
 
+const TABLE_ICONS = {
+  UtensilsCrossed,
+  Coffee,
+  DoorClosed,
+  GlassWater,
+  Armchair,
+  Store,
+};
+
 export default function TableView({
   businessId,
   selectedTableId,
@@ -37,6 +47,8 @@ export default function TableView({
     return () => unsubscribe();
   }, [businessId]);
 
+  const visibleTables = useMemo(() => tables, [tables]);
+
   return (
     <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-200">
       <div className="mb-4 flex items-center justify-between">
@@ -47,22 +59,24 @@ export default function TableView({
           </p>
         </div>
         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-          {tables.length} mesas
+          {visibleTables.length} mesa{visibleTables.length === 1 ? "" : "s"}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
-        {tables.map((table) => {
+      <div className="h-[540px] overflow-y-auto pr-1">
+        <div className="grid auto-rows-[132px] grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+        {visibleTables.map((table) => {
           const isSelected = selectedTableId === table.id;
           const statusStyle = TABLE_STATUS_STYLES[table.status] || "bg-slate-200 text-slate-800";
           const statusLabel = TABLE_STATUS_LABELS[table.status] || table.status;
+          const Icon = TABLE_ICONS[table.icon] || UtensilsCrossed;
 
           return (
             <button
               key={table.id}
               type="button"
               onClick={() => onSelectTable(table)}
-              className={`rounded-2xl border p-4 text-left transition ${
+              className={`h-[132px] rounded-2xl border p-4 text-left transition ${
                 isSelected
                   ? "border-slate-900 shadow-md"
                   : "border-slate-200 hover:border-slate-300"
@@ -70,9 +84,12 @@ export default function TableView({
             >
               <div className="mb-3 flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-slate-500">Mesa</p>
+                  <div className="mb-2 flex items-center gap-2 text-sm text-slate-500">
+                    <Icon size={16} />
+                    <span>{table.name || `Mesa ${table.number}`}</span>
+                  </div>
                   <h3 className="text-2xl font-bold text-slate-900">
-                    {table.number || table.name}
+                    {table.number}
                   </h3>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusStyle}`}>
@@ -88,6 +105,7 @@ export default function TableView({
             </button>
           );
         })}
+        </div>
       </div>
     </section>
   );

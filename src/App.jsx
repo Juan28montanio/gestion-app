@@ -95,6 +95,10 @@ export default function App() {
               businessId={BUSINESS_ID}
               selectedTable={selectedTable}
               onOrderPaid={() => setSelectedTable(null)}
+              onOrderCancelled={() => {
+                notify("Orden cancelada. La mesa fue liberada sin registrar venta.");
+                setSelectedTable(null);
+              }}
               onPaymentSuccess={(paymentMethod) =>
                 notify(
                   `Pago registrado correctamente con ${

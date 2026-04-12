@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Armchair, Coffee, DoorClosed, GlassWater, Pencil, Store, Trash2, UtensilsCrossed } from "lucide-react";
 import {
   createTable,
   deleteTable,
@@ -9,8 +9,19 @@ import {
 
 const EMPTY_FORM = {
   number: "",
+  name: "",
+  icon: "UtensilsCrossed",
   capacity: "",
 };
+
+const TABLE_ICON_OPTIONS = [
+  { value: "UtensilsCrossed", label: "Restaurante", icon: UtensilsCrossed },
+  { value: "Coffee", label: "Cafe", icon: Coffee },
+  { value: "Armchair", label: "Lounge", icon: Armchair },
+  { value: "GlassWater", label: "Barra", icon: GlassWater },
+  { value: "DoorClosed", label: "Privado", icon: DoorClosed },
+  { value: "Store", label: "Terraza", icon: Store },
+];
 
 function formatTableStatus(status) {
   const normalizedStatus = String(status || "disponible").toLowerCase();
@@ -83,13 +94,13 @@ export default function TableManager({ businessId, onNotify }) {
 
     try {
       if (editingId) {
-        await updateTable(editingId, businessId, formState.number, formState.capacity);
+        await updateTable(editingId, businessId, formState);
         setFeedback({ type: "success", message: "Mesa actualizada correctamente." });
-        onNotify?.(`Mesa ${formState.number} actualizada.`);
+        onNotify?.(`${formState.name || `Mesa ${formState.number}`} actualizada.`);
       } else {
-        await createTable(businessId, formState.number, formState.capacity);
+        await createTable(businessId, formState);
         setFeedback({ type: "success", message: "Mesa creada correctamente." });
-        onNotify?.(`Mesa ${formState.number} creada correctamente.`);
+        onNotify?.(`${formState.name || `Mesa ${formState.number}`} creada correctamente.`);
       }
 
       resetForm();
@@ -107,6 +118,8 @@ export default function TableManager({ businessId, onNotify }) {
     setEditingId(table.id);
     setFormState({
       number: String(table.number ?? ""),
+      name: String(table.name ?? ""),
+      icon: String(table.icon ?? "UtensilsCrossed"),
       capacity: String(table.capacity ?? table.seats ?? ""),
     });
     setFeedback({ type: "", message: "" });
@@ -118,7 +131,7 @@ export default function TableManager({ businessId, onNotify }) {
       if (editingId === table.id) {
         resetForm();
       }
-      onNotify?.(`Mesa ${table.number} eliminada.`);
+      onNotify?.(`${table.name || `Mesa ${table.number}`} eliminada.`);
       setFeedback({ type: "success", message: "Mesa eliminada correctamente." });
     } catch (error) {
       setFeedback({
@@ -148,7 +161,7 @@ export default function TableManager({ businessId, onNotify }) {
                 {editingId ? "Editar mesa" : "Nueva mesa"}
               </h3>
               <p className="text-sm text-slate-500">
-                Configura numero y capacidad en una sola vista.
+                Configura numero, nombre, icono y capacidad en una sola vista.
               </p>
             </div>
 
@@ -180,6 +193,18 @@ export default function TableManager({ businessId, onNotify }) {
             </label>
 
             <label className="grid min-w-0 gap-2 text-sm text-slate-700">
+              Nombre
+              <input
+                required
+                name="name"
+                value={formState.name}
+                onChange={handleChange}
+                placeholder="Terraza 1, Barra, VIP..."
+                className="block w-full rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
+              />
+            </label>
+
+            <label className="grid min-w-0 gap-2 text-sm text-slate-700">
               Capacidad
               <input
                 required
@@ -193,6 +218,46 @@ export default function TableManager({ businessId, onNotify }) {
                 className="block w-full rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
               />
             </label>
+
+            <label className="grid min-w-0 gap-2 text-sm text-slate-700">
+              Icono
+              <select
+                name="icon"
+                value={formState.icon}
+                onChange={handleChange}
+                className="block w-full rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
+              >
+                {TABLE_ICON_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {TABLE_ICON_OPTIONS.map((option) => {
+              const Icon = option.icon;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() =>
+                    setFormState((current) => ({ ...current, icon: option.value }))
+                  }
+                  className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition ${
+                    formState.icon === option.value
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <Icon size={14} />
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
 
           {feedback.message ? (
@@ -224,17 +289,25 @@ export default function TableManager({ businessId, onNotify }) {
             </span>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="h-[540px] overflow-y-auto pr-1">
+            <div className="grid auto-rows-[220px] gap-4 md:grid-cols-2">
             {sortedTables.map((table) => {
+              const Icon =
+                TABLE_ICON_OPTIONS.find((option) => option.value === table.icon)?.icon ||
+                UtensilsCrossed;
+
               return (
                 <article
                   key={table.id}
-                  className="flex aspect-square flex-col items-center justify-center rounded-3xl bg-white p-8 text-center shadow-lg ring-1 ring-slate-200 transition-shadow hover:shadow-xl"
+                  className="flex h-[220px] flex-col justify-between rounded-3xl bg-white p-5 text-center shadow-lg ring-1 ring-slate-200 transition-shadow hover:shadow-xl"
                 >
                   <div className="flex flex-1 flex-col items-center justify-center">
-                    <p className="text-sm font-medium text-slate-500">Mesa {table.number}</p>
-                    <div className="mt-5">
-                      <p className="text-6xl font-black leading-none text-slate-900">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <Icon size={16} />
+                      <span className="truncate">{table.name || `Mesa ${table.number}`}</span>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-5xl font-black leading-none text-slate-900">
                         {table.capacity || table.seats}
                       </p>
                       <p className="mt-2 text-base text-slate-600">puestos</p>
@@ -248,11 +321,11 @@ export default function TableManager({ businessId, onNotify }) {
                     </div>
                   </div>
 
-                  <div className="mt-6 grid w-full grid-cols-2 gap-3">
+                  <div className="mt-4 grid w-full grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => handleEdit(table)}
-                      className="flex items-center justify-center gap-x-2 rounded-2xl bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                      className="flex min-h-10 items-center justify-center gap-x-2 rounded-2xl bg-slate-100 px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200 sm:text-sm"
                     >
                       <Pencil size={16} />
                       Editar
@@ -260,7 +333,7 @@ export default function TableManager({ businessId, onNotify }) {
                     <button
                       type="button"
                       onClick={() => handleDelete(table)}
-                      className="flex items-center justify-center gap-x-2 rounded-2xl bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
+                      className="flex min-h-10 items-center justify-center gap-x-2 rounded-2xl bg-rose-50 px-2 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-100 sm:text-sm"
                     >
                       <Trash2 size={16} />
                       Eliminar
@@ -269,6 +342,7 @@ export default function TableManager({ businessId, onNotify }) {
                 </article>
               );
             })}
+            </div>
           </div>
         </div>
       </div>
