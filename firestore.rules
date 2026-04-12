@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function sameBusiness() {
+      return isAuthenticated() &&
+        request.auth.token.business_id != null &&
+        request.auth.token.business_id == resource.data.business_id;
+    }
+
+    function sameBusinessOnCreate() {
+      return isAuthenticated() &&
+        request.auth.token.business_id != null &&
+        request.auth.token.business_id == request.resource.data.business_id;
+    }
+
+    match /products/{productId} {
+      allow read: if sameBusiness();
+      allow create: if sameBusinessOnCreate();
+      allow update, delete: if sameBusiness() &&
+        request.resource.data.business_id == resource.data.business_id;
+    }
+
+    match /tables/{tableId} {
+      allow read: if sameBusiness();
+      allow create: if sameBusinessOnCreate();
+      allow update: if sameBusiness() &&
+        request.resource.data.business_id == resource.data.business_id;
+    }
+
+    match /orders/{orderId} {
+      allow read: if sameBusiness();
+      allow create: if sameBusinessOnCreate();
+      allow update: if sameBusiness() &&
+        request.resource.data.business_id == resource.data.business_id;
+    }
+
+    match /sales_history/{saleId} {
+      allow read: if sameBusiness();
+      allow create: if sameBusinessOnCreate();
+    }
+  }
+}
