@@ -2,6 +2,7 @@ import { useState } from "react";
 import TableView from "./components/TableView";
 import POSOrder from "./components/POSOrder";
 import AdminDashboard from "./components/AdminDashboard";
+import ProductManager from "./components/ProductManager";
 import { CartProvider } from "./context/CartContext";
 
 const BUSINESS_ID = "demo_restaurant_business";
@@ -36,7 +37,10 @@ export default function App() {
             onOrderPaid={() => setSelectedTable(null)}
           />
 
-          <AdminDashboard businessId={BUSINESS_ID} />
+          <section className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
+            <ProductManager businessId={BUSINESS_ID} />
+            <AdminDashboard businessId={BUSINESS_ID} />
+          </section>
         </div>
       </main>
     </CartProvider>

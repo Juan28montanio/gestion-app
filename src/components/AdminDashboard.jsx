@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 import { subscribeToDailySales } from "../services/financeService";
-
-const currency = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
+import { formatCOP } from "../utils/formatters";
 
 const PAYMENT_LABELS = {
   cash: "Efectivo",
@@ -37,15 +32,13 @@ export default function AdminDashboard({ businessId }) {
       <div className="grid gap-4 md:grid-cols-4">
         <article className="rounded-2xl bg-slate-950 p-5 text-white">
           <p className="text-sm text-slate-300">Total del día</p>
-          <h3 className="mt-2 text-2xl font-bold">{currency.format(summary.total)}</h3>
+          <h3 className="mt-2 text-2xl font-bold">{formatCOP(summary.total)}</h3>
         </article>
 
         {Object.entries(summary.byMethod).map(([method, amount]) => (
           <article key={method} className="rounded-2xl bg-slate-100 p-5">
             <p className="text-sm text-slate-500">{PAYMENT_LABELS[method] || method}</p>
-            <h3 className="mt-2 text-xl font-semibold text-slate-900">
-              {currency.format(amount)}
-            </h3>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900">{formatCOP(amount)}</h3>
           </article>
         ))}
       </div>
@@ -64,7 +57,7 @@ export default function AdminDashboard({ businessId }) {
               <tr key={sale.id} className="border-b border-slate-100 text-slate-700">
                 <td className="py-3 pr-4">{sale.orderId}</td>
                 <td className="py-3 pr-4">{PAYMENT_LABELS[sale.method] || sale.method}</td>
-                <td className="py-3 pr-4">{currency.format(sale.total)}</td>
+                <td className="py-3 pr-4">{formatCOP(sale.total)}</td>
               </tr>
             ))}
           </tbody>

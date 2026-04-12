@@ -2,18 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useCart } from "../context/CartContext";
 import { subscribeToProducts } from "../services/productService";
 import { requestPayment, submitOrder, subscribeToActiveOrder } from "../services/orderService";
+import { formatCOP } from "../utils/formatters";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "Efectivo" },
   { value: "transfer", label: "Transferencia" },
   { value: "card", label: "Tarjeta" },
 ];
-
-const currency = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
 
 export default function POSOrder({ businessId, selectedTable, onOrderPaid }) {
   const [products, setProducts] = useState([]);
@@ -164,7 +159,7 @@ export default function POSOrder({ businessId, selectedTable, onOrderPaid }) {
               <p className="text-sm text-slate-500">{product.category}</p>
               <h3 className="font-semibold text-slate-900">{product.name}</h3>
               <p className="mt-2 text-sm font-medium text-slate-700">
-                {currency.format(product.price)}
+                {formatCOP(product.price)}
               </p>
             </button>
           ))}
@@ -194,7 +189,7 @@ export default function POSOrder({ businessId, selectedTable, onOrderPaid }) {
                   <div>
                     <h3 className="font-medium">{item.name}</h3>
                     <p className="text-xs text-slate-400">
-                      {currency.format(item.price)} x {item.quantity}
+                      {formatCOP(item.price)} x {item.quantity}
                     </p>
                   </div>
 
@@ -250,7 +245,7 @@ export default function POSOrder({ businessId, selectedTable, onOrderPaid }) {
         <div className="mt-6 border-t border-slate-800 pt-4">
           <div className="mb-4 flex items-center justify-between text-lg font-semibold">
             <span>Total</span>
-            <span>{currency.format(total)}</span>
+            <span>{formatCOP(total)}</span>
           </div>
 
           <select
