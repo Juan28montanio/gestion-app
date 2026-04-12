@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Download, Pencil, Printer, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   createTable,
@@ -14,6 +15,40 @@ const EMPTY_FORM = {
 
 function buildTableUrl(businessId, tableId) {
   return `${window.location.origin}/menu/${businessId}/${tableId}`;
+}
+
+function formatTableStatus(status) {
+  const normalizedStatus = String(status || "disponible").toLowerCase();
+
+  const labels = {
+    disponible: "Disponible",
+    ocupada: "Ocupada",
+    pagada: "Pagada",
+    cuenta_solicitada: "Cuenta solicitada",
+    free: "Disponible",
+    occupied: "Ocupada",
+    paid: "Paid",
+    requested_bill: "Cuenta solicitada",
+  };
+
+  return labels[normalizedStatus] || normalizedStatus;
+}
+
+function getTableStatusClasses(status) {
+  const normalizedStatus = String(status || "disponible").toLowerCase();
+
+  const styles = {
+    disponible: "bg-emerald-100 text-emerald-800",
+    ocupada: "bg-rose-100 text-rose-800",
+    pagada: "bg-sky-100 text-sky-800",
+    cuenta_solicitada: "bg-amber-100 text-amber-800",
+    free: "bg-emerald-100 text-emerald-800",
+    occupied: "bg-rose-100 text-rose-800",
+    paid: "bg-sky-100 text-sky-800",
+    requested_bill: "bg-amber-100 text-amber-800",
+  };
+
+  return styles[normalizedStatus] || "bg-slate-100 text-slate-700";
 }
 
 export default function TableManager({ businessId, onNotify }) {
@@ -248,7 +283,7 @@ export default function TableManager({ businessId, onNotify }) {
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-slate-900">Salon y QR</h3>
             <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
-              {sortedTables.length} mesas
+              {sortedTables.length} mesa{sortedTables.length === 1 ? "" : "s"}
             </span>
           </div>
 
@@ -259,63 +294,78 @@ export default function TableManager({ businessId, onNotify }) {
               return (
                 <article
                   key={table.id}
-                  className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200"
+                  className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm text-slate-500">Mesa {table.number}</p>
-                      <h4 className="text-lg font-semibold text-slate-900">
+                  <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-500">Mesa {table.number}</p>
+                      <h4 className="mt-2 text-2xl font-bold text-slate-900">
                         {table.capacity || table.seats} puestos
                       </h4>
-                      <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">
-                        {table.status}
+                      <div className="mt-3">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
+                        >
+                          {formatTableStatus(table.status)}
+                        </span>
+                      </div>
+                      <p className="mt-4 break-all text-xs leading-5 text-slate-500">
+                        {menuUrl}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-slate-50 p-2 ring-1 ring-slate-200">
+                    <div className="flex w-full justify-center md:w-auto md:justify-end">
                       <div
+                        className="shrink-0 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200"
                         ref={(node) => {
                           if (node) {
                             qrRefs.current[table.id] = node.querySelector("svg");
                           }
                         }}
                       >
-                        <QRCodeSVG value={menuUrl} size={96} includeMargin />
+                        <QRCodeSVG value={menuUrl} size={104} includeMargin />
                       </div>
                     </div>
                   </div>
 
-                  <p className="mt-3 break-all text-xs text-slate-500">{menuUrl}</p>
+                  <div className="mt-5 flex flex-col gap-y-3 border-t border-slate-100 pt-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(table)}
+                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                      >
+                        <Pencil size={16} />
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(table)}
+                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
+                      >
+                        <Trash2 size={16} />
+                        Eliminar
+                      </button>
+                    </div>
 
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(table)}
-                      className="rounded-2xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(table)}
-                      className="rounded-2xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
-                    >
-                      Eliminar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDownloadQr(table)}
-                      className="rounded-2xl bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
-                    >
-                      Descargar QR
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handlePrintQr(table)}
-                      className="rounded-2xl bg-white px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
-                    >
-                      Imprimir QR
-                    </button>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadQr(table)}
+                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                      >
+                        <Download size={16} />
+                        Descargar QR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePrintQr(table)}
+                        className="flex items-center justify-center gap-x-2 rounded-2xl bg-white px-3 py-2.5 text-sm font-medium text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                      >
+                        <Printer size={16} />
+                        Imprimir QR
+                      </button>
+                    </div>
                   </div>
                 </article>
               );
