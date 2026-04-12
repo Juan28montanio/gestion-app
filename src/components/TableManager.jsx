@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Armchair, Coffee, DoorClosed, GlassWater, Pencil, Store, Trash2, UtensilsCrossed } from "lucide-react";
+import {
+  Armchair,
+  Coffee,
+  DoorClosed,
+  GlassWater,
+  Pencil,
+  Plus,
+  Store,
+  Trash2,
+  UtensilsCrossed,
+  X,
+} from "lucide-react";
 import {
   createTable,
   deleteTable,
@@ -63,6 +74,7 @@ export default function TableManager({ businessId, onNotify }) {
   const [editingId, setEditingId] = useState(null);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [saving, setSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToTables(businessId, (nextTables) => {
@@ -77,14 +89,31 @@ export default function TableManager({ businessId, onNotify }) {
     [tables]
   );
 
+  const selectedIconOption = useMemo(
+    () =>
+      TABLE_ICON_OPTIONS.find((option) => option.value === formState.icon) ||
+      TABLE_ICON_OPTIONS[0],
+    [formState.icon]
+  );
+  const SelectedIcon = selectedIconOption.icon;
+
   const handleChange = (event) => {
     const { name, value } = event.target;
     setFormState((current) => ({ ...current, [name]: value }));
   };
 
-  const resetForm = () => {
+  const closeModal = () => {
     setFormState(EMPTY_FORM);
     setEditingId(null);
+    setFeedback({ type: "", message: "" });
+    setIsModalOpen(false);
+  };
+
+  const openCreateModal = () => {
+    setFormState(EMPTY_FORM);
+    setEditingId(null);
+    setFeedback({ type: "", message: "" });
+    setIsModalOpen(true);
   };
 
   const handleSubmit = async (event) => {
@@ -103,7 +132,7 @@ export default function TableManager({ businessId, onNotify }) {
         onNotify?.(`${formState.name || `Mesa ${formState.number}`} creada correctamente.`);
       }
 
-      resetForm();
+      closeModal();
     } catch (error) {
       setFeedback({
         type: "error",
@@ -123,13 +152,14 @@ export default function TableManager({ businessId, onNotify }) {
       capacity: String(table.capacity ?? table.seats ?? ""),
     });
     setFeedback({ type: "", message: "" });
+    setIsModalOpen(true);
   };
 
   const handleDelete = async (table) => {
     try {
       await deleteTable(table.id);
       if (editingId === table.id) {
-        resetForm();
+        closeModal();
       }
       onNotify?.(`${table.name || `Mesa ${table.number}`} eliminada.`);
       setFeedback({ type: "success", message: "Mesa eliminada correctamente." });
@@ -150,147 +180,16 @@ export default function TableManager({ businessId, onNotify }) {
         </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-3xl bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200"
-        >
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">
-                {editingId ? "Editar mesa" : "Nueva mesa"}
-              </h3>
-              <p className="text-sm text-slate-500">
-                Configura numero, nombre, icono y capacidad en una sola vista.
-              </p>
-            </div>
+      <div className="rounded-3xl bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">Salon</h3>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+            {sortedTables.length} mesa{sortedTables.length === 1 ? "" : "s"}
+          </span>
+        </div>
 
-            {editingId ? (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200"
-              >
-                Cancelar
-              </button>
-            ) : null}
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="grid min-w-0 gap-2 text-sm text-slate-700">
-              Numero
-              <input
-                required
-                min="1"
-                step="1"
-                inputMode="numeric"
-                type="number"
-                name="number"
-                value={formState.number}
-                onChange={handleChange}
-                className="block w-full rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
-              />
-            </label>
-
-            <label className="grid min-w-0 gap-2 text-sm text-slate-700">
-              Nombre
-              <input
-                required
-                name="name"
-                value={formState.name}
-                onChange={handleChange}
-                placeholder="Terraza 1, Barra, VIP..."
-                className="block w-full rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
-              />
-            </label>
-
-            <label className="grid min-w-0 gap-2 text-sm text-slate-700">
-              Capacidad
-              <input
-                required
-                min="1"
-                step="1"
-                inputMode="numeric"
-                type="number"
-                name="capacity"
-                value={formState.capacity}
-                onChange={handleChange}
-                className="block w-full rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
-              />
-            </label>
-
-            <label className="grid min-w-0 gap-2 text-sm text-slate-700">
-              Icono
-              <select
-                name="icon"
-                value={formState.icon}
-                onChange={handleChange}
-                className="block w-full rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
-              >
-                {TABLE_ICON_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {TABLE_ICON_OPTIONS.map((option) => {
-              const Icon = option.icon;
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() =>
-                    setFormState((current) => ({ ...current, icon: option.value }))
-                  }
-                  className={`flex items-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition ${
-                    formState.icon === option.value
-                      ? "bg-slate-900 text-white"
-                      : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-                  }`}
-                >
-                  <Icon size={14} />
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {feedback.message ? (
-            <div
-              className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
-                feedback.type === "error"
-                  ? "bg-rose-50 text-rose-700 ring-1 ring-rose-200"
-                  : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-              }`}
-            >
-              {feedback.message}
-            </div>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="mt-5 w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-          >
-            {saving ? "Guardando..." : editingId ? "Actualizar mesa" : "Crear mesa"}
-          </button>
-        </form>
-
-        <div className="rounded-3xl bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-slate-900">Salon</h3>
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
-              {sortedTables.length} mesa{sortedTables.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          <div className="h-[540px] overflow-y-auto pr-1">
-            <div className="grid auto-rows-[220px] gap-4 md:grid-cols-2">
+        <div className="h-[540px] overflow-y-auto pr-1">
+          <div className="grid auto-rows-[220px] gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sortedTables.map((table) => {
               const Icon =
                 TABLE_ICON_OPTIONS.find((option) => option.value === table.icon)?.icon ||
@@ -314,18 +213,19 @@ export default function TableManager({ businessId, onNotify }) {
                     </div>
                     <div className="mt-5">
                       <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
+                        className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
                       >
+                        <span className="h-2 w-2 rounded-full bg-current opacity-80 shadow-[0_0_12px_currentColor]" />
                         {formatTableStatus(table.status)}
                       </span>
                     </div>
                   </div>
 
-                  <div className="mt-4 grid w-full grid-cols-2 gap-2">
+                  <div className="mt-4 grid w-full grid-cols-2 gap-3">
                     <button
                       type="button"
                       onClick={() => handleEdit(table)}
-                      className="flex min-h-10 items-center justify-center gap-x-2 rounded-2xl bg-slate-100 px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200 sm:text-sm"
+                      className="flex min-h-10 items-center justify-center gap-x-2 rounded-2xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200 sm:text-sm"
                     >
                       <Pencil size={16} />
                       Editar
@@ -333,7 +233,7 @@ export default function TableManager({ businessId, onNotify }) {
                     <button
                       type="button"
                       onClick={() => handleDelete(table)}
-                      className="flex min-h-10 items-center justify-center gap-x-2 rounded-2xl bg-rose-50 px-2 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-100 sm:text-sm"
+                      className="flex min-h-10 items-center justify-center gap-x-2 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 transition hover:bg-rose-100 sm:text-sm"
                     >
                       <Trash2 size={16} />
                       Eliminar
@@ -342,10 +242,144 @@ export default function TableManager({ businessId, onNotify }) {
                 </article>
               );
             })}
-            </div>
+
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="flex h-[220px] flex-col items-center justify-center rounded-3xl border-2 border-dashed border-slate-300 bg-white/70 p-5 text-center text-slate-500 transition hover:border-slate-400 hover:bg-white hover:text-slate-700"
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+                <Plus size={28} />
+              </div>
+              <h4 className="mt-4 text-base font-semibold text-slate-700">Nueva mesa</h4>
+              <p className="mt-1 text-sm text-slate-500">Agregar al salon</p>
+            </button>
           </div>
         </div>
       </div>
+
+      {isModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">
+                  {editingId ? "Editar mesa" : "Nueva mesa"}
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Configura numero, nombre, icono y capacidad en un modal mas ligero.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeModal}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              <div className="grid gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="grid min-w-0 gap-2 text-sm text-slate-700">
+                    Numero
+                    <input
+                      required
+                      min="1"
+                      step="1"
+                      inputMode="numeric"
+                      type="number"
+                      name="number"
+                      value={formState.number}
+                      onChange={handleChange}
+                      className="block w-full rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:bg-white focus:ring-slate-400"
+                    />
+                  </label>
+
+                  <label className="grid min-w-0 gap-2 text-sm text-slate-700">
+                    Nombre
+                    <input
+                      required
+                      name="name"
+                      value={formState.name}
+                      onChange={handleChange}
+                      placeholder="Terraza 1, Barra, VIP..."
+                      className="block w-full rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:bg-white focus:ring-slate-400"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[0.8fr_1.2fr]">
+                  <label className="grid min-w-0 gap-2 text-sm text-slate-700">
+                    Capacidad
+                    <input
+                      required
+                      min="1"
+                      step="1"
+                      inputMode="numeric"
+                      type="number"
+                      name="capacity"
+                      value={formState.capacity}
+                      onChange={handleChange}
+                      className="block w-full rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:bg-white focus:ring-slate-400"
+                    />
+                  </label>
+
+                  <label className="grid min-w-0 gap-2 text-sm text-slate-700">
+                    Icono
+                    <div className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                      <SelectedIcon size={18} className="text-slate-500" />
+                      <select
+                        name="icon"
+                        value={formState.icon}
+                        onChange={handleChange}
+                        className="block w-full bg-transparent outline-none"
+                      >
+                        {TABLE_ICON_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {feedback.message ? (
+                <div
+                  className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                    feedback.type === "error"
+                      ? "bg-rose-50 text-rose-700 ring-1 ring-rose-200"
+                      : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                  }`}
+                >
+                  {feedback.message}
+                </div>
+              ) : null}
+
+              <div className="mt-6 flex gap-3">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {saving ? "Guardando..." : editingId ? "Actualizar mesa" : "Crear mesa"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
