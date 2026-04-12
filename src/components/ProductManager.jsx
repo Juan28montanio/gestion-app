@@ -188,8 +188,8 @@ export default function ProductManager({ businessId }) {
               ))}
             </datalist>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm text-slate-700">
+            <div className="grid grid-cols-1 items-start gap-y-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:gap-x-4">
+              <label className="grid min-w-0 gap-2 text-sm text-slate-700">
                 Precio
                 <input
                   required
@@ -201,11 +201,11 @@ export default function ProductManager({ businessId }) {
                   value={formState.price}
                   onChange={handleChange}
                   placeholder="0"
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
+                  className="block w-full min-w-0 rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
                 />
               </label>
 
-              <label className="grid gap-2 text-sm text-slate-700">
+              <label className="grid min-w-0 gap-2 text-sm text-slate-700">
                 Stock
                 <input
                   required
@@ -217,7 +217,7 @@ export default function ProductManager({ businessId }) {
                   value={formState.stock}
                   onChange={handleChange}
                   placeholder="0"
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
+                  className="block w-full min-w-0 rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-slate-400"
                 />
               </label>
             </div>

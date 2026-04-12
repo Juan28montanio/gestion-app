@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import { subscribeToTables } from "../services/tableService";
 
 const TABLE_STATUS_STYLES = {
+  disponible: "bg-emerald-500 text-white",
+  ocupada: "bg-rose-500 text-white",
+  cuenta_solicitada: "bg-amber-400 text-slate-900",
+  pagada: "bg-sky-500 text-white",
   free: "bg-emerald-500 text-white",
   occupied: "bg-rose-500 text-white",
   requested_bill: "bg-amber-400 text-slate-900",
@@ -9,6 +13,10 @@ const TABLE_STATUS_STYLES = {
 };
 
 const TABLE_STATUS_LABELS = {
+  disponible: "Disponible",
+  ocupada: "Ocupada",
+  cuenta_solicitada: "Cuenta solicitada",
+  pagada: "Pagada",
   free: "Libre",
   occupied: "Ocupada",
   requested_bill: "Cuenta solicitada",
@@ -71,7 +79,9 @@ export default function TableView({
               </div>
 
               <p className="text-sm text-slate-600">
-                {table.seats ? `${table.seats} puestos` : "Capacidad no definida"}
+                {table.capacity || table.seats
+                  ? `${table.capacity || table.seats} puestos`
+                  : "Capacidad no definida"}
               </p>
             </button>
           );

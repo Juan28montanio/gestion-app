@@ -55,8 +55,13 @@ export default function AdminDashboard({ businessId }) {
           <tbody>
             {summary.sales.map((sale) => (
               <tr key={sale.id} className="border-b border-slate-100 text-slate-700">
-                <td className="py-3 pr-4">{sale.orderId}</td>
-                <td className="py-3 pr-4">{PAYMENT_LABELS[sale.method] || sale.method}</td>
+                <td className="py-3 pr-4">{sale.order_id || sale.orderId}</td>
+                <td className="py-3 pr-4">
+                  {PAYMENT_LABELS[sale.payment_method] ||
+                    PAYMENT_LABELS[sale.method] ||
+                    sale.payment_method ||
+                    sale.method}
+                </td>
                 <td className="py-3 pr-4">{formatCOP(sale.total)}</td>
               </tr>
             ))}
