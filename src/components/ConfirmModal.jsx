@@ -18,7 +18,7 @@ export default function ConfirmModal({
       : "bg-slate-950 text-white hover:bg-slate-800";
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
         <div>
           <h3 className="text-xl font-semibold text-slate-900">{title}</h3>

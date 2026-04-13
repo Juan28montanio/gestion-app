@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ClipboardList, Plus, Trash2, X } from "lucide-react";
 import { createPurchase } from "../services/purchaseService";
+import FormModal from "./FormModal";
 import { formatCOP } from "../utils/formatters";
 
 const EMPTY_HEADER = {
@@ -161,188 +162,171 @@ export default function PurchaseManager({ businessId, suppliers, supplies, purch
         </div>
       </div>
 
-      {isModalOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[28px] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                  <ClipboardList size={20} />
-                </div>
-                <h3 className="mt-4 text-xl font-semibold text-slate-900">Registrar compra</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Paso {step} de 2: {step === 1 ? "cabecera de la factura" : "detalle de items"}.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={closeModal}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit}>
-              {step === 1 ? (
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <label className="grid gap-2 text-sm text-slate-700 sm:col-span-2">
-                    Proveedor
+      <FormModal
+        open={isModalOpen}
+        onClose={closeModal}
+        maxWidthClass="max-w-5xl"
+        icon={{ main: <ClipboardList size={20} />, close: <X size={18} /> }}
+        title="Registrar compra"
+        description={`Paso ${step} de 2: ${
+          step === 1 ? "cabecera de la factura." : "detalle dinamico de items."
+        }`}
+      >
+        <form onSubmit={handleSubmit} className="grid gap-6">
+          {step === 1 ? (
+            <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200 md:grid-cols-3">
+              <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
+                Proveedor
+                <select
+                  value={header.supplierId}
+                  onChange={(event) =>
+                    setHeader((current) => ({ ...current, supplierId: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                >
+                  <option value="">Seleccionar proveedor</option>
+                  {suppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Fecha
+                <input
+                  type="date"
+                  value={header.purchaseDate}
+                  onChange={(event) =>
+                    setHeader((current) => ({ ...current, purchaseDate: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-3">
+                No. factura
+                <input
+                  value={header.invoiceNumber}
+                  onChange={(event) =>
+                    setHeader((current) => ({ ...current, invoiceNumber: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                />
+              </label>
+            </section>
+          ) : (
+            <section className="grid gap-4">
+              {items.map((item, index) => (
+                <div
+                  key={`purchase-item-${index}`}
+                  className="grid gap-3 rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200 xl:grid-cols-[1.2fr_0.6fr_0.6fr_0.45fr_auto]"
+                >
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    Insumo
                     <select
-                      value={header.supplierId}
-                      onChange={(event) =>
-                        setHeader((current) => ({ ...current, supplierId: event.target.value }))
-                      }
-                      className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                      value={item.ingredientId}
+                      onChange={(event) => updateItemRow(index, "ingredientId", event.target.value)}
+                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
                     >
-                      <option value="">Seleccionar proveedor</option>
-                      {suppliers.map((supplier) => (
-                        <option key={supplier.id} value={supplier.id}>
-                          {supplier.name}
+                      <option value="">Seleccionar insumo</option>
+                      {supplies.map((supply) => (
+                        <option key={supply.id} value={supply.id}>
+                          {supply.name}
                         </option>
                       ))}
                     </select>
                   </label>
-                  <label className="grid gap-2 text-sm text-slate-700">
-                    Fecha
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    Cantidad
                     <input
-                      type="date"
-                      value={header.purchaseDate}
-                      onChange={(event) =>
-                        setHeader((current) => ({ ...current, purchaseDate: event.target.value }))
-                      }
-                      className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.quantity}
+                      onChange={(event) => updateItemRow(index, "quantity", event.target.value)}
+                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
                     />
                   </label>
-                  <label className="grid gap-2 text-sm text-slate-700 sm:col-span-3">
-                    No. factura
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    Precio unit.
                     <input
-                      value={header.invoiceNumber}
-                      onChange={(event) =>
-                        setHeader((current) => ({ ...current, invoiceNumber: event.target.value }))
-                      }
-                      className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.unitPrice}
+                      onChange={(event) => updateItemRow(index, "unitPrice", event.target.value)}
+                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
                     />
                   </label>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {items.map((item, index) => (
-                    <div
-                      key={`purchase-item-${index}`}
-                      className="grid gap-3 rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200 md:grid-cols-[1.1fr_0.55fr_0.55fr_0.4fr_auto]"
-                    >
-                      <label className="grid gap-2 text-sm text-slate-700">
-                        Insumo
-                        <select
-                          value={item.ingredientId}
-                          onChange={(event) =>
-                            updateItemRow(index, "ingredientId", event.target.value)
-                          }
-                          className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200"
-                        >
-                          <option value="">Seleccionar insumo</option>
-                          {supplies.map((supply) => (
-                            <option key={supply.id} value={supply.id}>
-                              {supply.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm text-slate-700">
-                        Cantidad
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.quantity}
-                          onChange={(event) => updateItemRow(index, "quantity", event.target.value)}
-                          className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm text-slate-700">
-                        Precio unit.
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.unitPrice}
-                          onChange={(event) => updateItemRow(index, "unitPrice", event.target.value)}
-                          className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200"
-                        />
-                      </label>
-                      <label className="grid gap-2 text-sm text-slate-700">
-                        IVA %
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={item.ivaPct}
-                          onChange={(event) => updateItemRow(index, "ivaPct", event.target.value)}
-                          className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200"
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => removeItemRow(index)}
-                        className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
-
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    IVA %
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={item.ivaPct}
+                      onChange={(event) => updateItemRow(index, "ivaPct", event.target.value)}
+                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                    />
+                  </label>
                   <button
                     type="button"
-                    onClick={addItemRow}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                    onClick={() => removeItemRow(index)}
+                    className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
                   >
-                    <Plus size={16} />
-                    Agregar item
+                    <Trash2 size={16} />
                   </button>
                 </div>
-              )}
+              ))}
 
-              {feedback.message ? (
-                <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-                  {feedback.message}
-                </div>
-              ) : null}
+              <button
+                type="button"
+                onClick={addItemRow}
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+              >
+                <Plus size={16} />
+                Agregar item
+              </button>
+            </section>
+          )}
 
-              <div className="mt-6 flex flex-wrap justify-between gap-3">
+          {feedback.message ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              {feedback.message}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setStep((current) => Math.max(current - 1, 1))}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+            >
+              Volver
+            </button>
+
+            <div className="flex gap-3">
+              {step === 1 ? (
                 <button
                   type="button"
-                  onClick={() => setStep((current) => Math.max(current - 1, 1))}
-                  className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+                  onClick={() => setStep(2)}
+                  className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
                 >
-                  Volver
+                  Continuar
                 </button>
-
-                <div className="flex gap-3">
-                  {step === 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => setStep(2)}
-                      className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
-                    >
-                      Continuar
-                    </button>
-                  ) : (
-                    <button
-                      type="submit"
-                      disabled={isSaving}
-                      className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
-                    >
-                      {isSaving ? "Guardando..." : "Guardar compra"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </form>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+                >
+                  {isSaving ? "Guardando..." : "Guardar compra"}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      ) : null}
+        </form>
+      </FormModal>
     </section>
   );
 }

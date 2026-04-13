@@ -31,6 +31,7 @@ import {
 } from "../services/recipeBookService";
 import { subscribeToPurchases } from "../services/purchaseService";
 import ConfirmModal from "./ConfirmModal";
+import FormModal from "./FormModal";
 import SupplierManager from "./SupplierManager";
 import PurchaseManager from "./PurchaseManager";
 import RecipeBookManager from "./RecipeBookManager";
@@ -661,222 +662,193 @@ export default function ProductManager({ businessId }) {
         </section>
       ) : null}
 
-      {isProductModalOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[28px] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                  <PackagePlus size={20} />
-                </div>
-                <h3 className="mt-4 text-xl font-semibold text-slate-900">
-                  {editingProductId ? "Editar producto" : "Nuevo producto"}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={closeProductModal}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleProductSubmit} className="grid gap-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Nombre
-                  <input
-                    required
-                    value={productForm.name}
-                    onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Categoria
-                  <input
-                    required
-                    value={productForm.category}
-                    onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Precio de venta
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={productForm.price}
-                    onChange={(event) => setProductForm((current) => ({ ...current, price: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Stock comercial
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={productForm.stock}
-                    onChange={(event) => setProductForm((current) => ({ ...current, stock: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-              </div>
-
-              {feedback.message ? (
-                <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-                  {feedback.message}
-                </div>
-              ) : null}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={closeProductModal}
-                  className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
-                >
-                  {isSaving ? "Guardando..." : editingProductId ? "Actualizar" : "Crear producto"}
-                </button>
-              </div>
-            </form>
+      <FormModal
+        open={isProductModalOpen}
+        onClose={closeProductModal}
+        maxWidthClass="max-w-3xl"
+        icon={{ main: <PackagePlus size={20} />, close: <X size={18} /> }}
+        title={editingProductId ? "Editar producto" : "Nuevo producto"}
+        description="Mantiene una estructura compacta, con el mismo lenguaje visual de los modales del sistema."
+      >
+        <form onSubmit={handleProductSubmit} className="grid gap-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Nombre
+              <input
+                required
+                value={productForm.name}
+                onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Categoria
+              <input
+                required
+                value={productForm.category}
+                onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
           </div>
-        </div>
-      ) : null}
 
-      {isSupplyModalOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[28px] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                  <Boxes size={20} />
-                </div>
-                <h3 className="mt-4 text-xl font-semibold text-slate-900">
-                  {editingSupplyId ? "Editar insumo" : "Nuevo insumo"}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={closeSupplyModal}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSupplySubmit} className="grid gap-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Nombre
-                  <input
-                    required
-                    value={supplyForm.name}
-                    onChange={(event) => setSupplyForm((current) => ({ ...current, name: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Categoria
-                  <input
-                    value={supplyForm.category}
-                    onChange={(event) => setSupplyForm((current) => ({ ...current, category: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-4">
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Unidad
-                  <select
-                    value={supplyForm.unit}
-                    onChange={(event) => setSupplyForm((current) => ({ ...current, unit: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  >
-                    {UNITS.map((unit) => (
-                      <option key={unit} value={unit}>
-                        {unit}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Stock
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={supplyForm.stock}
-                    onChange={(event) => setSupplyForm((current) => ({ ...current, stock: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Stock minimo
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={supplyForm.stockMinAlert}
-                    onChange={(event) =>
-                      setSupplyForm((current) => ({ ...current, stockMinAlert: event.target.value }))
-                    }
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Costo unidad
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={supplyForm.averageCost}
-                    onChange={(event) =>
-                      setSupplyForm((current) => ({ ...current, averageCost: event.target.value }))
-                    }
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-              </div>
-
-              {feedback.message ? (
-                <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-                  {feedback.message}
-                </div>
-              ) : null}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={closeSupplyModal}
-                  className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
-                >
-                  {isSaving ? "Guardando..." : editingSupplyId ? "Actualizar" : "Crear insumo"}
-                </button>
-              </div>
-            </form>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Precio de venta
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={productForm.price}
+                onChange={(event) => setProductForm((current) => ({ ...current, price: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Stock comercial
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={productForm.stock}
+                onChange={(event) => setProductForm((current) => ({ ...current, stock: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
           </div>
-        </div>
-      ) : null}
+
+          {feedback.message ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              {feedback.message}
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={closeProductModal}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSaving ? "Guardando..." : editingProductId ? "Actualizar" : "Crear producto"}
+            </button>
+          </div>
+        </form>
+      </FormModal>
+
+      <FormModal
+        open={isSupplyModalOpen}
+        onClose={closeSupplyModal}
+        maxWidthClass="max-w-3xl"
+        icon={{ main: <Boxes size={20} />, close: <X size={18} /> }}
+        title={editingSupplyId ? "Editar insumo" : "Nuevo insumo"}
+        description="Registra materias primas con una grilla estable y scroll interno, sin que ningun campo se salga del viewport."
+      >
+        <form onSubmit={handleSupplySubmit} className="grid gap-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Nombre
+              <input
+                required
+                value={supplyForm.name}
+                onChange={(event) => setSupplyForm((current) => ({ ...current, name: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Categoria
+              <input
+                value={supplyForm.category}
+                onChange={(event) => setSupplyForm((current) => ({ ...current, category: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Unidad
+              <select
+                value={supplyForm.unit}
+                onChange={(event) => setSupplyForm((current) => ({ ...current, unit: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              >
+                {UNITS.map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Stock
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={supplyForm.stock}
+                onChange={(event) => setSupplyForm((current) => ({ ...current, stock: event.target.value }))}
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Stock minimo
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={supplyForm.stockMinAlert}
+                onChange={(event) =>
+                  setSupplyForm((current) => ({ ...current, stockMinAlert: event.target.value }))
+                }
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Costo unidad
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={supplyForm.averageCost}
+                onChange={(event) =>
+                  setSupplyForm((current) => ({ ...current, averageCost: event.target.value }))
+                }
+                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+              />
+            </label>
+          </div>
+
+          {feedback.message ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              {feedback.message}
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={closeSupplyModal}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSaving ? "Guardando..." : editingSupplyId ? "Actualizar" : "Crear insumo"}
+            </button>
+          </div>
+        </form>
+      </FormModal>
 
       <ConfirmModal
         open={Boolean(itemToDelete)}

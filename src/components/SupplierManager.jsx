@@ -6,6 +6,7 @@ import {
   updateSupplier,
 } from "../services/supplierService";
 import ConfirmModal from "./ConfirmModal";
+import FormModal from "./FormModal";
 import { formatCOP } from "../utils/formatters";
 
 const EMPTY_SUPPLIER_FORM = {
@@ -201,116 +202,128 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
         </table>
       </div>
 
-      {isModalOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[28px] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                  <Building2 size={20} />
-                </div>
-                <h3 className="mt-4 text-xl font-semibold text-slate-900">
-                  {editingId ? "Editar proveedor" : "Nuevo proveedor"}
-                </h3>
-              </div>
-
-              <button
-                type="button"
-                onClick={closeModal}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
-              >
-                <X size={18} />
-              </button>
+      <FormModal
+        open={isModalOpen}
+        onClose={closeModal}
+        maxWidthClass="max-w-3xl"
+        icon={{ main: <Building2 size={20} />, close: <X size={18} /> }}
+        title={editingId ? "Editar proveedor" : "Nuevo proveedor"}
+        description="Organiza el directorio estrategico con datos basicos y condiciones comerciales."
+      >
+        <form onSubmit={handleSubmit} className="grid gap-6">
+          <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Datos Basicos
+              </h4>
             </div>
 
-            <form onSubmit={handleSubmit} className="grid gap-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Nombre / Razon social
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  NIT
-                  <input
-                    value={form.nit}
-                    onChange={(event) => setForm((current) => ({ ...current, nit: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-              </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Nombre / Razon social
+                <input
+                  required
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                NIT
+                <input
+                  value={form.nit}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, nit: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                />
+              </label>
+            </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Categoria
-                  <input
-                    value={form.category}
-                    onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Contacto
-                  <input
-                    value={form.contact}
-                    onChange={(event) => setForm((current) => ({ ...current, contact: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-                <label className="grid gap-2 text-sm text-slate-700">
-                  Telefono
-                  <input
-                    value={form.phone}
-                    onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                  />
-                </label>
-              </div>
-
-              <label className="grid gap-2 text-sm text-slate-700">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Categoria
+                <input
+                  value={form.category}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, category: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
                 Terminos de pago
                 <select
                   value={form.paymentTerms}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, paymentTerms: event.target.value }))
                   }
-                  className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
                 >
                   <option value="Contado">Contado</option>
                   <option value="Credito">Credito</option>
                 </select>
               </label>
+            </div>
+          </section>
 
-              {feedback.message ? (
-                <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-                  {feedback.message}
-                </div>
-              ) : null}
+          <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Datos de Contacto
+              </h4>
+            </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
-                >
-                  {isSaving ? "Guardando..." : editingId ? "Actualizar" : "Crear proveedor"}
-                </button>
-              </div>
-            </form>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Contacto
+                <input
+                  value={form.contact}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, contact: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Telefono
+                <input
+                  value={form.phone}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, phone: event.target.value }))
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
+                />
+              </label>
+            </div>
+          </section>
+
+          {feedback.message ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              {feedback.message}
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+            >
+              {isSaving ? "Guardando..." : editingId ? "Actualizar" : "Crear proveedor"}
+            </button>
           </div>
-        </div>
-      ) : null}
+        </form>
+      </FormModal>
 
       <ConfirmModal
         open={Boolean(supplierToDelete)}

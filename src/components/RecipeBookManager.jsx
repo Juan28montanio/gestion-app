@@ -6,6 +6,7 @@ import {
   updateRecipeBook,
 } from "../services/recipeBookService";
 import ConfirmModal from "./ConfirmModal";
+import FormModal from "./FormModal";
 import { formatCOP } from "../utils/formatters";
 
 const EMPTY_RECIPE_FORM = {
@@ -47,6 +48,11 @@ const STATUS_META = {
   critical: "bg-rose-100 text-rose-700 ring-rose-200",
 };
 
+const MODAL_TABS = [
+  { id: "costing", label: "Ingredientes / Costeo" },
+  { id: "operations", label: "Preparacion / Fotos" },
+];
+
 export default function RecipeBookManager({
   businessId,
   products,
@@ -56,6 +62,7 @@ export default function RecipeBookManager({
   const [form, setForm] = useState(EMPTY_RECIPE_FORM);
   const [editingId, setEditingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeModalTab, setActiveModalTab] = useState("costing");
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [isSaving, setIsSaving] = useState(false);
   const [recipeToDelete, setRecipeToDelete] = useState(null);
@@ -98,6 +105,7 @@ export default function RecipeBookManager({
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
+    setActiveModalTab("costing");
     setForm(EMPTY_RECIPE_FORM);
     setFeedback({ type: "", message: "" });
   };
@@ -171,7 +179,10 @@ export default function RecipeBookManager({
 
         <button
           type="button"
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setActiveModalTab("costing");
+            setIsModalOpen(true);
+          }}
           className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
         >
           <Plus size={16} />
@@ -234,6 +245,7 @@ export default function RecipeBookManager({
                 type="button"
                 onClick={() => {
                   setEditingId(recipeBook.id);
+                  setActiveModalTab("costing");
                   setForm(buildRecipeForm(recipeBook));
                   setIsModalOpen(true);
                 }}
@@ -255,37 +267,43 @@ export default function RecipeBookManager({
         ))}
       </div>
 
-      {isModalOpen ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[28px] bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                  <BookOpenText size={20} />
-                </div>
-                <h3 className="mt-4 text-xl font-semibold text-slate-900">
-                  {editingId ? "Editar ficha tecnica" : "Nueva ficha tecnica"}
-                </h3>
-              </div>
+      <FormModal
+        open={isModalOpen}
+        onClose={closeModal}
+        maxWidthClass="max-w-5xl"
+        icon={{ main: <BookOpenText size={20} />, close: <X size={18} /> }}
+        title={editingId ? "Editar ficha tecnica" : "Nueva ficha tecnica"}
+        description="Trabaja el costeo y la operacion en pasos claros, con scroll interno y sin romper el layout principal."
+      >
+        <form onSubmit={handleSubmit} className="grid gap-6">
+          <div className="flex flex-wrap gap-2">
+            {MODAL_TABS.map((tab) => (
               <button
+                key={tab.id}
                 type="button"
-                onClick={closeModal}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
+                onClick={() => setActiveModalTab(tab.id)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  activeModalTab === tab.id
+                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-900/20"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
               >
-                <X size={18} />
+                {tab.label}
               </button>
-            </div>
+            ))}
+          </div>
 
-            <form onSubmit={handleSubmit} className="grid gap-6">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="grid gap-2 text-sm text-slate-700 sm:col-span-2">
+          {activeModalTab === "costing" ? (
+            <>
+              <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
                   Producto
                   <select
                     value={form.productId}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, productId: event.target.value }))
                     }
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                    className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
                   >
                     <option value="">Seleccionar producto</option>
                     {availableProducts.map((product) => (
@@ -295,7 +313,8 @@ export default function RecipeBookManager({
                     ))}
                   </select>
                 </label>
-                <label className="grid gap-2 text-sm text-slate-700">
+
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
                   Tiempo (min)
                   <input
                     type="number"
@@ -305,13 +324,13 @@ export default function RecipeBookManager({
                     onChange={(event) =>
                       setForm((current) => ({ ...current, prepTimeMinutes: event.target.value }))
                     }
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                    className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
                   />
                 </label>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="grid gap-2 text-sm text-slate-700">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
                   Merma %
                   <input
                     type="number"
@@ -321,10 +340,11 @@ export default function RecipeBookManager({
                     onChange={(event) =>
                       setForm((current) => ({ ...current, wastePct: event.target.value }))
                     }
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                    className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
                   />
                 </label>
-                <label className="grid gap-2 text-sm text-slate-700">
+
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
                   Margen objetivo %
                   <input
                     type="number"
@@ -334,125 +354,164 @@ export default function RecipeBookManager({
                     onChange={(event) =>
                       setForm((current) => ({ ...current, targetMarginPct: event.target.value }))
                     }
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                    className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
                   />
                 </label>
-                <label className="grid gap-2 text-sm text-slate-700">
+
+                <div className="rounded-[24px] bg-[#fff8e7] p-4 ring-1 ring-[#d4a72c]/20">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#946200]">
+                    Costeo activo
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    SmartProfit usa el costo actual del inventario para medir costo real y rentabilidad.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h4 className="text-lg font-semibold text-slate-900">Receta estandar</h4>
+                    <p className="text-sm text-slate-500">
+                      Agrega insumos y cantidades sin salir del flujo de configuracion.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addIngredientRow}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
+                  >
+                    <Plus size={16} />
+                    Agregar insumo
+                  </button>
+                </div>
+
+                <div className="grid gap-3">
+                  {form.ingredients.map((ingredient, index) => (
+                    <div
+                      key={`recipe-row-${index}`}
+                      className="grid gap-3 rounded-[24px] bg-white p-4 ring-1 ring-slate-200 md:grid-cols-[1.25fr_0.65fr_auto]"
+                    >
+                      <label className="grid gap-2 text-sm font-medium text-slate-700">
+                        Insumo
+                        <select
+                          value={ingredient.ingredientId}
+                          onChange={(event) =>
+                            updateIngredientRow(index, "ingredientId", event.target.value)
+                          }
+                          className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+                        >
+                          <option value="">Seleccionar insumo</option>
+                          {supplies.map((supply) => (
+                            <option key={supply.id} value={supply.id}>
+                              {supply.name} ({supply.unit})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="grid gap-2 text-sm font-medium text-slate-700">
+                        Cantidad
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={ingredient.quantity}
+                          onChange={(event) =>
+                            updateIngredientRow(index, "quantity", event.target.value)
+                          }
+                          className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => removeIngredientRow(index)}
+                        className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+
+                  {form.ingredients.length === 0 ? (
+                    <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/70 px-4 py-6 text-sm text-slate-500">
+                      Agrega el primer insumo para empezar a costear la receta.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  Tiempo estimado (min)
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.prepTimeMinutes}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, prepTimeMinutes: event.target.value }))
+                    }
+                    className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+                  />
+                </label>
+
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
                   Foto emplatado (URL)
                   <input
                     value={form.platingPhotoUrl}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, platingPhotoUrl: event.target.value }))
                     }
-                    className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
+                    className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
                   />
                 </label>
               </div>
 
-              <div className="space-y-3 rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-lg font-semibold text-slate-900">Receta estandar</h4>
-                    <p className="text-sm text-slate-500">
-                      SmartProfit usa el costo actual del inventario para medir rentabilidad.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={addIngredientRow}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200"
-                  >
-                    <Plus size={16} />
-                    Insumo
-                  </button>
-                </div>
-
-                {form.ingredients.map((ingredient, index) => (
-                  <div
-                    key={`recipe-row-${index}`}
-                    className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 md:grid-cols-[1.2fr_0.7fr_auto]"
-                  >
-                    <label className="grid gap-2 text-sm text-slate-700">
-                      Insumo
-                      <select
-                        value={ingredient.ingredientId}
-                        onChange={(event) =>
-                          updateIngredientRow(index, "ingredientId", event.target.value)
-                        }
-                        className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                      >
-                        <option value="">Seleccionar insumo</option>
-                        {supplies.map((supply) => (
-                          <option key={supply.id} value={supply.id}>
-                            {supply.name} ({supply.unit})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="grid gap-2 text-sm text-slate-700">
-                      Cantidad
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={ingredient.quantity}
-                        onChange={(event) =>
-                          updateIngredientRow(index, "quantity", event.target.value)
-                        }
-                        className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={() => removeIngredientRow(index)}
-                      className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
+              <div className="rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  Pasos de preparacion
+                  <textarea
+                    rows="10"
+                    value={form.preparationSteps}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, preparationSteps: event.target.value }))
+                    }
+                    className="rounded-[24px] bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
+                    placeholder="Describe mise en place, coccion, emplatado y puntos de control."
+                  />
+                </label>
               </div>
+            </>
+          )}
 
-              <label className="grid gap-2 text-sm text-slate-700">
-                Pasos de preparacion
-                <textarea
-                  rows="5"
-                  value={form.preparationSteps}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, preparationSteps: event.target.value }))
-                  }
-                  className="rounded-2xl bg-slate-50 px-4 py-3 outline-none ring-1 ring-slate-200"
-                />
-              </label>
+          {feedback.message ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              {feedback.message}
+            </div>
+          ) : null}
 
-              {feedback.message ? (
-                <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-                  {feedback.message}
-                </div>
-              ) : null}
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
-                >
-                  {isSaving ? "Guardando..." : editingId ? "Actualizar ficha" : "Crear ficha"}
-                </button>
-              </div>
-            </form>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSaving ? "Guardando..." : editingId ? "Actualizar ficha" : "Crear ficha"}
+            </button>
           </div>
-        </div>
-      ) : null}
+        </form>
+      </FormModal>
 
       <ConfirmModal
         open={Boolean(recipeToDelete)}

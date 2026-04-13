@@ -222,7 +222,7 @@ export default function App() {
             ) : null}
 
             <aside
-              className={`sticky top-0 hidden h-screen shrink-0 border-r border-emerald-950/10 bg-[linear-gradient(180deg,#0f172a_0%,#111827_100%)] py-6 text-white transition-all lg:flex lg:flex-col ${
+              className={`sticky top-0 z-40 hidden h-screen shrink-0 border-r border-emerald-950/10 bg-[linear-gradient(180deg,#0f172a_0%,#111827_100%)] py-6 text-white transition-all lg:flex lg:flex-col ${
                 isSidebarCollapsed ? "w-24 px-3" : "w-72 px-5"
               }`}
             >
@@ -282,7 +282,7 @@ export default function App() {
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col">
-              <header className="sticky top-0 z-30 border-b border-white/60 bg-white/80 px-4 py-3 backdrop-blur-xl md:px-6">
+              <header className="sticky top-0 z-50 border-b border-white/60 bg-white/80 px-4 py-3 backdrop-blur-xl md:px-6">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-center gap-3">
                     <button
@@ -327,7 +327,7 @@ export default function App() {
                 </div>
               </header>
 
-              <div className="flex-1 px-4 py-6 md:px-6">
+              <div className="flex-1 px-4 py-6 pb-28 md:px-6 md:pb-32">
                 {activeSection === "salon" ? (
                   <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
                     <TableView
