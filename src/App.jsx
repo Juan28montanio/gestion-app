@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   LayoutGrid,
+  Menu,
   Package2,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelsTopLeft,
   ReceiptText,
   Wifi,
@@ -29,7 +32,7 @@ const PAYMENT_METHOD_LABELS = {
 const NAV_ITEMS = [
   { id: "salon", label: "Salon", icon: PanelsTopLeft },
   { id: "pos", label: "Punto de Venta", icon: ReceiptText },
-  { id: "inventory", label: "Inventario", icon: Package2 },
+  { id: "inventory", label: "Productos", icon: Package2 },
   { id: "finance", label: "Finanzas", icon: BarChart3 },
 ];
 
@@ -39,20 +42,26 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [activeSection, setActiveSection] = useState("salon");
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
 
   useEffect(() => {
     const handleNavigation = () => setPathname(window.location.pathname);
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
+    const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
 
     window.addEventListener("popstate", handleNavigation);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    window.addEventListener("resize", handleResize);
 
     return () => {
       window.removeEventListener("popstate", handleNavigation);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("resize", handleResize);
     };
   }, []);
 
@@ -107,15 +116,69 @@ export default function App() {
       <CartProvider>
         <main className="min-h-screen bg-slate-100 text-slate-900">
           <div className="mx-auto flex min-h-screen max-w-[1800px]">
-            <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-slate-200 bg-white px-5 py-6 lg:flex lg:flex-col">
+            {isMobileSidebarOpen ? (
+              <div className="fixed inset-0 z-40 lg:hidden">
+                <div
+                  className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                />
+                <aside className="absolute inset-y-0 left-0 flex w-72 flex-col border-r border-slate-200 bg-white px-5 py-6 shadow-2xl">
+                  <div className="rounded-[28px] bg-slate-950 p-5 text-white shadow-lg">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Pacifica Control
+                    </p>
+                    <h1 className="mt-3 text-2xl font-semibold">Dashboard operativo</h1>
+                    <p className="mt-2 text-sm text-slate-300">
+                      Salon, ventas, productos y finanzas en una sola vista.
+                    </p>
+                  </div>
+
+                  <nav className="mt-6 grid gap-2">
+                    {NAV_ITEMS.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeSection === item.id;
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveSection(item.id);
+                            setIsMobileSidebarOpen(false);
+                          }}
+                          className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
+                            isActive
+                              ? "bg-slate-950 text-white shadow-lg"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          <Icon size={18} />
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </aside>
+              </div>
+            ) : null}
+
+            <aside
+              className={`sticky top-0 hidden h-screen shrink-0 border-r border-slate-200 bg-white py-6 transition-all lg:flex lg:flex-col ${
+                isSidebarCollapsed ? "w-24 px-3" : "w-72 px-5"
+              }`}
+            >
               <div className="rounded-[28px] bg-slate-950 p-5 text-white shadow-lg">
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
                   Pacifica Control
                 </p>
-                <h1 className="mt-3 text-2xl font-semibold">Dashboard operativo</h1>
-                <p className="mt-2 text-sm text-slate-300">
-                  Salon, ventas, inventario y finanzas en una sola vista.
-                </p>
+                {!isSidebarCollapsed ? (
+                  <>
+                    <h1 className="mt-3 text-2xl font-semibold">Dashboard operativo</h1>
+                    <p className="mt-2 text-sm text-slate-300">
+                      Salon, ventas, productos y finanzas en una sola vista.
+                    </p>
+                  </>
+                ) : null}
               </div>
 
               <nav className="mt-6 grid gap-2">
@@ -128,28 +191,30 @@ export default function App() {
                       key={item.id}
                       type="button"
                       onClick={() => setActiveSection(item.id)}
-                      className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
+                      className={`flex items-center rounded-2xl py-3 text-left text-sm font-semibold transition ${
                         isActive
                           ? "bg-slate-950 text-white shadow-lg"
                           : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
+                      } ${isSidebarCollapsed ? "justify-center px-2" : "gap-3 px-4"}`}
                     >
                       <Icon size={18} />
-                      {item.label}
+                      {!isSidebarCollapsed ? item.label : null}
                     </button>
                   );
                 })}
               </nav>
 
               <div className="mt-auto rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "gap-3"}`}>
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200">
                     <LayoutGrid size={18} className="text-slate-500" />
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Restaurante demo</p>
-                    <p className="text-xs text-slate-500">Multi-tenant listo para operar</p>
-                  </div>
+                  {!isSidebarCollapsed ? (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Restaurante demo</p>
+                      <p className="text-xs text-slate-500">Multi-tenant listo para operar</p>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </aside>
@@ -163,6 +228,24 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isDesktop) {
+                          setIsSidebarCollapsed((current) => !current);
+                        } else {
+                          setIsMobileSidebarOpen(true);
+                        }
+                      }}
+                      className="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2.5 text-slate-600 transition hover:bg-slate-200"
+                    >
+                      {isDesktop ? (
+                        isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />
+                      ) : (
+                        <Menu size={18} />
+                      )}
+                    </button>
+
                     <span
                       className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ${
                         isOnline
@@ -173,29 +256,6 @@ export default function App() {
                       {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
                       {isOnline ? "Firestore conectado" : "Sin conexion"}
                     </span>
-
-                    <div className="flex gap-2 overflow-x-auto lg:hidden">
-                      {NAV_ITEMS.map((item) => {
-                        const Icon = item.icon;
-                        const isActive = activeSection === item.id;
-
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => setActiveSection(item.id)}
-                            className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition ${
-                              isActive
-                                ? "bg-slate-950 text-white"
-                                : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                            <Icon size={14} />
-                            {item.label}
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
                 </div>
               </header>
@@ -216,6 +276,7 @@ export default function App() {
                   <POSOrder
                     businessId={BUSINESS_ID}
                     selectedTable={selectedTable}
+                    onSelectTable={setSelectedTable}
                     onOrderPaid={() => setSelectedTable(null)}
                     onOrderCancelled={() => {
                       notify("Orden cancelada. La mesa fue liberada sin registrar venta.");

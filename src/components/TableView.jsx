@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Armchair, Coffee, DoorClosed, GlassWater, Store, UtensilsCrossed } from "lucide-react";
+import {
+  Armchair,
+  Coffee,
+  DoorClosed,
+  Flame,
+  GlassWater,
+  Store,
+  UtensilsCrossed,
+} from "lucide-react";
 import { subscribeToTables } from "../services/tableService";
 
 const TABLE_STATUS_STYLES = {
@@ -31,6 +39,7 @@ const TABLE_ICONS = {
   GlassWater,
   Armchair,
   Store,
+  Flame,
 };
 
 export default function TableView({
@@ -93,22 +102,38 @@ export default function TableView({
                 <div className="flex h-full flex-col justify-between">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="mb-1 flex items-center gap-2 text-xs font-medium text-slate-500">
-                        <Icon size={16} />
+                      <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <div
+                          className={`rounded-full p-1.5 ring-2 ${
+                            table.status === "ocupada" || table.status === "occupied"
+                              ? "bg-white/80 ring-rose-300"
+                              : table.status === "cuenta_solicitada" ||
+                                  table.status === "requested_bill"
+                                ? "bg-white/80 ring-amber-300"
+                                : table.status === "pagada" || table.status === "paid"
+                                  ? "bg-white/80 ring-sky-300"
+                                  : "bg-white/80 ring-emerald-300"
+                          }`}
+                        >
+                          <Icon size={14} />
+                        </div>
                         <span className="truncate">{table.name || `Mesa ${table.number}`}</span>
                       </div>
                       <h3 className="text-xl font-bold text-slate-900">{table.number}</h3>
                     </div>
+                  </div>
+
+                  <div className="flex items-end justify-between gap-2">
+                    <p className="text-xs text-slate-700">
+                      {table.capacity || table.seats} puestos
+                    </p>
+
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusStyle}`}
                     >
                       {statusLabel}
                     </span>
                   </div>
-
-                  <p className="text-xs text-slate-700">
-                    {table.capacity || table.seats} puestos
-                  </p>
                 </div>
               </button>
             );

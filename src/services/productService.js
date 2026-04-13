@@ -48,6 +48,9 @@ function normalizeProductPayload(product, businessId) {
     stock,
     business_id: normalizedBusinessId,
     is_available: product?.is_available ?? true,
+    recipe: Array.isArray(product?.recipe) ? product.recipe : [],
+    desired_margin_pct: Number(product?.desired_margin_pct ?? product?.desiredMarginPct) || 0,
+    suggested_price: Number(product?.suggested_price ?? product?.suggestedPrice) || price,
   };
 }
 

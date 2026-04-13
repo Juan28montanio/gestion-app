@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ShoppingBag, ShoppingCart, X } from "lucide-react";
+import { Check, ChevronDown, Search, ShoppingBag, ShoppingCart, X } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { subscribeToProducts } from "../services/productService";
+import { subscribeToTables } from "../services/tableService";
 import {
   cancelOrder,
   requestPayment,
@@ -34,6 +35,86 @@ function getCategoryStyle(category) {
   return CATEGORY_STYLES[key] || "from-slate-100 to-slate-50 text-slate-900";
 }
 
+function TableSelector({ tables, selectedTable, onSelectTable }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filteredTables = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) {
+      return tables;
+    }
+
+    return tables.filter((table) => {
+      const label = `${table.name || ""} ${table.number || ""}`.toLowerCase();
+      return label.includes(term);
+    });
+  }, [search, tables]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-left ring-1 ring-slate-200 transition hover:bg-white md:min-w-[280px]"
+      >
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Seleccionar mesa</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {selectedTable ? selectedTable.name || `Mesa ${selectedTable.number}` : "Elegir mesa"}
+          </p>
+        </div>
+        <ChevronDown size={16} className="text-slate-400" />
+      </button>
+
+      {isOpen ? (
+        <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 rounded-[24px] bg-white p-3 shadow-2xl ring-1 ring-slate-200">
+          <div className="mb-3 flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+            <Search size={16} className="text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar mesa..."
+              className="w-full bg-transparent text-sm outline-none"
+            />
+          </div>
+
+          <div className="max-h-64 space-y-2 overflow-y-auto">
+            {filteredTables.map((table) => {
+              const isSelected = selectedTable?.id === table.id;
+
+              return (
+                <button
+                  key={table.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectTable(table);
+                    setIsOpen(false);
+                  }}
+                  className={`flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition ${
+                    isSelected ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-700"
+                  }`}
+                >
+                  <div>
+                    <p className="text-sm font-semibold">
+                      {table.name || `Mesa ${table.number}`}
+                    </p>
+                    <p className={`text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                      {table.capacity || table.seats} puestos
+                    </p>
+                  </div>
+
+                  {isSelected ? <Check size={16} /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CartPanel({
   selectedTable,
   cartItems,
@@ -51,11 +132,7 @@ function CartPanel({
   mobile = false,
 }) {
   return (
-    <div
-      className={`rounded-[28px] bg-slate-950 p-6 text-white shadow-lg ${
-        mobile ? "h-full rounded-none" : ""
-      }`}
-    >
+    <div className={`rounded-[28px] bg-slate-950 p-6 text-white shadow-lg ${mobile ? "h-full rounded-none" : ""}`}>
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Carrito de pedido</h2>
@@ -84,10 +161,7 @@ function CartPanel({
           </div>
         ) : (
           cartItems.map((item) => (
-            <article
-              key={item.lineId}
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-4"
-            >
+            <article key={item.lineId} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="font-medium">{item.name}</h3>
@@ -206,11 +280,13 @@ function CartPanel({
 export default function POSOrder({
   businessId,
   selectedTable,
+  onSelectTable,
   onOrderPaid,
   onOrderCancelled,
   onPaymentSuccess,
 }) {
   const [products, setProducts] = useState([]);
+  const [tables, setTables] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -230,7 +306,14 @@ export default function POSOrder({
 
   useEffect(() => {
     const unsubscribeProducts = subscribeToProducts(businessId, setProducts);
-    return () => unsubscribeProducts();
+    const unsubscribeTables = subscribeToTables(businessId, (nextTables) =>
+      setTables(nextTables.filter((table) => !table.deletedAt))
+    );
+
+    return () => {
+      unsubscribeProducts();
+      unsubscribeTables();
+    };
   }, [businessId]);
 
   useEffect(() => {
@@ -282,7 +365,6 @@ export default function POSOrder({
     }
 
     setLoading(true);
-
     try {
       await submitOrder({
         businessId,
@@ -302,7 +384,6 @@ export default function POSOrder({
     }
 
     setLoading(true);
-
     try {
       await requestPayment({
         businessId,
@@ -325,7 +406,6 @@ export default function POSOrder({
     }
 
     setLoading(true);
-
     try {
       await cancelOrder({
         tableId: selectedTable.id,
@@ -344,33 +424,44 @@ export default function POSOrder({
     <>
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-[28px] bg-white p-6 shadow-lg ring-1 ring-slate-200">
-          <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">Punto de venta</h2>
-              <p className="text-sm text-slate-500">
-                {selectedTable
-                  ? `Mesa activa: ${selectedTable.name || `Mesa ${selectedTable.number}`}`
-                  : "Selecciona una mesa para empezar"}
-              </p>
-            </div>
+          <div className="mb-5 grid gap-4 xl:grid-cols-[auto_1fr] xl:items-end">
+            <TableSelector
+              tables={tables}
+              selectedTable={selectedTable}
+              onSelectTable={onSelectTable}
+            />
 
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <input
-                type="search"
-                placeholder="Buscar producto..."
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm outline-none transition focus:border-slate-400 md:w-64"
-              />
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">Punto de venta</h2>
+                <p className="text-sm text-slate-500">
+                  {selectedTable
+                    ? `Mesa activa: ${selectedTable.name || `Mesa ${selectedTable.number}`}`
+                    : "Selecciona una mesa para empezar o asignala desde aqui."}
+                </p>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => setIsCartDrawerOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white xl:hidden"
-              >
-                <ShoppingCart size={16} />
-                Ver carrito
-              </button>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 px-3 py-2.5">
+                  <Search size={16} className="text-slate-400" />
+                  <input
+                    type="search"
+                    placeholder="Buscar producto..."
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className="w-full bg-transparent text-sm outline-none md:w-56"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsCartDrawerOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white xl:hidden"
+                >
+                  <ShoppingCart size={16} />
+                  Ver carrito
+                </button>
+              </div>
             </div>
           </div>
 
@@ -399,11 +490,7 @@ export default function POSOrder({
                 onClick={() => handleAddProduct(product)}
                 className="group rounded-[28px] bg-white text-left shadow-lg ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-xl"
               >
-                <div
-                  className={`rounded-t-[28px] bg-gradient-to-br p-5 ${getCategoryStyle(
-                    product.category
-                  )}`}
-                >
+                <div className={`rounded-t-[28px] bg-gradient-to-br p-5 ${getCategoryStyle(product.category)}`}>
                   <div className="flex items-center justify-between gap-3">
                     <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em]">
                       {product.category}
@@ -418,9 +505,7 @@ export default function POSOrder({
                 <div className="p-5">
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                        Precio
-                      </p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Precio</p>
                       <p className="mt-2 text-lg font-semibold text-slate-900">
                         {formatCOP(product.price)}
                       </p>
@@ -456,10 +541,7 @@ export default function POSOrder({
 
       {isCartDrawerOpen ? (
         <div className="fixed inset-0 z-50 xl:hidden">
-          <div
-            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
-            onClick={() => setIsCartDrawerOpen(false)}
-          />
+          <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" onClick={() => setIsCartDrawerOpen(false)} />
           <div className="absolute inset-y-0 right-0 w-full max-w-md overflow-y-auto shadow-2xl">
             <CartPanel
               selectedTable={selectedTable}
