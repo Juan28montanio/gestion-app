@@ -77,6 +77,22 @@ function computeRecipeMetrics({ ingredients, inventory, wastePct, salePrice, tar
   };
 }
 
+export function calculateRecipeMetricsPreview({
+  ingredients = [],
+  inventory = [],
+  wastePct = 0,
+  salePrice = 0,
+  targetMarginPct = 30,
+}) {
+  return computeRecipeMetrics({
+    ingredients: normalizeRecipeIngredients(ingredients),
+    inventory,
+    wastePct: Number(wastePct),
+    salePrice: Number(salePrice),
+    targetMarginPct: Number(targetMarginPct),
+  });
+}
+
 function normalizeRecipeBookPayload(recipeBook, inventory) {
   const businessId = String(recipeBook?.business_id || recipeBook?.businessId || "").trim();
   const productId = String(recipeBook?.product_id || recipeBook?.productId || "").trim();

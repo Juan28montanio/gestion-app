@@ -6,8 +6,24 @@ import {
   updateSupplier,
 } from "../services/supplierService";
 import ConfirmModal from "./ConfirmModal";
-import FormModal from "./FormModal";
+import FormInput from "./FormInput";
+import FormSelect from "./FormSelect";
+import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
+
+const SUPPLIER_CATEGORIES = [
+  { value: "", label: "Seleccionar categoria" },
+  { value: "Lacteos", label: "Lacteos" },
+  { value: "Carnicos", label: "Carnicos" },
+  { value: "Bebidas", label: "Bebidas" },
+  { value: "Panaderia", label: "Panaderia" },
+  { value: "Abarrotes", label: "Abarrotes" },
+];
+
+const PAYMENT_TERMS = [
+  { value: "Contado", label: "Contado" },
+  { value: "Credito", label: "Credito" },
+];
 
 const EMPTY_SUPPLIER_FORM = {
   name: "",
@@ -202,7 +218,7 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
         </table>
       </div>
 
-      <FormModal
+      <ModalWrapper
         open={isModalOpen}
         onClose={closeModal}
         maxWidthClass="max-w-3xl"
@@ -219,53 +235,40 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
-                Nombre / Razon social
-                <input
-                  required
-                  value={form.name}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
-                NIT
-                <input
-                  value={form.nit}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, nit: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                />
-              </label>
+              <FormInput
+                label="Nombre / Razon social"
+                required
+                value={form.name}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+              <FormInput
+                label="NIT"
+                value={form.nit}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, nit: event.target.value }))
+                }
+              />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
-                Categoria
-                <input
-                  value={form.category}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, category: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
-                Terminos de pago
-                <select
-                  value={form.paymentTerms}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, paymentTerms: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                >
-                  <option value="Contado">Contado</option>
-                  <option value="Credito">Credito</option>
-                </select>
-              </label>
+              <FormSelect
+                label="Categoria"
+                value={form.category}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, category: event.target.value }))
+                }
+                options={SUPPLIER_CATEGORIES}
+              />
+              <FormSelect
+                label="Plazo de pago"
+                value={form.paymentTerms}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, paymentTerms: event.target.value }))
+                }
+                options={PAYMENT_TERMS}
+              />
             </div>
           </section>
 
@@ -277,26 +280,20 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
-                Contacto
-                <input
-                  value={form.contact}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, contact: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
-                Telefono
-                <input
-                  value={form.phone}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, phone: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                />
-              </label>
+              <FormInput
+                label="Contacto"
+                value={form.contact}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, contact: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Telefono"
+                value={form.phone}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, phone: event.target.value }))
+                }
+              />
             </div>
           </section>
 
@@ -323,7 +320,7 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
             </button>
           </div>
         </form>
-      </FormModal>
+      </ModalWrapper>
 
       <ConfirmModal
         open={Boolean(supplierToDelete)}

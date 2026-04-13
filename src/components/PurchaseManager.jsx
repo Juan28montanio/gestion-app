@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { ClipboardList, Plus, Trash2, X } from "lucide-react";
 import { createPurchase } from "../services/purchaseService";
-import FormModal from "./FormModal";
+import FormInput from "./FormInput";
+import FormSelect from "./FormSelect";
+import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 
 const EMPTY_HEADER = {
@@ -63,6 +65,9 @@ export default function PurchaseManager({ businessId, suppliers, supplies, purch
     setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
+  const getSupplyUnit = (ingredientId) =>
+    supplies.find((supply) => supply.id === ingredientId)?.unit || "und";
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setIsSaving(true);
@@ -86,6 +91,7 @@ export default function PurchaseManager({ businessId, suppliers, supplies, purch
             quantity: Number(item.quantity),
             unit_price: Number(item.unitPrice),
             iva_pct: Number(item.ivaPct),
+            unit: ingredient?.unit || "und",
           };
         }),
       });
@@ -127,9 +133,7 @@ export default function PurchaseManager({ businessId, suppliers, supplies, purch
             Resumen
           </p>
           <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(total)}</p>
-          <p className="mt-2 text-sm text-slate-500">
-            Total estimado de la factura actual.
-          </p>
+          <p className="mt-2 text-sm text-slate-500">Total estimado de la factura actual.</p>
         </div>
 
         <div className="overflow-x-auto rounded-[28px] bg-slate-50 p-4 ring-1 ring-slate-200">
@@ -162,122 +166,126 @@ export default function PurchaseManager({ businessId, suppliers, supplies, purch
         </div>
       </div>
 
-      <FormModal
+      <ModalWrapper
         open={isModalOpen}
         onClose={closeModal}
-        maxWidthClass="max-w-5xl"
+        maxWidthClass="max-w-6xl"
         icon={{ main: <ClipboardList size={20} />, close: <X size={18} /> }}
         title="Registrar compra"
         description={`Paso ${step} de 2: ${
-          step === 1 ? "cabecera de la factura." : "detalle dinamico de items."
+          step === 1 ? "cabecera de la factura." : "items de factura con total en tiempo real."
         }`}
       >
         <form onSubmit={handleSubmit} className="grid gap-6">
           {step === 1 ? (
             <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200 md:grid-cols-3">
-              <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
-                Proveedor
-                <select
-                  value={header.supplierId}
-                  onChange={(event) =>
-                    setHeader((current) => ({ ...current, supplierId: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                >
-                  <option value="">Seleccionar proveedor</option>
-                  {suppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2 text-sm font-medium text-slate-700">
-                Fecha
-                <input
-                  type="date"
-                  value={header.purchaseDate}
-                  onChange={(event) =>
-                    setHeader((current) => ({ ...current, purchaseDate: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-3">
-                No. factura
-                <input
-                  value={header.invoiceNumber}
-                  onChange={(event) =>
-                    setHeader((current) => ({ ...current, invoiceNumber: event.target.value }))
-                  }
-                  className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                />
-              </label>
+              <FormSelect
+                className="md:col-span-2"
+                label="Proveedor"
+                value={header.supplierId}
+                onChange={(event) =>
+                  setHeader((current) => ({ ...current, supplierId: event.target.value }))
+                }
+              >
+                <option value="">Seleccionar proveedor</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </FormSelect>
+
+              <FormInput
+                label="Fecha"
+                type="date"
+                value={header.purchaseDate}
+                onChange={(event) =>
+                  setHeader((current) => ({ ...current, purchaseDate: event.target.value }))
+                }
+              />
+
+              <FormInput
+                className="md:col-span-3"
+                label="No. factura"
+                value={header.invoiceNumber}
+                onChange={(event) =>
+                  setHeader((current) => ({ ...current, invoiceNumber: event.target.value }))
+                }
+              />
             </section>
           ) : (
             <section className="grid gap-4">
-              {items.map((item, index) => (
-                <div
-                  key={`purchase-item-${index}`}
-                  className="grid gap-3 rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200 xl:grid-cols-[1.2fr_0.6fr_0.6fr_0.45fr_auto]"
-                >
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Insumo
-                    <select
-                      value={item.ingredientId}
-                      onChange={(event) => updateItemRow(index, "ingredientId", event.target.value)}
-                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                    >
-                      <option value="">Seleccionar insumo</option>
-                      {supplies.map((supply) => (
-                        <option key={supply.id} value={supply.id}>
-                          {supply.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Cantidad
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={item.quantity}
-                      onChange={(event) => updateItemRow(index, "quantity", event.target.value)}
-                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Precio unit.
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={item.unitPrice}
-                      onChange={(event) => updateItemRow(index, "unitPrice", event.target.value)}
-                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    IVA %
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={item.ivaPct}
-                      onChange={(event) => updateItemRow(index, "ivaPct", event.target.value)}
-                      className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-emerald-300"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => removeItemRow(index)}
-                    className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+              <div className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+                <div className="hidden gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 xl:grid xl:grid-cols-[1.3fr_0.65fr_0.5fr_0.65fr_0.45fr_auto]">
+                  <span>Insumo</span>
+                  <span>Cantidad</span>
+                  <span>Unidad</span>
+                  <span>Precio</span>
+                  <span>IVA</span>
+                  <span />
                 </div>
-              ))}
+
+                <div className="mt-4 grid gap-3">
+                  {items.map((item, index) => (
+                    <div
+                      key={`purchase-item-${index}`}
+                      className="grid gap-3 rounded-[24px] bg-white p-4 ring-1 ring-slate-200 xl:grid-cols-[1.3fr_0.65fr_0.5fr_0.65fr_0.45fr_auto]"
+                    >
+                      <FormSelect
+                        label="Insumo"
+                        value={item.ingredientId}
+                        onChange={(event) =>
+                          updateItemRow(index, "ingredientId", event.target.value)
+                        }
+                      >
+                        <option value="">Seleccionar insumo</option>
+                        {supplies.map((supply) => (
+                          <option key={supply.id} value={supply.id}>
+                            {supply.name}
+                          </option>
+                        ))}
+                      </FormSelect>
+
+                      <FormInput
+                        label="Cantidad"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.quantity}
+                        onChange={(event) => updateItemRow(index, "quantity", event.target.value)}
+                      />
+
+                      <FormInput label="Unidad" value={getSupplyUnit(item.ingredientId)} readOnly />
+
+                      <FormInput
+                        label="Precio"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.unitPrice}
+                        onChange={(event) => updateItemRow(index, "unitPrice", event.target.value)}
+                      />
+
+                      <FormInput
+                        label="IVA %"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={item.ivaPct}
+                        onChange={(event) => updateItemRow(index, "ivaPct", event.target.value)}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => removeItemRow(index)}
+                        className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <button
                 type="button"
@@ -295,6 +303,20 @@ export default function PurchaseManager({ businessId, suppliers, supplies, purch
               {feedback.message}
             </div>
           ) : null}
+
+          <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/70 px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                  Total de factura
+                </p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{formatCOP(total)}</p>
+              </div>
+              <p className="max-w-md text-sm text-slate-500">
+                El total se recalcula en tiempo real con cantidad, precio e IVA de cada item.
+              </p>
+            </div>
+          </div>
 
           <div className="flex flex-wrap justify-between gap-3">
             <button
@@ -326,7 +348,7 @@ export default function PurchaseManager({ businessId, suppliers, supplies, purch
             </div>
           </div>
         </form>
-      </FormModal>
+      </ModalWrapper>
     </section>
   );
 }
