@@ -1,3 +1,6 @@
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
+
 export default function ModalWrapper({
   open,
   icon,
@@ -7,15 +10,34 @@ export default function ModalWrapper({
   onClose,
   maxWidthClass = "max-w-3xl",
 }) {
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
 
-  return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/45 px-4 pb-8 pt-20 backdrop-blur-sm sm:px-6 sm:pb-10 sm:pt-24">
-      <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full items-start justify-center sm:min-h-[calc(100vh-8.5rem)]">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] bg-slate-950/45 backdrop-blur-sm">
+      <div className="flex min-h-screen items-center justify-center px-4 py-6 sm:px-6 sm:py-8">
         <div
-          className={`relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200 ${maxWidthClass}`}
+          className="absolute inset-0"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+
+        <div
+          className={`relative z-[1] flex max-h-[85vh] w-full flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200 ${maxWidthClass}`}
         >
           <button
             type="button"
@@ -25,7 +47,7 @@ export default function ModalWrapper({
             {icon?.close || "X"}
           </button>
 
-          <div className="sticky top-0 z-[1] border-b border-slate-100 bg-white px-6 pb-5 pt-6 sm:px-8">
+          <div className="border-b border-slate-100 bg-white px-6 pb-5 pt-6 sm:px-8">
             <div className="inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-100 text-slate-600">
               {icon?.main || null}
             </div>
@@ -38,6 +60,7 @@ export default function ModalWrapper({
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">{children}</div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
