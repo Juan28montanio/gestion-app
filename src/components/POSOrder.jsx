@@ -56,7 +56,7 @@ function TableSelector({ tables, selectedTable, onSelectTable }) {
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className="flex w-full items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-left ring-1 ring-slate-200 transition hover:bg-white md:min-w-[280px]"
+        className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 text-left ring-1 ring-slate-200 transition hover:ring-emerald-300 md:min-w-[280px]"
       >
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Seleccionar mesa</p>
@@ -92,7 +92,9 @@ function TableSelector({ tables, selectedTable, onSelectTable }) {
                     setIsOpen(false);
                   }}
                   className={`flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition ${
-                    isSelected ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-700"
+                    isSelected
+                      ? "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white"
+                      : "bg-slate-50 text-slate-700"
                   }`}
                 >
                   <div>
@@ -132,7 +134,7 @@ function CartPanel({
   mobile = false,
 }) {
   return (
-    <div className={`rounded-[28px] bg-slate-950 p-6 text-white shadow-lg ${mobile ? "h-full rounded-none" : ""}`}>
+    <div className={`rounded-[28px] bg-[linear-gradient(180deg,#0f172a_0%,#1f2937_100%)] p-6 text-white shadow-lg ${mobile ? "h-full rounded-none" : ""}`}>
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Carrito de pedido</h2>
@@ -233,8 +235,8 @@ function CartPanel({
                 onClick={() => setPaymentMethod(option.value)}
                 className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${
                   paymentMethod === option.value
-                    ? "border-sky-500 bg-sky-500 text-white"
-                    : "border-slate-600 bg-transparent text-slate-200 hover:border-slate-400"
+                    ? "border-emerald-400 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-950/20"
+                    : "border-emerald-900/30 bg-white/5 text-slate-200 hover:border-emerald-400/40"
                 }`}
               >
                 {option.label}
@@ -248,7 +250,7 @@ function CartPanel({
             type="button"
             onClick={handleCommand}
             disabled={loading || !selectedTable || cartItems.length === 0}
-            className="rounded-2xl bg-amber-400 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] transition hover:bg-[#fde9a8] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Comandar
           </button>
@@ -258,7 +260,7 @@ function CartPanel({
               type="button"
               onClick={handlePay}
               disabled={loading || !selectedTable || !activeOrder?.id}
-              className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-400 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Pagar
             </button>
@@ -423,7 +425,7 @@ export default function POSOrder({
   return (
     <>
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-[28px] bg-white p-6 shadow-lg ring-1 ring-slate-200">
+        <div className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-5 grid gap-4 xl:grid-cols-[auto_1fr] xl:items-end">
             <TableSelector
               tables={tables}
@@ -473,7 +475,7 @@ export default function POSOrder({
                 onClick={() => setSelectedCategory(category)}
                 className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
                   selectedCategory === category
-                    ? "bg-slate-900 text-white"
+                    ? "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >

@@ -7,7 +7,7 @@ const PAYMENT_METHOD_META = {
   total: {
     label: "Total del dia",
     icon: Wallet,
-    classes: "bg-slate-950 text-white ring-slate-950/10",
+    classes: "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white ring-slate-950/10",
     amountClass: "text-white",
     description: "Vista general",
   },
@@ -35,15 +35,15 @@ const PAYMENT_METHOD_META = {
   nequi: {
     label: "Nequi",
     icon: Smartphone,
-    classes: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200",
-    amountClass: "text-fuchsia-900",
+    classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    amountClass: "text-emerald-900",
     description: "Billetera digital",
   },
   daviplata: {
     label: "Daviplata",
     icon: Smartphone,
-    classes: "bg-amber-50 text-amber-700 ring-amber-200",
-    amountClass: "text-amber-900",
+    classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    amountClass: "text-emerald-900",
     description: "Pago movil",
   },
 };
@@ -107,7 +107,7 @@ export default function AdminDashboard({ businessId }) {
   }, [selectedMethod, summary.sales]);
 
   return (
-    <section className="rounded-[28px] bg-white p-6 shadow-lg ring-1 ring-slate-200">
+    <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
       <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Resumen financiero</h2>
@@ -141,7 +141,7 @@ export default function AdminDashboard({ businessId }) {
                   <p className="text-sm font-semibold">{meta.label}</p>
                   <p className="mt-1 text-xs opacity-80">{meta.description}</p>
                 </div>
-                <div className="rounded-2xl bg-white/70 p-3">
+                <div className="rounded-2xl border border-[#d4a72c]/25 bg-[#fff7df]/85 p-3 text-[#946200]">
                   <Icon size={18} />
                 </div>
               </div>

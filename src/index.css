@@ -1,12 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap");
 @import "tailwindcss";
 @source "./**/*.{js,jsx,ts,tsx}";
 
+@theme {
+  --font-sans: "Inter", "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  --color-smart-slate: #0f172a;
+  --color-smart-slate-soft: #1e293b;
+  --color-smart-emerald: #059669;
+  --color-smart-emerald-deep: #047857;
+  --color-smart-emerald-soft: #d1fae5;
+  --color-smart-gold: #d4a72c;
+  --color-smart-gold-soft: #fff3cf;
+}
+
+:root {
+  font-family: var(--font-sans);
+  color: #0f172a;
+  background:
+    radial-gradient(circle at top, rgba(16, 185, 129, 0.14), transparent 26%),
+    radial-gradient(circle at 85% 15%, rgba(212, 167, 44, 0.12), transparent 20%),
+    #eef2f7;
+}
+
 body {
   margin: 0;
-  font-family: "Segoe UI", sans-serif;
-  background: #f1f5f9;
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(circle at top, rgba(16, 185, 129, 0.14), transparent 26%),
+    radial-gradient(circle at 85% 15%, rgba(212, 167, 44, 0.12), transparent 20%),
+    #eef2f7;
 }
 
 * {
   box-sizing: border-box;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-sans);
+}
+
+#root {
+  min-height: 100vh;
 }

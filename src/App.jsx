@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
-  LayoutGrid,
   Menu,
   Package2,
   PanelLeftClose,
@@ -19,6 +18,7 @@ import TableManager from "./components/TableManager";
 import CustomerMenu from "./components/CustomerMenu";
 import ToastViewport from "./components/ToastViewport";
 import { CartProvider } from "./context/CartContext";
+import { SmartProfitIsotype, SmartProfitWordmark } from "./components/SmartProfitMark";
 
 const BUSINESS_ID = "demo_restaurant_business";
 const PAYMENT_METHOD_LABELS = {
@@ -36,6 +36,57 @@ const NAV_ITEMS = [
   { id: "finance", label: "Finanzas", icon: BarChart3 },
 ];
 
+const SECTION_TITLES = {
+  salon: "Salon",
+  pos: "Punto de Venta",
+  inventory: "Productos",
+  finance: "Finanzas",
+};
+
+function AppFooter() {
+  return (
+    <footer className="mt-8 rounded-[28px] border border-white/60 bg-white/75 px-6 py-4 shadow-lg backdrop-blur">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <SmartProfitIsotype className="h-9 w-9" />
+          <div>
+            <p className="text-sm font-bold text-slate-900">SmartProfit</p>
+            <p className="text-xs text-slate-500">El control que tu rentabilidad merece</p>
+          </div>
+        </div>
+        <p className="text-xs uppercase tracking-[0.22em] text-slate-400">
+          SaaS POS y control operativo
+        </p>
+      </div>
+    </footer>
+  );
+}
+
+function SplashScreen() {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),_transparent_30%),linear-gradient(160deg,#0f172a_0%,#111827_48%,#1f2937_100%)] px-6">
+      <div className="w-full max-w-xl rounded-[36px] border border-white/10 bg-white/6 p-8 text-center shadow-2xl backdrop-blur-xl">
+        <div className="mx-auto flex w-full justify-center">
+          <img
+            src="/smartprofit_logo.png"
+            alt="SmartProfit"
+            className="h-28 w-auto object-contain drop-shadow-[0_18px_50px_rgba(5,150,105,0.25)]"
+          />
+        </div>
+        <p className="mt-6 text-xs font-semibold uppercase tracking-[0.35em] text-emerald-200">
+          SmartProfit
+        </p>
+        <h1 className="mt-3 text-3xl font-black text-white md:text-4xl">
+          El control que tu rentabilidad merece
+        </h1>
+        <p className="mt-4 text-sm leading-6 text-slate-300">
+          Inteligencia operativa para restaurante, punto de venta y control financiero.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [selectedTable, setSelectedTable] = useState(null);
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -45,6 +96,7 @@ export default function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
+  const [isBooting, setIsBooting] = useState(true);
 
   useEffect(() => {
     const handleNavigation = () => setPathname(window.location.pathname);
@@ -57,11 +109,14 @@ export default function App() {
     window.addEventListener("offline", handleOffline);
     window.addEventListener("resize", handleResize);
 
+    const splashTimeout = window.setTimeout(() => setIsBooting(false), 1200);
+
     return () => {
       window.removeEventListener("popstate", handleNavigation);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("resize", handleResize);
+      window.clearTimeout(splashTimeout);
     };
   }, []);
 
@@ -102,6 +157,13 @@ export default function App() {
     []
   );
 
+  useEffect(() => {
+    const sectionLabel = SECTION_TITLES[activeSection] || "Dashboard";
+    document.title = menuRoute
+      ? "SmartProfit | Menu digital"
+      : `SmartProfit | ${sectionLabel}`;
+  }, [activeSection, menuRoute]);
+
   if (menuRoute) {
     return (
       <>
@@ -114,26 +176,23 @@ export default function App() {
   return (
     <>
       <CartProvider>
-        <main className="min-h-screen bg-slate-100 text-slate-900">
+        <main className="min-h-screen bg-transparent text-slate-900">
+          {isBooting ? <SplashScreen /> : null}
+
           <div className="mx-auto flex min-h-screen max-w-[1800px]">
             {isMobileSidebarOpen ? (
               <div className="fixed inset-0 z-40 lg:hidden">
                 <div
-                  className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
+                  className="absolute inset-0 bg-slate-950/55 backdrop-blur-sm"
                   onClick={() => setIsMobileSidebarOpen(false)}
                 />
-                <aside className="absolute inset-y-0 left-0 flex w-72 flex-col border-r border-slate-200 bg-white px-5 py-6 shadow-2xl">
-                  <div className="rounded-[28px] bg-slate-950 p-5 text-white shadow-lg">
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                      Pacifica Control
-                    </p>
-                    <h1 className="mt-3 text-2xl font-semibold">Dashboard operativo</h1>
-                    <p className="mt-2 text-sm text-slate-300">
-                      Salon, ventas, productos y finanzas en una sola vista.
-                    </p>
-                  </div>
+                <aside className="absolute inset-y-0 left-0 flex w-72 flex-col border-r border-emerald-900/15 bg-[linear-gradient(180deg,#0f172a_0%,#111827_100%)] px-5 py-6 text-white shadow-2xl">
+                  <SmartProfitWordmark />
+                  <p className="mt-5 text-sm text-slate-300">
+                    El control que tu rentabilidad merece.
+                  </p>
 
-                  <nav className="mt-6 grid gap-2">
+                  <nav className="mt-8 grid gap-2">
                     {NAV_ITEMS.map((item) => {
                       const Icon = item.icon;
                       const isActive = activeSection === item.id;
@@ -148,8 +207,8 @@ export default function App() {
                           }}
                           className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
                             isActive
-                              ? "bg-slate-950 text-white shadow-lg"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-950/30"
+                              : "bg-white/6 text-slate-300 hover:bg-white/10"
                           }`}
                         >
                           <Icon size={18} />
@@ -163,19 +222,20 @@ export default function App() {
             ) : null}
 
             <aside
-              className={`sticky top-0 hidden h-screen shrink-0 border-r border-slate-200 bg-white py-6 transition-all lg:flex lg:flex-col ${
+              className={`sticky top-0 hidden h-screen shrink-0 border-r border-emerald-950/10 bg-[linear-gradient(180deg,#0f172a_0%,#111827_100%)] py-6 text-white transition-all lg:flex lg:flex-col ${
                 isSidebarCollapsed ? "w-24 px-3" : "w-72 px-5"
               }`}
             >
-              <div className="rounded-[28px] bg-slate-950 p-5 text-white shadow-lg">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Pacifica Control
-                </p>
+              <div className="rounded-[30px] border border-white/8 bg-white/6 p-5 shadow-xl backdrop-blur">
+                <SmartProfitWordmark collapsed={isSidebarCollapsed} />
                 {!isSidebarCollapsed ? (
                   <>
-                    <h1 className="mt-3 text-2xl font-semibold">Dashboard operativo</h1>
-                    <p className="mt-2 text-sm text-slate-300">
-                      Salon, ventas, productos y finanzas en una sola vista.
+                    <p className="mt-5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">
+                      SmartProfit
+                    </p>
+                    <h1 className="mt-3 text-2xl font-black text-white">Dashboard operativo</h1>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">
+                      El control que tu rentabilidad merece.
                     </p>
                   </>
                 ) : null}
@@ -193,8 +253,8 @@ export default function App() {
                       onClick={() => setActiveSection(item.id)}
                       className={`flex items-center rounded-2xl py-3 text-left text-sm font-semibold transition ${
                         isActive
-                          ? "bg-slate-950 text-white shadow-lg"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-950/30"
+                          : "bg-white/6 text-slate-300 hover:bg-white/10"
                       } ${isSidebarCollapsed ? "justify-center px-2" : "gap-3 px-4"}`}
                     >
                       <Icon size={18} />
@@ -204,15 +264,17 @@ export default function App() {
                 })}
               </nav>
 
-              <div className="mt-auto rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
-                <div className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "gap-3"}`}>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200">
-                    <LayoutGrid size={18} className="text-slate-500" />
+              <div className="mt-auto rounded-[28px] border border-[#d4a72c]/20 bg-[linear-gradient(135deg,rgba(212,167,44,0.16),rgba(15,23,42,0.15))] p-5 ring-1 ring-white/5">
+                <div
+                  className={`flex items-center ${isSidebarCollapsed ? "justify-center" : "gap-3"}`}
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/10">
+                    <SmartProfitIsotype className="h-7 w-7" />
                   </div>
                   {!isSidebarCollapsed ? (
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">Restaurante demo</p>
-                      <p className="text-xs text-slate-500">Multi-tenant listo para operar</p>
+                      <p className="text-sm font-bold text-white">SmartProfit SaaS</p>
+                      <p className="text-xs text-slate-300">Gestion y rentabilidad en tiempo real</p>
                     </div>
                   ) : null}
                 </div>
@@ -220,14 +282,9 @@ export default function App() {
             </aside>
 
             <div className="flex min-w-0 flex-1 flex-col">
-              <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur md:px-6">
+              <header className="sticky top-0 z-30 border-b border-white/60 bg-white/80 px-4 py-3 backdrop-blur-xl md:px-6">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Pacifica Control</p>
-                    <p className="text-xs capitalize text-slate-500">{currentDateLabel}</p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <button
                       type="button"
                       onClick={() => {
@@ -237,7 +294,7 @@ export default function App() {
                           setIsMobileSidebarOpen(true);
                         }
                       }}
-                      className="inline-flex items-center justify-center rounded-2xl bg-slate-100 p-2.5 text-slate-600 transition hover:bg-slate-200"
+                      className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2.5 text-slate-600 transition hover:bg-slate-50"
                     >
                       {isDesktop ? (
                         isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />
@@ -246,6 +303,16 @@ export default function App() {
                       )}
                     </button>
 
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">SmartProfit</p>
+                      <p className="text-xs capitalize text-slate-500">{currentDateLabel}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-[#d4a72c]/30 bg-[#fff7df] px-3 py-1.5 text-xs font-semibold text-[#946200]">
+                      Rentabilidad inteligente
+                    </span>
                     <span
                       className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ${
                         isOnline
@@ -299,6 +366,8 @@ export default function App() {
                 {activeSection === "finance" ? (
                   <AdminDashboard businessId={BUSINESS_ID} />
                 ) : null}
+
+                <AppFooter />
               </div>
             </div>
           </div>

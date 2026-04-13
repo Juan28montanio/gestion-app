@@ -11,14 +11,14 @@ import {
 import { subscribeToTables } from "../services/tableService";
 
 const TABLE_STATUS_STYLES = {
-  disponible: "bg-emerald-500 text-white",
-  ocupada: "bg-rose-500 text-white",
-  cuenta_solicitada: "bg-amber-400 text-slate-900",
-  pagada: "bg-sky-500 text-white",
-  free: "bg-emerald-500 text-white",
-  occupied: "bg-rose-500 text-white",
-  requested_bill: "bg-amber-400 text-slate-900",
-  paid: "bg-sky-500 text-white",
+  disponible: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  ocupada: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+  cuenta_solicitada: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+  pagada: "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
+  free: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+  occupied: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+  requested_bill: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+  paid: "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
 };
 
 const TABLE_STATUS_LABELS = {
@@ -57,7 +57,7 @@ export default function TableView({
   }, [businessId]);
 
   return (
-    <section className="rounded-3xl bg-white p-6 shadow-lg ring-1 ring-slate-200">
+    <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Mapa de Mesas</h2>
@@ -83,20 +83,20 @@ export default function TableView({
                 key={table.id}
                 type="button"
                 onClick={() => onSelectTable(table)}
-                className={`h-23 rounded-2xl p-3 text-left transition ${
+                className={`h-23 rounded-[24px] p-3 text-left transition ${
                   isSelected
-                    ? "shadow-md ring-2 ring-slate-900"
-                    : "shadow-sm hover:shadow-md"
+                    ? "shadow-lg ring-2 ring-emerald-500"
+                    : "shadow-sm ring-1 ring-white/60 hover:shadow-md"
                 }`}
                 style={{
                   background:
                     table.status === "ocupada" || table.status === "occupied"
-                      ? "#fee2e2"
+                      ? "linear-gradient(180deg,#fff1f2 0%,#ffe4e6 100%)"
                       : table.status === "cuenta_solicitada" || table.status === "requested_bill"
-                        ? "#fef3c7"
+                        ? "linear-gradient(180deg,#fffbeb 0%,#fef3c7 100%)"
                         : table.status === "pagada" || table.status === "paid"
-                          ? "#dbeafe"
-                          : "#dcfce7",
+                          ? "linear-gradient(180deg,#eff6ff 0%,#dbeafe 100%)"
+                          : "linear-gradient(180deg,#ecfdf5 0%,#d1fae5 100%)",
                 }}
               >
                 <div className="flex h-full flex-col justify-between">
@@ -119,7 +119,7 @@ export default function TableView({
                         </div>
                         <span className="truncate">{table.name || `Mesa ${table.number}`}</span>
                       </div>
-                      <h3 className="text-xl font-bold text-slate-900">{table.number}</h3>
+                      <h3 className="text-xl font-black text-slate-950">{table.number}</h3>
                     </div>
                   </div>
 
@@ -128,9 +128,7 @@ export default function TableView({
                       {table.capacity || table.seats} puestos
                     </p>
 
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusStyle}`}
-                    >
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusStyle}`}>
                       {statusLabel}
                     </span>
                   </div>
