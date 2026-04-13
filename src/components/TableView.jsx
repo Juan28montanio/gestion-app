@@ -83,7 +83,7 @@ export default function TableView({
                 key={table.id}
                 type="button"
                 onClick={() => onSelectTable(table)}
-                className={`h-23 rounded-[24px] p-3 text-left transition ${
+                className={`h-23 rounded-3xl p-3 text-left transition ${
                   isSelected
                     ? "shadow-lg ring-2 ring-emerald-500"
                     : "shadow-sm ring-1 ring-white/60 hover:shadow-md"

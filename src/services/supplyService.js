@@ -12,13 +12,18 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 
-const suppliesCollection = collection(db, "supplies");
+const ingredientsCollection = collection(db, "ingredients");
 
 function normalizeSupplyPayload(supply, businessId) {
   const name = String(supply?.name || "").trim();
-  const unit = String(supply?.unit || "").trim().toLowerCase();
-  const costPerUnit = Number(supply?.cost_per_unit ?? supply?.costPerUnit);
+  const unit = String(supply?.unit || supply?.base_unit || "").trim().toLowerCase();
   const stock = Number(supply?.stock);
+  const stockMinAlert = Number(supply?.stock_min_alert ?? supply?.stockMinAlert ?? 0);
+  const averageCost =
+    Number(supply?.average_cost ?? supply?.cost_per_unit ?? supply?.costPerUnit) || 0;
+  const lastPurchaseCost =
+    Number(supply?.last_purchase_cost ?? supply?.lastPurchaseCost ?? averageCost) || 0;
+  const category = String(supply?.category || "").trim();
   const normalizedBusinessId = String(supply?.business_id || businessId || "").trim();
 
   if (!name) {
@@ -33,19 +38,32 @@ function normalizeSupplyPayload(supply, businessId) {
     throw new Error("El business_id del insumo es obligatorio.");
   }
 
-  if (!Number.isFinite(costPerUnit) || costPerUnit < 0) {
-    throw new Error("El costo por unidad debe ser un numero valido mayor o igual a 0.");
-  }
-
   if (!Number.isFinite(stock) || stock < 0) {
     throw new Error("El stock del insumo debe ser un numero valido mayor o igual a 0.");
+  }
+
+  if (!Number.isFinite(stockMinAlert) || stockMinAlert < 0) {
+    throw new Error("El stock minimo debe ser un numero valido mayor o igual a 0.");
+  }
+
+  if (!Number.isFinite(averageCost) || averageCost < 0) {
+    throw new Error("El costo promedio debe ser un numero valido mayor o igual a 0.");
+  }
+
+  if (!Number.isFinite(lastPurchaseCost) || lastPurchaseCost < 0) {
+    throw new Error("El ultimo costo de compra debe ser un numero valido mayor o igual a 0.");
   }
 
   return {
     name,
     unit,
-    cost_per_unit: costPerUnit,
+    base_unit: unit,
     stock,
+    stock_min_alert: stockMinAlert,
+    average_cost: averageCost,
+    cost_per_unit: averageCost,
+    last_purchase_cost: lastPurchaseCost,
+    category,
     business_id: normalizedBusinessId,
   };
 }
@@ -56,13 +74,13 @@ export function subscribeToSupplies(businessId, callback) {
     return () => {};
   }
 
-  const suppliesQuery = query(
-    suppliesCollection,
+  const ingredientsQuery = query(
+    ingredientsCollection,
     where("business_id", "==", businessId),
     orderBy("name", "asc")
   );
 
-  return onSnapshot(suppliesQuery, (snapshot) => {
+  return onSnapshot(ingredientsQuery, (snapshot) => {
     callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
   });
 }
@@ -70,7 +88,7 @@ export function subscribeToSupplies(businessId, callback) {
 export async function createSupply(businessId, supply) {
   const payload = normalizeSupplyPayload(supply, businessId);
 
-  const createdSupply = await addDoc(suppliesCollection, {
+  const createdSupply = await addDoc(ingredientsCollection, {
     ...payload,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -86,7 +104,7 @@ export async function updateSupply(supplyId, businessId, supply) {
 
   const payload = normalizeSupplyPayload(supply, businessId);
 
-  await updateDoc(doc(db, "supplies", supplyId), {
+  await updateDoc(doc(db, "ingredients", supplyId), {
     ...payload,
     updatedAt: serverTimestamp(),
   });
@@ -97,5 +115,5 @@ export async function deleteSupply(supplyId) {
     throw new Error("El id del insumo es obligatorio para eliminar.");
   }
 
-  await deleteDoc(doc(db, "supplies", supplyId));
+  await deleteDoc(doc(db, "ingredients", supplyId));
 }

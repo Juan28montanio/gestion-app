@@ -2,6 +2,7 @@ import {
   Timestamp,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   query,
   runTransaction,
@@ -15,6 +16,81 @@ const startOfDay = () => {
   date.setHours(0, 0, 0, 0);
   return Timestamp.fromDate(date);
 };
+
+async function decrementIngredientsForSale(businessId, orderItems) {
+  const normalizedBusinessId = String(businessId || "").trim();
+
+  if (!normalizedBusinessId || !Array.isArray(orderItems) || orderItems.length === 0) {
+    return;
+  }
+
+  const productIds = orderItems
+    .map((item) => String(item?.id || item?.productId || "").trim())
+    .filter(Boolean);
+
+  if (!productIds.length) {
+    return;
+  }
+
+  const recipeBooksSnapshot = await getDocs(
+    query(collection(db, "recipeBooks"), where("business_id", "==", normalizedBusinessId))
+  );
+
+  const recipeBooks = recipeBooksSnapshot.docs
+    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+    .filter((recipeBook) => productIds.includes(String(recipeBook.product_id || "").trim()));
+
+  if (!recipeBooks.length) {
+    return;
+  }
+
+  await runTransaction(db, async (transaction) => {
+    const ingredientAdjustments = new Map();
+
+    orderItems.forEach((item) => {
+      const productId = String(item?.id || item?.productId || "").trim();
+      const quantitySold = Number(item?.quantity || 0);
+      const recipeBook = recipeBooks.find(
+        (candidate) => String(candidate.product_id || "").trim() === productId
+      );
+
+      if (!recipeBook || !Array.isArray(recipeBook.ingredients)) {
+        return;
+      }
+
+      recipeBook.ingredients.forEach((ingredient) => {
+        const ingredientId = String(ingredient?.ingredient_id || "").trim();
+        const recipeQuantity = Number(ingredient?.quantity || 0);
+
+        if (!ingredientId || !Number.isFinite(recipeQuantity) || recipeQuantity <= 0) {
+          return;
+        }
+
+        ingredientAdjustments.set(
+          ingredientId,
+          (ingredientAdjustments.get(ingredientId) || 0) + recipeQuantity * quantitySold
+        );
+      });
+    });
+
+    for (const [ingredientId, quantityToDiscount] of ingredientAdjustments.entries()) {
+      const ingredientRef = doc(db, "ingredients", ingredientId);
+      const ingredientSnapshot = await transaction.get(ingredientRef);
+
+      if (!ingredientSnapshot.exists()) {
+        continue;
+      }
+
+      const ingredientData = ingredientSnapshot.data();
+      const currentStock = Number(ingredientData.stock || 0);
+
+      transaction.update(ingredientRef, {
+        stock: Math.max(currentStock - quantityToDiscount, 0),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  });
+}
 
 export async function closeOrderAndLogSale(orderId, paymentMethod, options = {}) {
   const normalizedOrderId = String(orderId || "").trim();
@@ -30,6 +106,8 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
   const orderRef = doc(db, "orders", normalizedOrderId);
   const salesCollection = collection(db, "sales_history");
+  let orderItemsForInventory = [];
+  let businessIdForInventory = "";
 
   await runTransaction(db, async (transaction) => {
     const orderSnapshot = await transaction.get(orderRef);
@@ -80,7 +158,12 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       current_order_id: null,
       updatedAt: serverTimestamp(),
     });
+
+    orderItemsForInventory = orderData.items || [];
+    businessIdForInventory = resolvedBusinessId;
   });
+
+  await decrementIngredientsForSale(businessIdForInventory, orderItemsForInventory);
 }
 
 export function subscribeToDailySales(businessId, callback) {
