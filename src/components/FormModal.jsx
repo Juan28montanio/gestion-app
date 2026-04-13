@@ -12,10 +12,11 @@ export default function FormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
-      <div
-        className={`relative flex max-h-[88vh] w-full flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl ring-1 ring-slate-200 ${maxWidthClass}`}
-      >
+    <div className="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/45 px-4 pb-8 pt-24 backdrop-blur-sm sm:px-6 sm:pb-10 sm:pt-28">
+      <div className="mx-auto flex min-h-[calc(100vh-8rem)] w-full items-start justify-center sm:min-h-[calc(100vh-9.5rem)]">
+        <div
+          className={`relative flex max-h-[calc(100vh-8rem)] w-full flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl ring-1 ring-slate-200 sm:max-h-[calc(100vh-9.5rem)] ${maxWidthClass}`}
+        >
         <button
           type="button"
           onClick={onClose}
@@ -24,7 +25,7 @@ export default function FormModal({
           {icon?.close || "X"}
         </button>
 
-        <div className="border-b border-slate-100 px-6 pb-5 pt-6 sm:px-8">
+        <div className="sticky top-0 z-[1] border-b border-slate-100 bg-white px-6 pb-5 pt-6 sm:px-8">
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-100 text-slate-600">
             {icon?.main || null}
           </div>
@@ -35,6 +36,7 @@ export default function FormModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">{children}</div>
+        </div>
       </div>
     </div>
   );

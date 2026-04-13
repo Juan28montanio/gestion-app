@@ -45,7 +45,7 @@ const SECTION_TITLES = {
 
 function AppFooter() {
   return (
-    <footer className="mt-8 rounded-[28px] border border-white/60 bg-white/75 px-6 py-4 shadow-lg backdrop-blur">
+    <footer className="relative z-0 mt-10 rounded-[28px] border border-white/60 bg-white/75 px-6 py-4 shadow-lg backdrop-blur">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
           <SmartProfitIsotype className="h-9 w-9" />
@@ -327,7 +327,7 @@ export default function App() {
                 </div>
               </header>
 
-              <div className="flex-1 px-4 py-6 pb-28 md:px-6 md:pb-32">
+              <div className="flex-1 px-4 py-6 pb-36 md:px-6 md:pb-40">
                 {activeSection === "salon" ? (
                   <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
                     <TableView
