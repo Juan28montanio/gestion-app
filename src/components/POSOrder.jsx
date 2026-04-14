@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -151,6 +151,7 @@ function CartPanel({
   adjustmentAmount,
   adjustmentPct,
   debtAmount,
+  cartNotice,
   paymentMethod,
   setPaymentMethod,
   loading,
@@ -275,6 +276,12 @@ function CartPanel({
       </div>
 
       <div className="mt-6 border-t border-slate-800 pt-4">
+        {cartNotice ? (
+          <div className="mb-4 rounded-2xl bg-amber-500/10 px-4 py-3 text-xs text-amber-100 ring-1 ring-amber-400/20">
+            {cartNotice}
+          </div>
+        ) : null}
+
         <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
           <div className="flex items-center justify-between text-sm text-slate-300">
             <span>Total real de productos</span>
@@ -387,6 +394,8 @@ export default function POSOrder({
   const [loading, setLoading] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [cartNotice, setCartNotice] = useState("");
+  const previousTableIdRef = useRef(null);
   const {
     cartItems,
     activeOrder,
@@ -416,17 +425,34 @@ export default function POSOrder({
     if (!selectedTable?.id) {
       clearCart();
       setSelectedCustomer(null);
+      previousTableIdRef.current = null;
       return undefined;
     }
 
     const unsubscribeOrder = subscribeToActiveOrder(
       businessId,
       selectedTable.id,
-      loadOrderIntoCart
+      (order) => {
+        const previousTableId = previousTableIdRef.current;
+        const isFirstTableAssignment = !previousTableId;
+        const isSwitchingTables = Boolean(previousTableId && previousTableId !== selectedTable.id);
+
+        if (order) {
+          loadOrderIntoCart(order);
+        } else if (isFirstTableAssignment && cartItems.length > 0) {
+          loadOrderIntoCart(null, { preserveItemsOnEmpty: true });
+        } else if (isSwitchingTables) {
+          clearCart();
+        } else {
+          loadOrderIntoCart(null);
+        }
+
+        previousTableIdRef.current = selectedTable.id;
+      }
     );
 
     return () => unsubscribeOrder();
-  }, [businessId, clearCart, loadOrderIntoCart, selectedTable?.id]);
+  }, [businessId, cartItems.length, clearCart, loadOrderIntoCart, selectedTable?.id]);
 
   useEffect(() => {
     if (activeOrder?.customer_id) {
@@ -480,10 +506,18 @@ export default function POSOrder({
   const handleAddProduct = (product) => {
     addItem(product);
     setIsCartDrawerOpen(true);
+    if (!selectedTable?.id) {
+      setCartNotice("Pedido en borrador. Selecciona una mesa para asociarlo antes de comandar.");
+    } else {
+      setCartNotice("");
+    }
   };
 
   const handleCommand = async () => {
     if (!selectedTable?.id || cartItems.length === 0) {
+      if (!selectedTable?.id) {
+        setCartNotice("Selecciona una mesa para poder comandar el pedido.");
+      }
       return;
     }
 
@@ -497,6 +531,7 @@ export default function POSOrder({
         orderId: activeOrder?.id,
         customer: selectedCustomer,
       });
+      setCartNotice("");
     } finally {
       setLoading(false);
     }
@@ -522,6 +557,7 @@ export default function POSOrder({
       clearCart();
       setSelectedCustomer(null);
       setIsCartDrawerOpen(false);
+      setCartNotice("");
       onOrderPaid?.();
     } finally {
       setLoading(false);
@@ -543,6 +579,7 @@ export default function POSOrder({
       setSelectedCustomer(null);
       setIsCartDrawerOpen(false);
       setIsCancelConfirmOpen(false);
+      setCartNotice("");
       onOrderCancelled?.();
     } finally {
       setLoading(false);
@@ -669,6 +706,7 @@ export default function POSOrder({
             adjustmentAmount={adjustmentAmount}
             adjustmentPct={adjustmentPct}
             debtAmount={debtAmount}
+            cartNotice={cartNotice}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
             loading={loading}
@@ -701,6 +739,7 @@ export default function POSOrder({
               adjustmentAmount={adjustmentAmount}
               adjustmentPct={adjustmentPct}
               debtAmount={debtAmount}
+              cartNotice={cartNotice}
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
               loading={loading}

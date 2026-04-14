@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 const CartContext = createContext(null);
 
@@ -35,29 +35,34 @@ export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
 
-  const addItem = (product, modifiers = [], note = "") => {
+  const addItem = useCallback((product, modifiers = [], note = "") => {
     setCartItems((current) => [...current, buildCartItem(product, modifiers, note)]);
-  };
+  }, []);
 
-  const updateItem = (lineId, updates) => {
+  const updateItem = useCallback((lineId, updates) => {
     setCartItems((current) =>
       current.map((item) =>
         item.lineId === lineId ? { ...item, ...updates } : item
       )
     );
-  };
+  }, []);
 
-  const removeItem = (lineId) => {
+  const removeItem = useCallback((lineId) => {
     setCartItems((current) => current.filter((item) => item.lineId !== lineId));
-  };
+  }, []);
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCartItems([]);
     setActiveOrder(null);
-  };
+  }, []);
 
-  const loadOrderIntoCart = (order) => {
+  const loadOrderIntoCart = useCallback((order, options = {}) => {
+    const shouldPreserveItemsOnEmpty = Boolean(options.preserveItemsOnEmpty);
     setActiveOrder(order);
+    if (!order && shouldPreserveItemsOnEmpty) {
+      return;
+    }
+
     setCartItems(
       (order?.items || []).map((item) => ({
         lineId: item.lineId || createLineId(),
@@ -65,7 +70,7 @@ export function CartProvider({ children }) {
         ...item,
       }))
     );
-  };
+  }, []);
 
   const total = useMemo(
     () => cartItems.reduce((sum, item) => sum + getItemTotal(item), 0),
@@ -85,7 +90,17 @@ export function CartProvider({ children }) {
       loadOrderIntoCart,
       total,
     }),
-    [selectedTable, cartItems, activeOrder, total]
+    [
+      selectedTable,
+      cartItems,
+      activeOrder,
+      addItem,
+      updateItem,
+      removeItem,
+      clearCart,
+      loadOrderIntoCart,
+      total,
+    ]
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
