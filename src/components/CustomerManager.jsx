@@ -3,6 +3,7 @@ import { Pencil, Plus, Trash2, UserRound, X } from "lucide-react";
 import {
   createCustomer,
   deleteCustomer,
+  getTicketWalletState,
   subscribeToCustomers,
   updateCustomer,
 } from "../services/customerService";
@@ -17,6 +18,10 @@ const EMPTY_CUSTOMER_FORM = {
   phone: "",
   email: "",
   notes: "",
+  ticketBalanceUnits: 0,
+  ticketTotalPurchased: 0,
+  ticketLastUsedAt: null,
+  ticketExpiresAt: null,
 };
 
 function buildCustomerForm(customer) {
@@ -29,6 +34,10 @@ function buildCustomerForm(customer) {
     phone: customer.phone || "",
     email: customer.email || "",
     notes: customer.notes || "",
+    ticketBalanceUnits: Number(customer.ticket_balance_units || 0),
+    ticketTotalPurchased: Number(customer.ticket_total_purchased || 0),
+    ticketLastUsedAt: customer.ticket_last_used_at || null,
+    ticketExpiresAt: customer.ticket_expires_at || null,
   };
 }
 
@@ -70,6 +79,7 @@ export default function CustomerManager({ businessId }) {
         ...customer,
         orderCount: customerSales.length,
         debtBalance: Number(customer.debt_balance || 0),
+        ticketWallet: getTicketWalletState(customer),
         frequentProducts,
         history: customerSales.slice(0, 5),
       };
@@ -178,15 +188,24 @@ export default function CustomerManager({ businessId }) {
                     {customer.phone || "Sin telefono"} {customer.email ? `· ${customer.email}` : ""}
                   </p>
                 </div>
-                <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
-                  Deuda {formatCOP(customer.debtBalance)}
-                </span>
+                <div className="flex flex-col items-end gap-2">
+                  <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
+                    Deuda {formatCOP(customer.debtBalance)}
+                  </span>
+                  <span className="rounded-full bg-[#fff7df] px-3 py-1 text-xs font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20">
+                    Tiquetera {customer.ticketWallet.balance}
+                  </span>
+                </div>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="mt-5 grid gap-3 sm:grid-cols-4">
                 <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Pedidos</p>
                   <p className="mt-2 font-semibold text-slate-900">{customer.orderCount}</p>
+                </div>
+                <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Saldo ticket</p>
+                  <p className="mt-2 font-semibold text-slate-900">{customer.ticketWallet.balance}</p>
                 </div>
                 <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200 sm:col-span-2">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Frecuentes</p>

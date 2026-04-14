@@ -39,6 +39,7 @@ const PAYMENT_METHOD_LABELS = {
   transfer: "Transferencia",
   nequi: "Nequi",
   daviplata: "Daviplata",
+  ticket_wallet: "Tiquetera",
 };
 
 const PAYMENT_METHOD_STYLES = {
@@ -48,6 +49,7 @@ const PAYMENT_METHOD_STYLES = {
   transfer: "from-indigo-500 to-indigo-600 text-white ring-indigo-500/20",
   nequi: "from-fuchsia-500 to-fuchsia-600 text-white ring-fuchsia-500/20",
   daviplata: "from-rose-500 to-pink-600 text-white ring-rose-500/20",
+  ticket_wallet: "from-amber-500 to-[#d4a72c] text-white ring-[#d4a72c]/20",
 };
 
 function getLocalDateInputValue(date = new Date()) {
@@ -192,7 +194,7 @@ export default function AdminDashboard({ businessId }) {
         accumulator[method] = (accumulator[method] || 0) + Number(sale.total || 0);
         return accumulator;
       },
-      { cash: 0, card: 0, transfer: 0, nequi: 0, daviplata: 0 }
+      { cash: 0, card: 0, transfer: 0, nequi: 0, daviplata: 0, ticket_wallet: 0 }
     );
   }, [sales]);
 
@@ -290,6 +292,10 @@ export default function AdminDashboard({ businessId }) {
       countedCash,
       difference: countedCash - expectedCash,
       expenses: todayExpenses,
+      ticketWalletUnits: todayMovements.reduce(
+        (sum, movement) => sum + Number(movement.raw?.ticket_units_consumed || 0),
+        0
+      ),
     };
   }, [cashCounted, openSession, paymentMethodTotals.cash, todayMovements]);
 
@@ -489,7 +495,7 @@ export default function AdminDashboard({ businessId }) {
           </div>
 
           <div className="mb-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            {["all", "cash", "card", "transfer", "nequi", "daviplata"].map((method) => {
+            {["all", "cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map((method) => {
               const isActive = selectedPaymentMethod === method;
               const total = method === "all" ? filteredSummary.income : paymentMethodTotals[method] || 0;
               const Icon = method === "all" ? Wallet : CreditCard;
@@ -551,7 +557,13 @@ export default function AdminDashboard({ businessId }) {
                     <td className="py-3 pr-4 font-medium text-slate-900">{movement.concept}</td>
                     <td className="py-3 pr-4">
                       {movement.type === "income" ? (
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            movement.paymentMethod === "ticket_wallet"
+                              ? "bg-[#fff7df] text-[#946200]"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
                           {PAYMENT_METHOD_LABELS[movement.paymentMethod] || movement.paymentMethod}
                         </span>
                       ) : (
@@ -725,6 +737,10 @@ export default function AdminDashboard({ businessId }) {
                 <div className="flex items-center justify-between">
                   <span>Diferencia</span>
                   <span className="font-semibold">{formatCOP(closingPreview?.difference || 0)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Servicios por tiquetera</span>
+                  <span className="font-semibold">{closingPreview?.ticketWalletUnits || 0} uds</span>
                 </div>
               </div>
             </div>

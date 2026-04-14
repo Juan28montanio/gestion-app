@@ -13,9 +13,13 @@ const createLineId = () => {
 const buildCartItem = (product, modifiers = [], note = "") => ({
   lineId: createLineId(),
   productId: product.id,
+  id: product.id,
   name: product.name,
   category: product.category,
   price: Number(product.price) || 0,
+  product_type: product.product_type || "standard",
+  ticket_units: Number(product.ticket_units || 0),
+  ticket_validity_days: Number(product.ticket_validity_days || 30),
   quantity: 1,
   modifiers,
   note,

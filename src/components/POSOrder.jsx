@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useCart } from "../context/CartContext";
-import { subscribeToCustomers } from "../services/customerService";
+import { getTicketWalletState, subscribeToCustomers } from "../services/customerService";
 import { subscribeToProducts } from "../services/productService";
 import { subscribeToTables } from "../services/tableService";
 import {
@@ -147,6 +147,7 @@ function SearchSelector({
 function CartPanel({
   selectedTable,
   selectedCustomer,
+  selectedCustomerTicketState,
   customers,
   setSelectedCustomer,
   cartItems,
@@ -166,6 +167,7 @@ function CartPanel({
   removeItem,
   handleCommand,
   handlePay,
+  handleTicketPay,
   handleOpenCancel,
   onClose,
   mobile = false,
@@ -290,6 +292,12 @@ function CartPanel({
           </div>
         ) : null}
 
+        {selectedCustomer && selectedCustomerTicketState?.lowBalance ? (
+          <div className="mb-4 rounded-2xl bg-amber-500/10 px-4 py-3 text-xs text-amber-100 ring-1 ring-amber-400/20">
+            Aviso: ultimos {selectedCustomerTicketState.balance} almuerzos disponibles. Sugerir renovacion.
+          </div>
+        ) : null}
+
         {cashLockInfo?.blocked ? (
           <div className="mb-4 rounded-2xl bg-rose-500/10 px-4 py-3 text-xs text-rose-200 ring-1 ring-rose-400/20">
             {cashLockInfo.message}
@@ -336,6 +344,17 @@ function CartPanel({
         </div>
 
         <div className="mb-5 mt-5">
+          {selectedCustomer && selectedCustomerTicketState?.isActive ? (
+            <button
+              type="button"
+              onClick={handleTicketPay}
+              disabled={loading || !selectedTable || (!activeOrder?.id && cartItems.length === 0)}
+              className="mb-4 w-full rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] transition hover:bg-[#fde9a8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Pagar con Ticket (Saldo: {selectedCustomerTicketState.balance})
+            </button>
+          ) : null}
+
           <p className="mb-3 text-sm text-slate-300">Metodo de pago</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {PAYMENT_OPTIONS.map((option) => (
@@ -413,6 +432,7 @@ export default function POSOrder({
   const [loading, setLoading] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
+  const [isTicketConfirmOpen, setIsTicketConfirmOpen] = useState(false);
   const [cartNotice, setCartNotice] = useState("");
   const [openCashSession, setOpenCashSession] = useState(null);
   const previousTableIdRef = useRef(null);
@@ -539,6 +559,10 @@ export default function POSOrder({
   const adjustmentAmount = chargedTotal - total;
   const adjustmentPct = total > 0 ? (adjustmentAmount / total) * 100 : 0;
   const debtAmount = selectedCustomer && chargedTotal < total ? total - chargedTotal : 0;
+  const selectedCustomerTicketState = useMemo(
+    () => getTicketWalletState(selectedCustomer),
+    [selectedCustomer]
+  );
 
   const handleAddProduct = (product) => {
     addItem(product);
@@ -626,6 +650,76 @@ export default function POSOrder({
     } finally {
       setLoading(false);
     }
+  };
+
+  const finalizeTicketPayment = async () => {
+    if (!selectedTable?.id || !selectedCustomer?.id) {
+      setCartNotice("Selecciona un cliente con saldo de tiquetera para consumir un almuerzo.");
+      return;
+    }
+
+    if (!selectedCustomerTicketState.isActive) {
+      setCartNotice("El cliente no tiene saldo activo de tiquetera o su vigencia ya vencio.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      let resolvedOrderId = activeOrder?.id;
+
+      if (!resolvedOrderId && cartItems.length > 0) {
+        resolvedOrderId = await submitOrder({
+          businessId,
+          table: selectedTable,
+          items: cartItems,
+          total,
+          customer: selectedCustomer,
+        });
+      }
+
+      if (!resolvedOrderId) {
+        setCartNotice("No hay una orden activa para consumir con tiquetera.");
+        return;
+      }
+
+      await requestPayment({
+        businessId,
+        tableId: selectedTable.id,
+        orderId: resolvedOrderId,
+        paymentMethod: "ticket_wallet",
+        chargedTotal: 0,
+        subtotal: total,
+        customer: selectedCustomer,
+      });
+      onPaymentSuccess?.("ticket_wallet");
+      clearCart();
+      setSelectedCustomer(null);
+      setIsCartDrawerOpen(false);
+      setCartNotice("");
+      setIsTicketConfirmOpen(false);
+      onOrderPaid?.();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTicketPay = async () => {
+    if (!selectedCustomer?.id) {
+      setCartNotice("Selecciona un cliente para poder cobrar con tiquetera.");
+      return;
+    }
+
+    if (!selectedCustomerTicketState.isActive) {
+      setCartNotice("El cliente no tiene una tiquetera activa.");
+      return;
+    }
+
+    if (selectedCustomerTicketState.requiresReuseConfirmation) {
+      setIsTicketConfirmOpen(true);
+      return;
+    }
+
+    await finalizeTicketPayment();
   };
 
   const handleCancelOrder = async () => {
@@ -767,6 +861,7 @@ export default function POSOrder({
           <CartPanel
             selectedTable={selectedTable}
             selectedCustomer={selectedCustomer}
+            selectedCustomerTicketState={selectedCustomerTicketState}
             customers={customers}
             setSelectedCustomer={setSelectedCustomer}
             cartItems={cartItems}
@@ -786,6 +881,7 @@ export default function POSOrder({
             removeItem={removeItem}
             handleCommand={handleCommand}
             handlePay={handlePay}
+            handleTicketPay={handleTicketPay}
             handleOpenCancel={() => setIsCancelConfirmOpen(true)}
           />
         </div>
@@ -801,6 +897,7 @@ export default function POSOrder({
             <CartPanel
               selectedTable={selectedTable}
               selectedCustomer={selectedCustomer}
+              selectedCustomerTicketState={selectedCustomerTicketState}
               customers={customers}
               setSelectedCustomer={setSelectedCustomer}
               cartItems={cartItems}
@@ -820,6 +917,7 @@ export default function POSOrder({
               removeItem={removeItem}
               handleCommand={handleCommand}
               handlePay={handlePay}
+              handleTicketPay={handleTicketPay}
               handleOpenCancel={() => setIsCancelConfirmOpen(true)}
               onClose={() => setIsCartDrawerOpen(false)}
               mobile
@@ -835,6 +933,14 @@ export default function POSOrder({
         confirmLabel="Cancelar orden"
         onConfirm={handleCancelOrder}
         onCancel={() => setIsCancelConfirmOpen(false)}
+      />
+      <ConfirmModal
+        open={isTicketConfirmOpen}
+        title="Confirmar segundo consumo"
+        description="Este cliente ya consumio una tiquetera hace menos de 30 minutos. Confirma solo si invito a alguien mas o corresponde un segundo uso legitimo."
+        confirmLabel="Consumir ticket"
+        onConfirm={finalizeTicketPayment}
+        onCancel={() => setIsTicketConfirmOpen(false)}
       />
     </>
   );

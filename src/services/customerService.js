@@ -13,6 +13,51 @@ import {
 import { db } from "../firebase/firebaseConfig";
 
 const customersCollection = collection(db, "customers");
+const TICKET_WARNING_THRESHOLD = 2;
+
+function normalizeDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value?.toDate) {
+    return value.toDate();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function getTicketWalletState(customer) {
+  const balance = Number(
+    customer?.ticket_balance_units ??
+      customer?.ticketBalanceUnits ??
+      customer?.lunch_ticket_balance ??
+      0
+  );
+  const expiresAt = normalizeDate(
+    customer?.ticket_expires_at ?? customer?.ticketExpiresAt ?? null
+  );
+  const lastUsedAt = normalizeDate(
+    customer?.ticket_last_used_at ?? customer?.ticketLastUsedAt ?? null
+  );
+  const now = new Date();
+  const isExpired = expiresAt ? expiresAt.getTime() < now.getTime() : false;
+  const activeBalance = isExpired ? 0 : Math.max(balance, 0);
+  const minutesSinceLastUse = lastUsedAt
+    ? (now.getTime() - lastUsedAt.getTime()) / 60000
+    : Number.POSITIVE_INFINITY;
+
+  return {
+    balance: activeBalance,
+    expiresAt,
+    lastUsedAt,
+    isExpired,
+    isActive: activeBalance > 0,
+    lowBalance: activeBalance > 0 && activeBalance <= TICKET_WARNING_THRESHOLD,
+    requiresReuseConfirmation: minutesSinceLastUse < 30,
+  };
+}
 
 function normalizeCustomerPayload(customer, businessId) {
   const normalizedBusinessId = String(customer?.business_id || businessId || "").trim();
@@ -41,6 +86,16 @@ function normalizeCustomerPayload(customer, businessId) {
     pendingDebt: Number(
       customer?.pendingDebt ?? customer?.debt_balance ?? customer?.debtBalance ?? 0
     ),
+    ticket_balance_units: Number(
+      customer?.ticket_balance_units ?? customer?.ticketBalanceUnits ?? 0
+    ),
+    ticket_total_purchased: Number(
+      customer?.ticket_total_purchased ?? customer?.ticketTotalPurchased ?? 0
+    ),
+    ticket_last_used_at:
+      customer?.ticket_last_used_at ?? customer?.ticketLastUsedAt ?? null,
+    ticket_expires_at:
+      customer?.ticket_expires_at ?? customer?.ticketExpiresAt ?? null,
   };
 }
 

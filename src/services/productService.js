@@ -20,6 +20,11 @@ function normalizeProductPayload(product, businessId) {
   const price = Number(product?.price);
   const stock = Number(product?.stock);
   const normalizedBusinessId = String(product?.business_id || businessId || "").trim();
+  const productType = String(product?.product_type || product?.productType || "standard").trim();
+  const ticketUnits = Number(product?.ticket_units ?? product?.ticketUnits ?? 0);
+  const ticketValidityDays = Number(
+    product?.ticket_validity_days ?? product?.ticketValidityDays ?? 30
+  );
 
   if (!name) {
     throw new Error("El nombre del producto es obligatorio.");
@@ -51,6 +56,10 @@ function normalizeProductPayload(product, businessId) {
     recipe: Array.isArray(product?.recipe) ? product.recipe : [],
     desired_margin_pct: Number(product?.desired_margin_pct ?? product?.desiredMarginPct) || 0,
     suggested_price: Number(product?.suggested_price ?? product?.suggestedPrice) || price,
+    product_type: productType || "standard",
+    ticket_units: Number.isFinite(ticketUnits) && ticketUnits >= 0 ? ticketUnits : 0,
+    ticket_validity_days:
+      Number.isFinite(ticketValidityDays) && ticketValidityDays > 0 ? ticketValidityDays : 30,
   };
 }
 

@@ -34,6 +34,7 @@ const PAYMENT_METHOD_LABELS = {
   transfer: "Transferencia",
   nequi: "Nequi",
   daviplata: "Daviplata",
+  ticket_wallet: "Tiquetera",
 };
 
 const NAV_ITEMS = [

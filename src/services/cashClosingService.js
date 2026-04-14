@@ -239,7 +239,11 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
       accumulator[method] = (accumulator[method] || 0) + Number(sale.total || 0);
       return accumulator;
     },
-    { cash: 0, card: 0, transfer: 0, nequi: 0, daviplata: 0 }
+    { cash: 0, card: 0, transfer: 0, nequi: 0, daviplata: 0, ticket_wallet: 0 }
+  );
+  const ticketWalletUnits = relevantSales.reduce(
+    (sum, sale) => sum + Number(sale.ticket_units_consumed || 0),
+    0
   );
 
   const totalSales = relevantSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
@@ -269,6 +273,7 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
     expenses_total: totalExpenses,
     net_balance: totalSales - totalExpenses,
     by_method: byMethod,
+    ticket_wallet_units: ticketWalletUnits,
     cash_expected: expectedCash,
     cash_counted: countedCash,
     cash_difference: cashDifference,
@@ -287,6 +292,7 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
     expensesTotal: totalExpenses,
     netBalance: totalSales - totalExpenses,
     byMethod,
+    ticketWalletUnits,
     cashExpected: expectedCash,
     cashCounted: countedCash,
     cashDifference,
@@ -396,6 +402,7 @@ export function buildCashClosingReportHtml(report) {
       <p><strong>Efectivo esperado:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.cashExpected)}</p>
       <p><strong>Efectivo contado:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.cashCounted)}</p>
       <p><strong>Diferencia:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.cashDifference)}</p>
+      <p><strong>Servicios por tiquetera:</strong> ${report.ticketWalletUnits || 0} unidades</p>
       <h3 style="margin-top:32px;">Resumen por canal</h3>
       <table style="width:100%; border-collapse:collapse;">${byMethodRows}</table>
     </body>

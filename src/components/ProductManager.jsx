@@ -46,6 +46,9 @@ const PRODUCT_FORM = {
   category: "",
   price: "",
   stock: "",
+  productType: "standard",
+  ticketUnits: "10",
+  ticketValidityDays: "30",
 };
 
 const SUPPLY_FORM = {
@@ -86,6 +89,9 @@ function buildProductForm(product) {
     category: product.category || "",
     price: String(product.price ?? ""),
     stock: String(product.stock ?? ""),
+    productType: product.product_type || "standard",
+    ticketUnits: String(product.ticket_units ?? 10),
+    ticketValidityDays: String(product.ticket_validity_days ?? 30),
   };
 }
 
@@ -296,6 +302,9 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         category: productForm.category.trim(),
         price: Number(productForm.price),
         stock: Number(productForm.stock),
+        productType: productForm.productType,
+        ticketUnits: Number(productForm.ticketUnits),
+        ticketValidityDays: Number(productForm.ticketValidityDays),
       };
 
       let productId = editingProductId;
@@ -896,6 +905,45 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     Usar precio sugerido
                   </button>
                 </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <FormSelect
+                  label="Tipo de producto"
+                  value={productForm.productType}
+                  onChange={(event) =>
+                    setProductForm((current) => ({ ...current, productType: event.target.value }))
+                  }
+                  options={[
+                    { value: "standard", label: "Producto normal" },
+                    { value: "ticket_wallet", label: "Tiquetera prepaga" },
+                  ]}
+                />
+                <FormInput
+                  label="Tickets que otorga"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={productForm.ticketUnits}
+                  onChange={(event) =>
+                    setProductForm((current) => ({ ...current, ticketUnits: event.target.value }))
+                  }
+                  readOnly={productForm.productType !== "ticket_wallet"}
+                />
+                <FormInput
+                  label="Vigencia (dias)"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={productForm.ticketValidityDays}
+                  onChange={(event) =>
+                    setProductForm((current) => ({
+                      ...current,
+                      ticketValidityDays: event.target.value,
+                    }))
+                  }
+                  readOnly={productForm.productType !== "ticket_wallet"}
+                />
               </div>
             </div>
 

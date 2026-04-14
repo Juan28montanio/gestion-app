@@ -13,8 +13,27 @@ import {
 import { db } from "../firebase/firebaseConfig";
 import { getCurrentOpenCashSession } from "./cashClosingService";
 import { QUICK_SALE_TABLE } from "../utils/posConstants";
+import { getTicketWalletState } from "./customerService";
 
-const DEFAULT_METHODS = { cash: 0, transfer: 0, card: 0, nequi: 0, daviplata: 0 };
+const DEFAULT_METHODS = {
+  cash: 0,
+  transfer: 0,
+  card: 0,
+  nequi: 0,
+  daviplata: 0,
+  ticket_wallet: 0,
+};
+
+function getTicketProductGrant(items = []) {
+  return items.reduce(
+    (sum, item) =>
+      sum +
+      (String(item?.product_type || item?.productType || "").trim() === "ticket_wallet"
+        ? Number(item?.ticket_units || 0) * Number(item?.quantity || 0)
+        : 0),
+    0
+  );
+}
 
 const startOfDay = () => {
   const date = new Date();
@@ -61,12 +80,17 @@ export async function handleStockReduction(businessId, orderItems) {
 
       if (productSnapshot.exists()) {
         const productData = productSnapshot.data();
-        const currentStock = Number(productData.stock || 0);
+        const isTicketWalletProduct =
+          String(productData.product_type || "").trim() === "ticket_wallet";
 
-        transaction.update(productRef, {
-          stock: Math.max(currentStock - quantitySold, 0),
-          updatedAt: serverTimestamp(),
-        });
+        if (!isTicketWalletProduct) {
+          const currentStock = Number(productData.stock || 0);
+
+          transaction.update(productRef, {
+            stock: Math.max(currentStock - quantitySold, 0),
+            updatedAt: serverTimestamp(),
+          });
+        }
       }
 
       const recipeBook = recipeBooks.find(
@@ -160,8 +184,12 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     const customerName = String(
       options.customer?.name || orderData.customer_name || options.customerName || ""
     ).trim();
+    const isTicketWalletPayment = normalizedPaymentMethod === "ticket_wallet";
     const debtAmount =
-      customerId && subtotal > chargedTotal ? Number((subtotal - chargedTotal).toFixed(2)) : 0;
+      !isTicketWalletPayment && customerId && subtotal > chargedTotal
+        ? Number((subtotal - chargedTotal).toFixed(2))
+        : 0;
+    const ticketGrantUnits = getTicketProductGrant(orderData.items || []);
 
     if (!resolvedTableId) {
       throw new Error("No fue posible determinar la mesa asociada a la orden.");
@@ -169,6 +197,10 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     if (!resolvedBusinessId) {
       throw new Error("No fue posible determinar el negocio asociado a la orden.");
+    }
+
+    if (isTicketWalletPayment && !customerId) {
+      throw new Error("Debes seleccionar un cliente para consumir una tiquetera.");
     }
 
     const isQuickSale = resolvedTableId === QUICK_SALE_TABLE.id;
@@ -186,6 +218,7 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     transaction.update(orderRef, {
       status: "pagada",
       payment_method: normalizedPaymentMethod,
+      payment_label: isTicketWalletPayment ? "Tiquetera" : normalizedPaymentMethod,
       customer_id: customerId || null,
       customer_name: customerName || "",
       closing_id: openCashSession?.id || null,
@@ -196,6 +229,9 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
+      payment_kind: isTicketWalletPayment ? "prepaid_ticket" : "cashflow",
+      ticket_units_consumed: isTicketWalletPayment ? 1 : 0,
+      ticket_units_granted: ticketGrantUnits,
       closed_at: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -216,8 +252,12 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
       payment_method: normalizedPaymentMethod,
+      payment_label: isTicketWalletPayment ? "Tiquetera" : normalizedPaymentMethod,
       concept: `Venta ${tableData.name || `Mesa ${tableData.number || ""}`.trim()}`,
       type: "income",
+      income_kind: isTicketWalletPayment ? "ticket_wallet" : "cash",
+      ticket_units_consumed: isTicketWalletPayment ? 1 : 0,
+      ticket_units_granted: ticketGrantUnits,
       closing_id: openCashSession?.id || null,
       closed_at: serverTimestamp(),
       createdAt: serverTimestamp(),
@@ -225,9 +265,32 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     if (customerRef && customerSnapshot?.exists()) {
         const customerData = customerSnapshot.data();
+        const ticketState = getTicketWalletState(customerData);
+        const nextTicketBalance =
+          ticketState.balance +
+          ticketGrantUnits -
+          (isTicketWalletPayment ? 1 : 0);
+        const currentExpiry = customerData.ticket_expires_at || null;
+        const validityDays =
+          (orderData.items || []).reduce((maxDays, item) => {
+            const itemType = String(item?.product_type || item?.productType || "").trim();
+            if (itemType !== "ticket_wallet") {
+              return maxDays;
+            }
+            return Math.max(maxDays, Number(item?.ticket_validity_days || 30));
+          }, 0) || 0;
+        const nextExpiry =
+          ticketGrantUnits > 0
+            ? new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000)
+            : currentExpiry;
         transaction.update(customerRef, {
           debt_balance: Number(customerData.debt_balance || 0) + debtAmount,
           pendingDebt: Number(customerData.pendingDebt || customerData.debt_balance || 0) + debtAmount,
+          ticket_balance_units: Math.max(nextTicketBalance, 0),
+          ticket_total_purchased:
+            Number(customerData.ticket_total_purchased || 0) + ticketGrantUnits,
+          ticket_last_used_at: isTicketWalletPayment ? serverTimestamp() : customerData.ticket_last_used_at || null,
+          ticket_expires_at: nextExpiry,
           last_order_at: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

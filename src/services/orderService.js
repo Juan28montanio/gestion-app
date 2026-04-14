@@ -51,6 +51,10 @@ function normalizeOrderItems(items) {
       quantity,
       price,
       note,
+      category: String(item?.category || "").trim(),
+      product_type: String(item?.product_type || item?.productType || "standard").trim(),
+      ticket_units: Number(item?.ticket_units || item?.ticketUnits || 0),
+      ticket_validity_days: Number(item?.ticket_validity_days || item?.ticketValidityDays || 30),
     };
   });
 }
