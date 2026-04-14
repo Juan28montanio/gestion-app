@@ -11,7 +11,6 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import TableView from "./components/TableView";
 import POSOrder from "./components/POSOrder";
 import AdminDashboard from "./components/AdminDashboard";
 import CustomerManager from "./components/CustomerManager";
@@ -372,14 +371,12 @@ export default function App() {
 
               <div className="flex-1 px-4 py-6 pb-36 md:px-6 md:pb-40">
                 {activeSection === "salon" ? (
-                  <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-                    <TableView
-                      businessId={BUSINESS_ID}
-                      selectedTableId={selectedTable?.id}
-                      onSelectTable={setSelectedTable}
-                    />
-                    <TableManager businessId={BUSINESS_ID} onNotify={notify} />
-                  </section>
+                  <TableManager
+                    businessId={BUSINESS_ID}
+                    selectedTableId={selectedTable?.id}
+                    onSelectTable={setSelectedTable}
+                    onNotify={notify}
+                  />
                 ) : null}
 
                 {activeSection === "pos" ? (

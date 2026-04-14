@@ -4,6 +4,8 @@ import {
   ChevronRight,
   ClipboardList,
   Factory,
+  LayoutGrid,
+  List,
   PackagePlus,
   Pencil,
   Plus,
@@ -125,6 +127,8 @@ export default function ProductManager({ businessId }) {
   const [supplyForm, setSupplyForm] = useState(SUPPLY_FORM);
   const [editingProductId, setEditingProductId] = useState(null);
   const [editingSupplyId, setEditingSupplyId] = useState(null);
+  const [productView, setProductView] = useState("grid");
+  const [ingredientView, setIngredientView] = useState("grid");
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
@@ -408,22 +412,55 @@ export default function ProductManager({ businessId }) {
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingSupplyId(null);
-                  setSupplyForm(SUPPLY_FORM);
-                  setIsSupplyModalOpen(true);
-                }}
-                className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
-              >
-                <Plus size={16} />
-                Nuevo insumo
-              </button>
+              <div className="flex items-center gap-3">
+                <div className="inline-flex rounded-2xl bg-slate-100 p-1 ring-1 ring-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setIngredientView("grid")}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${ingredientView === "grid" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+                  >
+                    <LayoutGrid size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIngredientView("list")}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${ingredientView === "list" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+                  >
+                    <List size={16} />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSupplyId(null);
+                    setSupplyForm(SUPPLY_FORM);
+                    setIsSupplyModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
+                >
+                  <Plus size={16} />
+                  Nuevo insumo
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className={ingredientView === "grid" ? "grid gap-4 md:grid-cols-2" : "grid gap-3"}>
+                {supplies.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingSupplyId(null);
+                      setSupplyForm(SUPPLY_FORM);
+                      setIsSupplyModalOpen(true);
+                    }}
+                    className="flex min-h-44 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-white px-6 py-8 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
+                  >
+                    <Boxes size={26} />
+                    <p className="mt-3 text-base font-semibold text-slate-700">Crea tu primer insumo</p>
+                    <p className="mt-1 text-sm">Define materias primas para costeo y compras.</p>
+                  </button>
+                ) : null}
                 {supplies.map((supply) => {
                   const status = getSupplyHealth(supply);
                   const history = priceHistoryBySupply[supply.id] || [];
@@ -431,7 +468,7 @@ export default function ProductManager({ businessId }) {
                   return (
                     <article
                       key={supply.id}
-                      className="rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200"
+                      className={`rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200 ${ingredientView === "list" ? "flex flex-col gap-4 md:flex-row md:items-center md:justify-between" : ""}`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -566,21 +603,54 @@ export default function ProductManager({ businessId }) {
                 Cada producto puede conectarse con su ficha tecnica para utilidad neta automatica.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingProductId(null);
-                setProductForm(PRODUCT_FORM);
-                setIsProductModalOpen(true);
-              }}
-              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
-            >
-              <Plus size={16} />
-              Nuevo producto
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="inline-flex rounded-2xl bg-slate-100 p-1 ring-1 ring-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setProductView("grid")}
+                  className={`rounded-xl px-3 py-2 text-sm font-semibold ${productView === "grid" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+                >
+                  <LayoutGrid size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProductView("list")}
+                  className={`rounded-xl px-3 py-2 text-sm font-semibold ${productView === "list" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+                >
+                  <List size={16} />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProductId(null);
+                  setProductForm(PRODUCT_FORM);
+                  setIsProductModalOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
+              >
+                <Plus size={16} />
+                Nuevo producto
+              </button>
+            </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className={productView === "grid" ? "grid gap-4 xl:grid-cols-2" : "grid gap-3"}>
+            {products.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProductId(null);
+                  setProductForm(PRODUCT_FORM);
+                  setIsProductModalOpen(true);
+                }}
+                className="flex min-h-44 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-white px-6 py-8 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
+              >
+                <PackagePlus size={26} />
+                <p className="mt-3 text-base font-semibold text-slate-700">Crea tu primer producto</p>
+                <p className="mt-1 text-sm">Empieza tu catálogo comercial con una ficha limpia.</p>
+              </button>
+            ) : null}
             {products.map((product) => {
               const recipeBook = productRecipeMap[product.id];
               const margin = Number(recipeBook?.current_margin_pct || 0);
@@ -594,7 +664,7 @@ export default function ProductManager({ businessId }) {
               return (
                 <article
                   key={product.id}
-                  className="rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200"
+                  className={`rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200 ${productView === "list" ? "flex flex-col gap-4 md:flex-row md:items-center md:justify-between" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -611,7 +681,7 @@ export default function ProductManager({ businessId }) {
                   <div className="mt-5 grid gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Precio</p>
-                      <p className="mt-2 font-semibold text-slate-900">{formatCOP(product.price)}</p>
+                      <p className="mt-2 text-lg font-black text-slate-950">{formatCOP(product.price)}</p>
                     </div>
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo real</p>

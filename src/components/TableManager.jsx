@@ -3,8 +3,10 @@ import {
   Armchair,
   Coffee,
   DoorClosed,
+  Ellipsis,
   Flame,
   GlassWater,
+  Clock3,
   Pencil,
   Plus,
   Store,
@@ -18,6 +20,7 @@ import {
   subscribeToTables,
   updateTable,
 } from "../services/tableService";
+import { subscribeToActiveOrders } from "../services/orderService";
 import ConfirmModal from "./ConfirmModal";
 
 const EMPTY_FORM = {
@@ -71,20 +74,43 @@ function getTableStatusClasses(status) {
   return styles[normalizedStatus] || "bg-slate-100 text-slate-700";
 }
 
-export default function TableManager({ businessId, onNotify }) {
+function getElapsedLabel(timestamp) {
+  const createdAt = timestamp?.toDate ? timestamp.toDate() : null;
+  if (!createdAt) {
+    return "";
+  }
+
+  const minutes = Math.max(1, Math.round((Date.now() - createdAt.getTime()) / 60000));
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes ? `${hours} h ${restMinutes} min` : `${hours} h`;
+}
+
+export default function TableManager({ businessId, selectedTableId, onSelectTable, onNotify }) {
   const [tables, setTables] = useState([]);
+  const [activeOrders, setActiveOrders] = useState([]);
   const [formState, setFormState] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [saving, setSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tableToDelete, setTableToDelete] = useState(null);
+  const [actionMenuId, setActionMenuId] = useState(null);
 
   useEffect(() => {
     const unsubscribe = subscribeToTables(businessId, (nextTables) => {
       setTables(nextTables.filter((table) => !table.deletedAt));
     });
 
+    return () => unsubscribe();
+  }, [businessId]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToActiveOrders(businessId, setActiveOrders);
     return () => unsubscribe();
   }, [businessId]);
 
@@ -184,72 +210,152 @@ export default function TableManager({ businessId, onNotify }) {
   return (
     <section className="rounded-[28px] bg-white p-6 shadow-lg ring-1 ring-slate-200">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-slate-900">Gestion de mesas</h2>
+        <h2 className="text-xl font-semibold text-slate-900">Salon</h2>
         <p className="text-sm text-slate-500">
-          Administra el salon con tarjetas uniformes, ghost card y acciones seguras.
+          Una sola cuadrícula interactiva para ocupación, pedido actual y gestión rápida.
         </p>
       </div>
 
       <div className="rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">Salon</h3>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Mesas activas</h3>
+            <p className="text-sm text-slate-500">Selecciona una mesa o abre el menú contextual para gestionarla.</p>
+          </div>
           <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
             {sortedTables.length} mesa{sortedTables.length === 1 ? "" : "s"}
           </span>
         </div>
 
-        <div className="h-[540px] overflow-y-auto pr-1">
-          <div className="grid auto-rows-[220px] gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="h-[640px] overflow-y-auto pr-1">
+          <div className="grid auto-rows-[236px] gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sortedTables.map((table) => {
               const Icon =
                 TABLE_ICON_OPTIONS.find((option) => option.value === table.icon)?.icon ||
                 UtensilsCrossed;
+              const currentOrder = activeOrders.find((order) => order.table_id === table.id);
+              const itemCount = (currentOrder?.items || []).reduce(
+                (sum, item) => sum + Number(item.quantity || 0),
+                0
+              );
+              const orderTotal = Number(table.current_total ?? currentOrder?.total ?? 0);
+              const customerName = currentOrder?.customer_name || "";
+              const elapsed = getElapsedLabel(currentOrder?.created_at);
+              const isBusy =
+                String(table.status || "").toLowerCase() === "ocupada" ||
+                String(table.status || "").toLowerCase() === "occupied";
+              const isSelected = selectedTableId === table.id;
 
               return (
                 <article
                   key={table.id}
-                  className="flex h-[220px] flex-col justify-between rounded-[28px] bg-white p-5 text-center shadow-lg ring-1 ring-slate-200 transition-shadow hover:shadow-xl"
+                  className={`group relative flex h-[236px] flex-col justify-between rounded-[28px] bg-white p-5 shadow-lg transition-shadow hover:shadow-xl ${
+                    isSelected
+                      ? "ring-2 ring-emerald-500"
+                      : isBusy
+                        ? "ring-1 ring-rose-200"
+                        : "ring-1 ring-emerald-200"
+                  }`}
                 >
-                  <div className="flex flex-1 flex-col items-center justify-center">
-                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-500">
-                      <Icon size={16} />
-                      <span className="truncate">{table.name || `Mesa ${table.number}`}</span>
+                  <button
+                    type="button"
+                    onClick={() => onSelectTable?.(table)}
+                    className="absolute inset-0 rounded-[28px]"
+                    aria-label={`Seleccionar ${table.name || `Mesa ${table.number}`}`}
+                  />
+
+                  <div className="relative z-10 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                        <div className={`rounded-full p-2 ${isBusy ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"}`}>
+                          <Icon size={14} />
+                        </div>
+                        <span className="truncate">{table.name || `Mesa ${table.number}`}</span>
+                      </div>
+                      <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-400">
+                        Mesa {table.number}
+                      </p>
                     </div>
 
-                    <div className="mt-2">
+                    <div className="flex items-start gap-2">
+                      {orderTotal > 0 ? (
+                        <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
+                          {formatTableStatus(table.status) === "Ocupada" ? `$${orderTotal.toLocaleString("es-CO")}` : `$${orderTotal.toLocaleString("es-CO")}`}
+                        </span>
+                      ) : null}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setActionMenuId((current) => (current === table.id ? null : table.id))}
+                          className="rounded-full bg-slate-100 p-2 text-slate-500 opacity-0 transition group-hover:opacity-100 hover:bg-slate-200"
+                        >
+                          <Ellipsis size={16} />
+                        </button>
+                        {actionMenuId === table.id ? (
+                          <div className="absolute right-0 top-[calc(100%+0.4rem)] z-20 w-40 rounded-2xl bg-white p-2 shadow-xl ring-1 ring-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActionMenuId(null);
+                                handleEdit(table);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              <Pencil size={15} />
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActionMenuId(null);
+                                setTableToDelete(table);
+                              }}
+                              className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50"
+                            >
+                              <Trash2 size={15} />
+                              Eliminar
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="relative z-10 mt-4 flex flex-1 flex-col justify-between">
+                    <div>
                       <p className="text-5xl font-black leading-none text-slate-900">
                         {table.capacity || table.seats}
                       </p>
-                      <p className="mt-2 text-base text-slate-600">puestos</p>
+                      <p className="mt-2 text-base text-slate-500">puestos</p>
                     </div>
 
-                    <div className="mt-5">
+                    <div className="space-y-3">
+                      {itemCount > 0 ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                            {itemCount} item{itemCount === 1 ? "" : "s"}
+                          </span>
+                          {elapsed ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                              <Clock3 size={12} />
+                              {elapsed}
+                            </span>
+                          ) : null}
+                          {customerName ? (
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                              {customerName}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+
                       <span
-                        className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
+                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
                       >
                         <span className="h-2 w-2 rounded-full bg-current opacity-80 shadow-[0_0_12px_currentColor]" />
                         {formatTableStatus(table.status)}
                       </span>
                     </div>
-                  </div>
-
-                  <div className="mt-4 grid w-full grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleEdit(table)}
-                      className="flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
-                    >
-                      <Pencil size={16} />
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTableToDelete(table)}
-                      className="flex min-h-10 items-center justify-center gap-2 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
-                    >
-                      <Trash2 size={16} />
-                      Eliminar
-                    </button>
                   </div>
                 </article>
               );
@@ -258,7 +364,7 @@ export default function TableManager({ businessId, onNotify }) {
             <button
               type="button"
               onClick={openCreateModal}
-              className="flex h-[220px] flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-slate-300 bg-white/70 p-5 text-center text-slate-500 transition hover:border-slate-400 hover:bg-white hover:text-slate-700"
+              className="flex h-[236px] flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-slate-300 bg-white/70 p-5 text-center text-slate-500 transition hover:border-slate-400 hover:bg-white hover:text-slate-700"
             >
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
                 <Plus size={28} />
