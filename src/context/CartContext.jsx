@@ -20,6 +20,10 @@ const buildCartItem = (product, modifiers = [], note = "") => ({
   product_type: product.product_type || "standard",
   ticket_units: Number(product.ticket_units || 0),
   ticket_validity_days: Number(product.ticket_validity_days || 30),
+  ticket_eligible:
+    product.ticket_eligible === true ||
+    /almuerzo|ejecutivo|menu/i.test(String(product.category || product.name || "")),
+  useTicket: false,
   quantity: 1,
   modifiers,
   note,

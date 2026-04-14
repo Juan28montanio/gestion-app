@@ -9,6 +9,7 @@ import {
   PanelLeftOpen,
   PanelsTopLeft,
   ReceiptText,
+  Ticket,
   Workflow,
   Wifi,
   WifiOff,
@@ -18,6 +19,7 @@ import AdminDashboard from "./components/AdminDashboard";
 import CustomerManager from "./components/CustomerManager";
 import ProductManager from "./components/ProductManager";
 import TableManager from "./components/TableManager";
+import TicketWalletManager from "./components/TicketWalletManager";
 import CustomerMenu from "./components/CustomerMenu";
 import ToastViewport from "./components/ToastViewport";
 import {
@@ -42,6 +44,7 @@ const NAV_ITEMS = [
   { id: "pos", label: "Punto de Venta", icon: ReceiptText, section: "Ventas" },
   { id: "inventory", label: "Productos", icon: Package2, section: "Ventas" },
   { id: "resources", label: "Centro de Recursos", icon: Workflow, section: "Administracion" },
+  { id: "ticketing", label: "Ticketeras", icon: Ticket, section: "Administracion" },
   { id: "clients", label: "Clientes", icon: ContactRound, section: "Administracion" },
   { id: "finance", label: "Finanzas", icon: BarChart3, section: "Administracion" },
 ];
@@ -51,6 +54,7 @@ const SECTION_TITLES = {
   pos: "Punto de Venta",
   inventory: "Productos",
   resources: "Centro de Recursos",
+  ticketing: "Ticketeras",
   clients: "Clientes",
   finance: "Finanzas",
 };
@@ -439,6 +443,10 @@ export default function App() {
 
                 {activeSection === "resources" ? (
                   <ProductManager businessId={BUSINESS_ID} mode="resources" />
+                ) : null}
+
+                {activeSection === "ticketing" ? (
+                  <TicketWalletManager businessId={BUSINESS_ID} />
                 ) : null}
 
                 {activeSection === "clients" ? (

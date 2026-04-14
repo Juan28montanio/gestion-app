@@ -57,6 +57,10 @@ function normalizeProductPayload(product, businessId) {
     desired_margin_pct: Number(product?.desired_margin_pct ?? product?.desiredMarginPct) || 0,
     suggested_price: Number(product?.suggested_price ?? product?.suggestedPrice) || price,
     product_type: productType || "standard",
+    ticket_eligible:
+      product?.ticket_eligible === true ||
+      product?.ticketEligible === true ||
+      /almuerzo|ejecutivo|menu/i.test(`${category} ${name}`),
     ticket_units: Number.isFinite(ticketUnits) && ticketUnits >= 0 ? ticketUnits : 0,
     ticket_validity_days:
       Number.isFinite(ticketValidityDays) && ticketValidityDays > 0 ? ticketValidityDays : 30,

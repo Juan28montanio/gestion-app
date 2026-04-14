@@ -146,3 +146,21 @@ export async function deleteCustomer(customerId) {
 
   await deleteDoc(doc(db, "customers", customerId));
 }
+
+export async function adjustCustomerTicketWallet(customerId, adjustment) {
+  const normalizedCustomerId = String(customerId || "").trim();
+
+  if (!normalizedCustomerId) {
+    throw new Error("El id del cliente es obligatorio para ajustar la tiquetera.");
+  }
+
+  const units = Number(adjustment?.units || 0);
+  const expiresAt = adjustment?.expiresAt || null;
+
+  await updateDoc(doc(db, "customers", normalizedCustomerId), {
+    ticket_balance_units: Math.max(units, 0),
+    ticket_total_purchased: Number(adjustment?.totalPurchased ?? units),
+    ticket_expires_at: expiresAt,
+    updatedAt: serverTimestamp(),
+  });
+}

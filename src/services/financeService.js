@@ -35,6 +35,35 @@ function getTicketProductGrant(items = []) {
   );
 }
 
+function getTicketConsumption(items = [], ticketConsumption = {}) {
+  const requestedUnits = Number(ticketConsumption?.units || 0);
+  const requestedCoveredAmount = Number(ticketConsumption?.coveredAmount || 0);
+
+  if (requestedUnits > 0 || requestedCoveredAmount > 0) {
+    return {
+      units: Math.max(requestedUnits, 0),
+      coveredAmount: Math.max(requestedCoveredAmount, 0),
+    };
+  }
+
+  const units = items.reduce(
+    (sum, item) =>
+      sum +
+      (Boolean(item?.useTicket) ? Number(item?.quantity || 0) : 0),
+    0
+  );
+  const coveredAmount = items.reduce(
+    (sum, item) =>
+      sum +
+      (Boolean(item?.useTicket)
+        ? Number(item?.price || 0) * Number(item?.quantity || 0)
+        : 0),
+    0
+  );
+
+  return { units, coveredAmount };
+}
+
 const startOfDay = () => {
   const date = new Date();
   date.setHours(0, 0, 0, 0);
@@ -190,6 +219,10 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
         ? Number((subtotal - chargedTotal).toFixed(2))
         : 0;
     const ticketGrantUnits = getTicketProductGrant(orderData.items || []);
+    const ticketConsumption = getTicketConsumption(
+      orderData.items || [],
+      options.ticketConsumption || {}
+    );
 
     if (!resolvedTableId) {
       throw new Error("No fue posible determinar la mesa asociada a la orden.");
@@ -201,6 +234,10 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     if (isTicketWalletPayment && !customerId) {
       throw new Error("Debes seleccionar un cliente para consumir una tiquetera.");
+    }
+
+    if (ticketConsumption.units > 0 && !customerId) {
+      throw new Error("Debes seleccionar un cliente para aplicar tickets en esta venta.");
     }
 
     const isQuickSale = resolvedTableId === QUICK_SALE_TABLE.id;
@@ -230,8 +267,9 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
       payment_kind: isTicketWalletPayment ? "prepaid_ticket" : "cashflow",
-      ticket_units_consumed: isTicketWalletPayment ? 1 : 0,
+      ticket_units_consumed: ticketConsumption.units,
       ticket_units_granted: ticketGrantUnits,
+      ticket_covered_amount: ticketConsumption.coveredAmount,
       closed_at: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -255,9 +293,15 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       payment_label: isTicketWalletPayment ? "Tiquetera" : normalizedPaymentMethod,
       concept: `Venta ${tableData.name || `Mesa ${tableData.number || ""}`.trim()}`,
       type: "income",
-      income_kind: isTicketWalletPayment ? "ticket_wallet" : "cash",
-      ticket_units_consumed: isTicketWalletPayment ? 1 : 0,
+      income_kind:
+        ticketConsumption.units > 0
+          ? isTicketWalletPayment
+            ? "ticket_wallet"
+            : "mixed_ticket"
+          : "cash",
+      ticket_units_consumed: ticketConsumption.units,
       ticket_units_granted: ticketGrantUnits,
+      ticket_covered_amount: ticketConsumption.coveredAmount,
       closing_id: openCashSession?.id || null,
       closed_at: serverTimestamp(),
       createdAt: serverTimestamp(),
@@ -266,10 +310,13 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     if (customerRef && customerSnapshot?.exists()) {
         const customerData = customerSnapshot.data();
         const ticketState = getTicketWalletState(customerData);
+        if (ticketConsumption.units > 0 && ticketState.balance < ticketConsumption.units) {
+          throw new Error("El cliente no tiene suficientes tickets disponibles.");
+        }
         const nextTicketBalance =
           ticketState.balance +
           ticketGrantUnits -
-          (isTicketWalletPayment ? 1 : 0);
+          ticketConsumption.units;
         const currentExpiry = customerData.ticket_expires_at || null;
         const validityDays =
           (orderData.items || []).reduce((maxDays, item) => {
@@ -289,7 +336,8 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
           ticket_balance_units: Math.max(nextTicketBalance, 0),
           ticket_total_purchased:
             Number(customerData.ticket_total_purchased || 0) + ticketGrantUnits,
-          ticket_last_used_at: isTicketWalletPayment ? serverTimestamp() : customerData.ticket_last_used_at || null,
+          ticket_last_used_at:
+            ticketConsumption.units > 0 ? serverTimestamp() : customerData.ticket_last_used_at || null,
           ticket_expires_at: nextExpiry,
           last_order_at: serverTimestamp(),
           updatedAt: serverTimestamp(),

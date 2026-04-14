@@ -47,6 +47,7 @@ const PRODUCT_FORM = {
   price: "",
   stock: "",
   productType: "standard",
+  ticketEligible: false,
   ticketUnits: "10",
   ticketValidityDays: "30",
 };
@@ -90,6 +91,7 @@ function buildProductForm(product) {
     price: String(product.price ?? ""),
     stock: String(product.stock ?? ""),
     productType: product.product_type || "standard",
+    ticketEligible: Boolean(product.ticket_eligible),
     ticketUnits: String(product.ticket_units ?? 10),
     ticketValidityDays: String(product.ticket_validity_days ?? 30),
   };
@@ -303,6 +305,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         price: Number(productForm.price),
         stock: Number(productForm.stock),
         productType: productForm.productType,
+        ticketEligible: productForm.ticketEligible,
         ticketUnits: Number(productForm.ticketUnits),
         ticketValidityDays: Number(productForm.ticketValidityDays),
       };
@@ -944,6 +947,28 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   }
                   readOnly={productForm.productType !== "ticket_wallet"}
                 />
+              </div>
+
+              <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+                <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
+                  <div>
+                    <span>Permite pago con ticket</span>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Ideal para almuerzos o planes que el cliente puede redimir desde su monedero.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={productForm.ticketEligible}
+                    onChange={(event) =>
+                      setProductForm((current) => ({
+                        ...current,
+                        ticketEligible: event.target.checked,
+                      }))
+                    }
+                    className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                </label>
               </div>
             </div>
 

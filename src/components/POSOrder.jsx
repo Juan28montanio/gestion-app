@@ -152,6 +152,8 @@ function CartPanel({
   setSelectedCustomer,
   cartItems,
   subtotal,
+  ticketCoveredAmount,
+  payableSubtotal,
   chargedTotalInput,
   setChargedTotalInput,
   adjustmentAmount,
@@ -211,7 +213,10 @@ function CartPanel({
           items={customers}
           selectedItem={selectedCustomer}
           onSelectItem={setSelectedCustomer}
-          getLabel={(customer) => customer.name}
+          getLabel={(customer) => {
+            const ticketState = getTicketWalletState(customer);
+            return `${customer.name}${ticketState.balance ? ` · Tickets ${ticketState.balance}` : ""}`;
+          }}
           getDescription={(customer) =>
             `${customer.phone || "Sin telefono"} · Deuda ${formatCOP(customer.debt_balance || 0)}`
           }
@@ -234,7 +239,9 @@ function CartPanel({
                 <div>
                   <h3 className="font-medium">{item.name}</h3>
                   <p className="text-xs text-slate-400">
-                    {formatCOP(item.price)} x {item.quantity}
+                    {item.useTicket
+                      ? `Tiquetera aplicada · ${item.quantity} ticket(s)`
+                      : `${formatCOP(item.price)} x ${item.quantity}`}
                   </p>
                 </div>
 
@@ -280,6 +287,19 @@ function CartPanel({
                 placeholder="Notas para cocina o barra..."
                 className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
               />
+              {selectedCustomerTicketState?.isActive && item.ticket_eligible ? (
+                <button
+                  type="button"
+                  onClick={() => updateItem(item.lineId, { useTicket: !item.useTicket })}
+                  className={`mt-3 rounded-2xl px-3 py-2 text-xs font-semibold transition ${
+                    item.useTicket
+                      ? "bg-[#fff7df] text-[#7a5200] ring-1 ring-[#d4a72c]/30"
+                      : "bg-slate-800 text-emerald-200 ring-1 ring-emerald-400/20"
+                  }`}
+                >
+                  {item.useTicket ? "Ticket aplicado" : "Usar ticket"}
+                </button>
+              ) : null}
             </article>
           ))
         )}
@@ -308,6 +328,16 @@ function CartPanel({
           <div className="flex items-center justify-between text-sm text-slate-300">
             <span>Total real de productos</span>
             <span>{formatCOP(subtotal)}</span>
+          </div>
+          {ticketCoveredAmount > 0 ? (
+            <div className="flex items-center justify-between text-sm text-amber-200">
+              <span>Cubierto por tiquetera</span>
+              <span>-{formatCOP(ticketCoveredAmount)}</span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between text-sm text-slate-200">
+            <span>Total a cobrar</span>
+            <span className="font-semibold">{formatCOP(payableSubtotal)}</span>
           </div>
           <div className="grid gap-2">
             <label className="text-xs uppercase tracking-[0.18em] text-slate-400">
@@ -344,7 +374,7 @@ function CartPanel({
         </div>
 
         <div className="mb-5 mt-5">
-          {selectedCustomer && selectedCustomerTicketState?.isActive ? (
+          {selectedCustomer && selectedCustomerTicketState?.isActive && payableSubtotal === 0 && ticketCoveredAmount > 0 ? (
             <button
               type="button"
               onClick={handleTicketPay}
@@ -516,11 +546,6 @@ export default function POSOrder({
   }, [activeOrder?.customer_id, activeOrder?.customer_name, activeOrder?.id, customers]);
 
   useEffect(() => {
-    const sourceAmount = Number(activeOrder?.total ?? total ?? 0);
-    setChargedTotalInput(sourceAmount ? String(Math.round(sourceAmount)) : "");
-  }, [activeOrder?.id, activeOrder?.total, total]);
-
-  useEffect(() => {
     if (!selectedTable?.id) {
       setIsCartDrawerOpen(false);
     }
@@ -551,14 +576,32 @@ export default function POSOrder({
     });
   }, [products, search, selectedCategory]);
 
+  const ticketConsumption = useMemo(() => {
+    const units = cartItems.reduce(
+      (sum, item) => sum + (item.useTicket ? Number(item.quantity || 0) : 0),
+      0
+    );
+    const coveredAmount = cartItems.reduce(
+      (sum, item) =>
+        sum +
+        (item.useTicket ? Number(item.price || 0) * Number(item.quantity || 0) : 0),
+      0
+    );
+    return { units, coveredAmount };
+  }, [cartItems]);
+  const payableSubtotal = Math.max(total - ticketConsumption.coveredAmount, 0);
+  useEffect(() => {
+    setChargedTotalInput(payableSubtotal ? String(Math.round(payableSubtotal)) : "");
+  }, [activeOrder?.id, payableSubtotal]);
+
   const chargedTotal = useMemo(() => {
     const parsed = Number(chargedTotalInput);
-    return Number.isFinite(parsed) ? parsed : total;
-  }, [chargedTotalInput, total]);
-
-  const adjustmentAmount = chargedTotal - total;
-  const adjustmentPct = total > 0 ? (adjustmentAmount / total) * 100 : 0;
-  const debtAmount = selectedCustomer && chargedTotal < total ? total - chargedTotal : 0;
+    return Number.isFinite(parsed) ? parsed : payableSubtotal;
+  }, [chargedTotalInput, payableSubtotal]);
+  const adjustmentAmount = chargedTotal - payableSubtotal;
+  const adjustmentPct = payableSubtotal > 0 ? (adjustmentAmount / payableSubtotal) * 100 : 0;
+  const debtAmount =
+    selectedCustomer && chargedTotal < payableSubtotal ? payableSubtotal - chargedTotal : 0;
   const selectedCustomerTicketState = useMemo(
     () => getTicketWalletState(selectedCustomer),
     [selectedCustomer]
@@ -638,7 +681,8 @@ export default function POSOrder({
         orderId: resolvedOrderId,
         paymentMethod,
         chargedTotal,
-        subtotal: total,
+        subtotal: payableSubtotal,
+        ticketConsumption,
         customer: selectedCustomer,
       });
       onPaymentSuccess?.(paymentMethod);
@@ -688,7 +732,8 @@ export default function POSOrder({
         orderId: resolvedOrderId,
         paymentMethod: "ticket_wallet",
         chargedTotal: 0,
-        subtotal: total,
+        subtotal: payableSubtotal,
+        ticketConsumption,
         customer: selectedCustomer,
       });
       onPaymentSuccess?.("ticket_wallet");
@@ -866,6 +911,8 @@ export default function POSOrder({
             setSelectedCustomer={setSelectedCustomer}
             cartItems={cartItems}
             subtotal={total}
+            ticketCoveredAmount={ticketConsumption.coveredAmount}
+            payableSubtotal={payableSubtotal}
             chargedTotalInput={chargedTotalInput}
             setChargedTotalInput={setChargedTotalInput}
             adjustmentAmount={adjustmentAmount}
@@ -902,6 +949,8 @@ export default function POSOrder({
               setSelectedCustomer={setSelectedCustomer}
               cartItems={cartItems}
               subtotal={total}
+              ticketCoveredAmount={ticketConsumption.coveredAmount}
+              payableSubtotal={payableSubtotal}
               chargedTotalInput={chargedTotalInput}
               setChargedTotalInput={setChargedTotalInput}
               adjustmentAmount={adjustmentAmount}
