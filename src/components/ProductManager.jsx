@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Boxes,
-  ChevronRight,
   ClipboardList,
   Factory,
   LayoutGrid,
   List,
+  Package,
   PackagePlus,
   Pencil,
   Plus,
@@ -34,6 +34,8 @@ import {
 import { subscribeToPurchases } from "../services/purchaseService";
 import ConfirmModal from "./ConfirmModal";
 import FormModal from "./FormModal";
+import FormInput from "./FormInput";
+import FormSelect from "./FormSelect";
 import SupplierManager from "./SupplierManager";
 import PurchaseManager from "./PurchaseManager";
 import RecipeBookManager from "./RecipeBookManager";
@@ -57,21 +59,22 @@ const SUPPLY_FORM = {
 
 const ONBOARDING_STEPS = [
   { id: "suppliers", title: "Proveedores", description: "Registra a quien le compras.", icon: Factory },
-  { id: "ingredients", title: "Insumos", description: "Define materias primas, unidades y alertas.", icon: Boxes },
+  { id: "ingredients", title: "Insumos", description: "Define materias primas y unidades base.", icon: Boxes },
   { id: "purchases", title: "Compras", description: "Carga facturas para valorizar inventario.", icon: ClipboardList },
   { id: "recipes", title: "Fichas Tecnicas", description: "Mide costo, merma y rentabilidad.", icon: Sparkles },
-  { id: "products", title: "Ventas", description: "SmartProfit descuenta inventario automaticamente.", icon: PackagePlus },
+  { id: "products", title: "Catalogo de Productos", description: "Conecta lo que vendes con tu costeo.", icon: Package },
 ];
 
 const TABS = [
-  { id: "suppliers", label: "Proveedores" },
-  { id: "ingredients", label: "Insumos" },
-  { id: "purchases", label: "Compras" },
-  { id: "recipes", label: "Fichas Tecnicas" },
-  { id: "products", label: "Productos" },
+  { id: "suppliers", label: "Proveedores", icon: Factory },
+  { id: "ingredients", label: "Insumos", icon: Boxes },
+  { id: "purchases", label: "Compras", icon: ClipboardList },
+  { id: "recipes", label: "Fichas Tecnicas", icon: Sparkles },
+  { id: "products", label: "Catalogo", icon: Package },
 ];
 
 const UNITS = ["g", "kg", "ml", "l", "oz", "und"];
+const RESOURCE_TABS = ["suppliers", "ingredients", "purchases", "recipes", "products"];
 
 function buildProductForm(product) {
   if (!product) {
@@ -116,13 +119,13 @@ function getSupplyHealth(supply) {
   return { label: "Sano", classes: "bg-emerald-100 text-emerald-700 ring-emerald-200" };
 }
 
-export default function ProductManager({ businessId }) {
+export default function ProductManager({ businessId, mode = "resources" }) {
   const [products, setProducts] = useState([]);
   const [supplies, setSupplies] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [recipeBooks, setRecipeBooks] = useState([]);
-  const [activeTab, setActiveTab] = useState("suppliers");
+  const [activeTab, setActiveTab] = useState(mode === "catalog" ? "products" : "suppliers");
   const [productForm, setProductForm] = useState(PRODUCT_FORM);
   const [supplyForm, setSupplyForm] = useState(SUPPLY_FORM);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -134,6 +137,15 @@ export default function ProductManager({ businessId }) {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const isCatalogMode = mode === "catalog";
+  const currentProductRecipe = useMemo(
+    () => recipeBooks.find((recipeBook) => recipeBook.product_id === editingProductId) || null,
+    [editingProductId, recipeBooks]
+  );
+
+  useEffect(() => {
+    setActiveTab(mode === "catalog" ? "products" : "suppliers");
+  }, [mode]);
 
   useEffect(() => {
     const unsubscribeProducts = subscribeToProducts(businessId, setProducts);
@@ -199,6 +211,26 @@ export default function ProductManager({ businessId }) {
     () => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(),
     [products]
   );
+
+  const productModalMetrics = useMemo(() => {
+    if (!currentProductRecipe) {
+      return {
+        realCost: 0,
+        currentMarginPct: 0,
+        suggestedPrice: Number(productForm.price || 0),
+        ingredientsCount: 0,
+      };
+    }
+
+    return {
+      realCost: Number(currentProductRecipe.real_cost || 0),
+      currentMarginPct: Number(currentProductRecipe.current_margin_pct || 0),
+      suggestedPrice: Number(currentProductRecipe.suggested_price || 0),
+      ingredientsCount: Array.isArray(currentProductRecipe.ingredients)
+        ? currentProductRecipe.ingredients.length
+        : 0,
+    };
+  }, [currentProductRecipe, productForm.price]);
 
   const closeProductModal = () => {
     setIsProductModalOpen(false);
@@ -318,72 +350,95 @@ export default function ProductManager({ businessId }) {
 
   return (
     <section className="space-y-6">
-      <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold text-slate-900">Centro de recursos</h2>
-          <p className="text-sm text-slate-500">
-            SmartProfit te guia desde la compra hasta la rentabilidad del plato.
-          </p>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-5">
-          {ONBOARDING_STEPS.map((step, index) => {
-            const Icon = step.icon;
-            const isActive = activeTab === step.id;
-
-            return (
-              <button
-                key={step.id}
-                type="button"
-                onClick={() => setActiveTab(step.id)}
-                className={`rounded-[26px] p-5 text-left ring-1 transition ${
-                  isActive
-                    ? "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white shadow-lg ring-slate-950/10"
-                    : "bg-white text-slate-700 ring-slate-200 hover:shadow-md"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className={`rounded-2xl p-3 ${isActive ? "bg-white/10" : "bg-slate-100"}`}>
-                    <Icon size={18} className={isActive ? "text-emerald-300" : "text-slate-500"} />
-                  </div>
-                  {index < ONBOARDING_STEPS.length - 1 ? (
-                    <ChevronRight size={16} className={isActive ? "text-slate-300" : "text-slate-400"} />
-                  ) : null}
-                </div>
-                <h3 className="mt-6 text-base font-semibold">{step.title}</h3>
-                <p className={`mt-2 text-sm ${isActive ? "text-slate-300" : "text-slate-500"}`}>
-                  {step.description}
+      {!isCatalogMode ? (
+        <>
+          <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">Centro de recursos</h2>
+                <p className="text-sm text-slate-500">
+                  Separa el catalogo comercial de los insumos, compras y fichas tecnicas.
                 </p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+              </div>
+              <div className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Ingenieria del negocio
+              </div>
+            </div>
 
-      <section className="rounded-[28px] bg-white/85 p-4 shadow-lg ring-1 ring-white/70 backdrop-blur">
-        <div className="flex flex-wrap gap-2">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeTab === tab.id
-                  ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
-                  : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </section>
+            <div className="overflow-x-auto">
+              <div className="flex min-w-max gap-3">
+                {ONBOARDING_STEPS.map((step) => {
+                  const Icon = step.icon;
+                  const isActive = activeTab === step.id;
 
-      {activeTab === "suppliers" ? (
+                  return (
+                    <button
+                      key={step.id}
+                      type="button"
+                      onClick={() => setActiveTab(step.id)}
+                      className={`min-w-[210px] rounded-[24px] px-4 py-4 text-left ring-1 transition ${
+                        isActive
+                          ? "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white shadow-lg ring-slate-950/10"
+                          : "bg-white text-slate-700 ring-slate-200 hover:shadow-md"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`rounded-2xl p-3 ${isActive ? "bg-white/10" : "bg-slate-100"}`}
+                        >
+                          <Icon
+                            size={18}
+                            className={isActive ? "text-emerald-300" : "text-slate-500"}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold">{step.title}</h3>
+                          <p
+                            className={`mt-1 text-xs leading-5 ${
+                              isActive ? "text-slate-300" : "text-slate-500"
+                            }`}
+                          >
+                            {step.description}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[28px] bg-white/85 p-4 shadow-lg ring-1 ring-white/70 backdrop-blur">
+            <div className="flex flex-wrap gap-2">
+              {TABS.filter((tab) => RESOURCE_TABS.includes(tab.id)).map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      activeTab === tab.id
+                        ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    <Icon size={15} />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      {activeTab === "suppliers" && !isCatalogMode ? (
         <SupplierManager businessId={businessId} suppliers={suppliers} purchases={purchases} />
       ) : null}
 
-      {activeTab === "purchases" ? (
+      {activeTab === "purchases" && !isCatalogMode ? (
         <PurchaseManager
           businessId={businessId}
           suppliers={suppliers}
@@ -392,7 +447,7 @@ export default function ProductManager({ businessId }) {
         />
       ) : null}
 
-      {activeTab === "recipes" ? (
+      {activeTab === "recipes" && !isCatalogMode ? (
         <RecipeBookManager
           businessId={businessId}
           products={products}
@@ -401,7 +456,7 @@ export default function ProductManager({ businessId }) {
         />
       ) : null}
 
-      {activeTab === "ingredients" ? (
+      {activeTab === "ingredients" && !isCatalogMode ? (
         <section className="space-y-6">
           <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
             <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -454,9 +509,9 @@ export default function ProductManager({ businessId }) {
                       setSupplyForm(SUPPLY_FORM);
                       setIsSupplyModalOpen(true);
                     }}
-                    className="flex min-h-44 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-white px-6 py-8 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
+                    className="flex min-h-32 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-white px-5 py-6 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
                   >
-                    <Boxes size={26} />
+                    <Boxes size={24} />
                     <p className="mt-3 text-base font-semibold text-slate-700">Crea tu primer insumo</p>
                     <p className="mt-1 text-sm">Define materias primas para costeo y compras.</p>
                   </button>
@@ -598,9 +653,13 @@ export default function ProductManager({ businessId }) {
         <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-slate-900">Productos</h2>
+              <h2 className="text-xl font-semibold text-slate-900">
+                {isCatalogMode ? "Catalogo de productos" : "Productos"}
+              </h2>
               <p className="text-sm text-slate-500">
-                Cada producto puede conectarse con su ficha tecnica para utilidad neta automatica.
+                {isCatalogMode
+                  ? "Gestiona el catalogo comercial sin mezclarlo con compras, recetas o costeo."
+                  : "Cada producto puede conectarse con su ficha tecnica para utilidad neta automatica."}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -644,9 +703,9 @@ export default function ProductManager({ businessId }) {
                   setProductForm(PRODUCT_FORM);
                   setIsProductModalOpen(true);
                 }}
-                className="flex min-h-44 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-white px-6 py-8 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
+                className="flex min-h-32 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-white px-5 py-6 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
               >
-                <PackagePlus size={26} />
+                <PackagePlus size={24} />
                 <p className="mt-3 text-base font-semibold text-slate-700">Crea tu primer producto</p>
                 <p className="mt-1 text-sm">Empieza tu catálogo comercial con una ficha limpia.</p>
               </button>
@@ -700,7 +759,9 @@ export default function ProductManager({ businessId }) {
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                  <div
+                    className={`mt-5 grid gap-3 ${isCatalogMode ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
+                  >
                     <button
                       type="button"
                       onClick={() => {
@@ -713,14 +774,16 @@ export default function ProductManager({ businessId }) {
                       <Pencil size={16} />
                       Editar
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("recipes")}
-                      className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
-                    >
-                      <Sparkles size={16} />
-                      Ficha
-                    </button>
+                    {!isCatalogMode ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("recipes")}
+                        className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
+                      >
+                        <Sparkles size={16} />
+                        Ficha
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => setItemToDelete({ id: product.id, type: "product", name: product.name })}
@@ -740,87 +803,192 @@ export default function ProductManager({ businessId }) {
       <FormModal
         open={isProductModalOpen}
         onClose={closeProductModal}
-        maxWidthClass="max-w-3xl"
+        maxWidthClass="max-w-5xl"
         icon={{ main: <PackagePlus size={20} />, close: <X size={18} /> }}
         title={editingProductId ? "Editar producto" : "Nuevo producto"}
-        description="Mantiene una estructura compacta, con el mismo lenguaje visual de los modales del sistema."
+        description="Gestiona el catalogo comercial con precios claros, categoria reutilizable y una lectura inmediata del costeo conectado."
       >
-        <form onSubmit={handleProductSubmit} className="grid gap-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Nombre
-              <input
-                required
-                value={productForm.name}
-                onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Categoria
-              <input
-                required
-                list="product-category-options"
-                value={productForm.category}
-                onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
-          </div>
+        <form onSubmit={handleProductSubmit} className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+          <div className="grid gap-6">
+            <div className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormInput
+                  label="Nombre"
+                  required
+                  value={productForm.name}
+                  onChange={(event) =>
+                    setProductForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                />
+                <FormInput
+                  label="Categoria"
+                  required
+                  list="product-category-options"
+                  value={productForm.category}
+                  onChange={(event) =>
+                    setProductForm((current) => ({ ...current, category: event.target.value }))
+                  }
+                  hint="Selecciona una categoria existente o crea una nueva."
+                />
+              </div>
 
-          <datalist id="product-category-options">
-            {productCategories.map((category) => (
-              <option key={category} value={category} />
-            ))}
-          </datalist>
+              <datalist id="product-category-options">
+                {productCategories.map((category) => (
+                  <option key={category} value={category} />
+                ))}
+              </datalist>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Precio de venta
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={productForm.price}
-                onChange={(event) => setProductForm((current) => ({ ...current, price: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Stock comercial
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={productForm.stock}
-                onChange={(event) => setProductForm((current) => ({ ...current, stock: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
-          </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormInput
+                  label="Precio de venta"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={productForm.price}
+                  onChange={(event) =>
+                    setProductForm((current) => ({ ...current, price: event.target.value }))
+                  }
+                />
+                <FormInput
+                  label="Precio sugerido"
+                  value={formatCOP(productModalMetrics.suggestedPrice || 0)}
+                  readOnly
+                  hint="Se calcula desde la ficha tecnica y el margen objetivo."
+                />
+              </div>
 
-          {feedback.message ? (
-            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-              {feedback.message}
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormInput
+                  label="Stock comercial"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={productForm.stock}
+                  onChange={(event) =>
+                    setProductForm((current) => ({ ...current, stock: event.target.value }))
+                  }
+                />
+                <div className="grid content-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setProductForm((current) => ({
+                        ...current,
+                        price: String(Math.round(productModalMetrics.suggestedPrice || 0)),
+                      }))
+                    }
+                    disabled={!productModalMetrics.suggestedPrice}
+                    className="rounded-2xl border border-emerald-300 bg-white px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Usar precio sugerido
+                  </button>
+                </div>
+              </div>
             </div>
-          ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={closeProductModal}
-              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {isSaving ? "Guardando..." : editingProductId ? "Actualizar" : "Crear producto"}
-            </button>
+            {feedback.message ? (
+              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+                {feedback.message}
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={closeProductModal}
+                className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isSaving ? "Guardando..." : editingProductId ? "Actualizar producto" : "Crear producto"}
+              </button>
+            </div>
           </div>
+
+          <aside className="grid gap-4 rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] p-5 shadow-inner">
+            <div className="rounded-[24px] border border-slate-200 bg-white/70 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Ficha tecnica
+              </p>
+              <h4 className="mt-3 text-lg font-semibold text-slate-900">
+                {currentProductRecipe ? "Costeo enlazado" : "Aun sin costeo"}
+              </h4>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                {currentProductRecipe
+                  ? "Este panel se alimenta automaticamente desde la receta estandar y el costo vigente de insumos."
+                  : "Conecta este producto con una ficha tecnica para medir costo real, margen y precio sugerido."}
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo real</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">
+                  {formatCOP(productModalMetrics.realCost)}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Margen actual</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">
+                  {productModalMetrics.currentMarginPct.toFixed(1)}%
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/75 p-5">
+              {currentProductRecipe ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-slate-800">
+                    {productModalMetrics.ingredientsCount} insumos conectados
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    El precio sugerido responde al margen objetivo configurado en la ficha.
+                  </p>
+                  {!isCatalogMode ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeProductModal();
+                        setActiveTab("recipes");
+                      }}
+                      className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      Abrir ficha tecnica
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="flex flex-col items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isCatalogMode) {
+                        closeProductModal();
+                        setActiveTab("recipes");
+                      }
+                    }}
+                    disabled={isCatalogMode}
+                    className="inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-dashed border-emerald-300 bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Plus size={22} />
+                  </button>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Agrega una ficha tecnica</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {isCatalogMode
+                        ? "Crea la receta desde Centro de Recursos para activar costos y rentabilidad."
+                        : "Enlaza receta, merma y margen objetivo desde el modulo de fichas tecnicas."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
         </form>
       </FormModal>
 
@@ -834,77 +1002,63 @@ export default function ProductManager({ businessId }) {
       >
         <form onSubmit={handleSupplySubmit} className="grid gap-6">
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Nombre
-              <input
-                required
-                value={supplyForm.name}
-                onChange={(event) => setSupplyForm((current) => ({ ...current, name: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Categoria
-              <input
-                value={supplyForm.category}
-                onChange={(event) => setSupplyForm((current) => ({ ...current, category: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
+            <FormInput
+              label="Nombre"
+              required
+              value={supplyForm.name}
+              onChange={(event) => setSupplyForm((current) => ({ ...current, name: event.target.value }))}
+            />
+            <FormInput
+              label="Categoria"
+              value={supplyForm.category}
+              onChange={(event) =>
+                setSupplyForm((current) => ({ ...current, category: event.target.value }))
+              }
+            />
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Unidad
-              <select
-                value={supplyForm.unit}
-                onChange={(event) => setSupplyForm((current) => ({ ...current, unit: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              >
-                {UNITS.map((unit) => (
-                  <option key={unit} value={unit}>
-                    {unit}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Stock
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={supplyForm.stock}
-                onChange={(event) => setSupplyForm((current) => ({ ...current, stock: event.target.value }))}
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Stock minimo
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={supplyForm.stockMinAlert}
-                onChange={(event) =>
-                  setSupplyForm((current) => ({ ...current, stockMinAlert: event.target.value }))
-                }
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              Costo unidad
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={supplyForm.averageCost}
-                onChange={(event) =>
-                  setSupplyForm((current) => ({ ...current, averageCost: event.target.value }))
-                }
-                className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
-              />
-            </label>
+            <FormSelect
+              label="Unidad"
+              value={supplyForm.unit}
+              onChange={(event) => setSupplyForm((current) => ({ ...current, unit: event.target.value }))}
+              selectClassName="bg-[#fff7df] font-semibold text-[#946200] ring-[#d4a72c]/30"
+              hint="Base del costeo por unidad."
+            >
+              {UNITS.map((unit) => (
+                <option key={unit} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </FormSelect>
+            <FormInput
+              label="Stock"
+              type="number"
+              min="0"
+              step="0.01"
+              value={supplyForm.stock}
+              onChange={(event) => setSupplyForm((current) => ({ ...current, stock: event.target.value }))}
+            />
+            <FormInput
+              label="Stock minimo"
+              type="number"
+              min="0"
+              step="0.01"
+              value={supplyForm.stockMinAlert}
+              onChange={(event) =>
+                setSupplyForm((current) => ({ ...current, stockMinAlert: event.target.value }))
+              }
+            />
+            <FormInput
+              label="Costo unidad"
+              type="number"
+              min="0"
+              step="0.01"
+              value={supplyForm.averageCost}
+              onChange={(event) =>
+                setSupplyForm((current) => ({ ...current, averageCost: event.target.value }))
+              }
+            />
           </div>
 
           {feedback.message ? (
