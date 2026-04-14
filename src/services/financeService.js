@@ -162,6 +162,8 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     const tableRef = doc(db, "tables", resolvedTableId);
     const tableSnapshot = await transaction.get(tableRef);
+    const customerRef = customerId ? doc(db, "customers", customerId) : null;
+    const customerSnapshot = customerRef ? await transaction.get(customerRef) : null;
 
     if (!tableSnapshot.exists()) {
       throw new Error("La mesa asociada a la orden no existe.");
@@ -203,11 +205,7 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       createdAt: serverTimestamp(),
     });
 
-    if (customerId) {
-      const customerRef = doc(db, "customers", customerId);
-      const customerSnapshot = await transaction.get(customerRef);
-
-      if (customerSnapshot.exists()) {
+    if (customerRef && customerSnapshot?.exists()) {
         const customerData = customerSnapshot.data();
         transaction.update(customerRef, {
           debt_balance: Number(customerData.debt_balance || 0) + debtAmount,
@@ -215,7 +213,6 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
           last_order_at: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-      }
     }
 
     transaction.update(tableRef, {

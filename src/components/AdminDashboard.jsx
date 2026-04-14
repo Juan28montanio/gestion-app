@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDownCircle, ArrowUpCircle, Landmark, Search } from "lucide-react";
+import {
+  ArrowDownCircle,
+  ArrowUpCircle,
+  CreditCard,
+  Landmark,
+  Search,
+  Wallet,
+} from "lucide-react";
 import { subscribeToSalesHistory } from "../services/financeService";
 import { subscribeToPurchases } from "../services/purchaseService";
 import { formatCOP } from "../utils/formatters";
@@ -11,6 +18,24 @@ const RANGE_OPTIONS = [
   { value: "annual", label: "Anual" },
   { value: "custom", label: "Fecha puntual" },
 ];
+
+const PAYMENT_METHOD_LABELS = {
+  all: "Todos",
+  cash: "Efectivo",
+  card: "Tarjeta",
+  transfer: "Transferencia",
+  nequi: "Nequi",
+  daviplata: "Daviplata",
+};
+
+const PAYMENT_METHOD_STYLES = {
+  all: "from-slate-900 to-slate-700 text-white ring-slate-900/10",
+  cash: "from-emerald-500 to-emerald-600 text-white ring-emerald-500/20",
+  card: "from-sky-500 to-sky-600 text-white ring-sky-500/20",
+  transfer: "from-indigo-500 to-indigo-600 text-white ring-indigo-500/20",
+  nequi: "from-fuchsia-500 to-fuchsia-600 text-white ring-fuchsia-500/20",
+  daviplata: "from-rose-500 to-pink-600 text-white ring-rose-500/20",
+};
 
 function normalizeDate(value) {
   if (!value) {
@@ -38,7 +63,6 @@ function isInRange(date, range, selectedDate) {
 
   const base = selectedDate ? new Date(selectedDate) : new Date();
   const current = new Date(date);
-
   const sameDay = current.toDateString() === base.toDateString();
 
   if (range === "custom" || range === "daily") {
@@ -74,6 +98,7 @@ export default function AdminDashboard({ businessId }) {
   const [selectedRange, setSelectedRange] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [search, setSearch] = useState("");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
 
   useEffect(() => {
     const unsubscribeSales = subscribeToSalesHistory(businessId, setSales);
@@ -85,17 +110,29 @@ export default function AdminDashboard({ businessId }) {
     };
   }, [businessId]);
 
+  const paymentMethodTotals = useMemo(() => {
+    return sales.reduce(
+      (accumulator, sale) => {
+        const method = String(sale.payment_method || "cash").trim() || "cash";
+        accumulator[method] = (accumulator[method] || 0) + Number(sale.total || 0);
+        return accumulator;
+      },
+      { cash: 0, card: 0, transfer: 0, nequi: 0, daviplata: 0 }
+    );
+  }, [sales]);
+
   const movements = useMemo(() => {
     const saleMovements = sales.map((sale) => ({
       id: `sale-${sale.id}`,
       type: "income",
       date: normalizeDate(sale.closed_at || sale.createdAt),
       concept: sale.customer_name
-        ? `${sale.table_name || sale.table_id || "Mesa"} · ${sale.customer_name}`
+        ? `${sale.table_name || sale.table_id || "Mesa"} - ${sale.customer_name}`
         : sale.table_name || sale.table_id || "Venta POS",
       category: (sale.items || []).map((item) => item.category).filter(Boolean).join(", "),
       details: (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", "),
       amount: Number(sale.total || 0),
+      paymentMethod: sale.payment_method || "cash",
       raw: sale,
     }));
 
@@ -107,6 +144,7 @@ export default function AdminDashboard({ businessId }) {
       category: [...new Set((purchase.items || []).map((item) => item.category).filter(Boolean))].join(", "),
       details: (purchase.items || []).map((item) => `${item.quantity}x ${item.ingredient_name}`).join(", "),
       amount: Number(purchase.total || 0),
+      paymentMethod: "expense",
       raw: purchase,
     }));
 
@@ -120,12 +158,16 @@ export default function AdminDashboard({ businessId }) {
 
     return movements.filter((movement) => {
       const matchesRange = isInRange(movement.date, selectedRange, selectedDate);
-      const searchable = `${movement.concept} ${movement.category} ${movement.details}`
-        .toLowerCase();
+      const matchesPayment =
+        selectedPaymentMethod === "all" ||
+        movement.type === "expense" ||
+        movement.paymentMethod === selectedPaymentMethod;
+      const searchable = `${movement.concept} ${movement.category} ${movement.details}`.toLowerCase();
       const matchesSearch = !term || searchable.includes(term);
-      return matchesRange && matchesSearch;
+
+      return matchesRange && matchesPayment && matchesSearch;
     });
-  }, [movements, search, selectedDate, selectedRange]);
+  }, [movements, search, selectedDate, selectedPaymentMethod, selectedRange]);
 
   const summary = useMemo(() => {
     return filteredMovements.reduce(
@@ -149,7 +191,7 @@ export default function AdminDashboard({ businessId }) {
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Resumen financiero</h2>
           <p className="text-sm text-slate-500">
-            Integra ingresos, compras y balance con filtros activos por tiempo y concepto.
+            Integra ingresos, compras y balance con filtros activos por fecha, concepto y metodo de pago.
           </p>
         </div>
 
@@ -186,7 +228,7 @@ export default function AdminDashboard({ businessId }) {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="mb-6 grid gap-4 md:grid-cols-3">
         <article className="rounded-[28px] bg-emerald-50 p-5 ring-1 ring-emerald-200">
           <div className="flex items-center justify-between">
             <div>
@@ -218,7 +260,40 @@ export default function AdminDashboard({ businessId }) {
         </article>
       </div>
 
-      <div className="mt-6 rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
+      <div className="mb-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        {["all", "cash", "card", "transfer", "nequi", "daviplata"].map((method) => {
+          const isActive = selectedPaymentMethod === method;
+          const total = method === "all" ? summary.income : paymentMethodTotals[method] || 0;
+          const Icon = method === "all" ? Wallet : CreditCard;
+
+          return (
+            <button
+              key={method}
+              type="button"
+              onClick={() => setSelectedPaymentMethod(method)}
+              className={`rounded-[24px] p-4 text-left ring-1 transition ${
+                isActive
+                  ? `bg-gradient-to-br ${PAYMENT_METHOD_STYLES[method]} shadow-lg`
+                  : "bg-slate-50 text-slate-700 ring-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className={`rounded-2xl p-2 ${isActive ? "bg-white/15" : "bg-white"}`}>
+                  <Icon size={16} />
+                </span>
+                <span className={`text-xs font-semibold uppercase tracking-[0.18em] ${isActive ? "text-white/80" : "text-slate-400"}`}>
+                  {PAYMENT_METHOD_LABELS[method]}
+                </span>
+              </div>
+              <p className={`mt-4 text-lg font-black ${isActive ? "text-white" : "text-slate-900"}`}>
+                {formatCOP(total)}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Historial de transacciones</h3>
@@ -239,6 +314,7 @@ export default function AdminDashboard({ businessId }) {
                 <tr>
                   <th className="py-3 pr-4">Tipo</th>
                   <th className="py-3 pr-4">Concepto</th>
+                  <th className="py-3 pr-4">Metodo</th>
                   <th className="py-3 pr-4">Categoria</th>
                   <th className="py-3 pr-4">Detalle</th>
                   <th className="py-3 pr-4">Fecha</th>
@@ -260,6 +336,17 @@ export default function AdminDashboard({ businessId }) {
                       </span>
                     </td>
                     <td className="py-3 pr-4 font-medium text-slate-900">{movement.concept}</td>
+                    <td className="py-3 pr-4">
+                      {movement.type === "income" ? (
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {PAYMENT_METHOD_LABELS[movement.paymentMethod] || movement.paymentMethod}
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                          Compra
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 pr-4">{movement.category || "General"}</td>
                     <td className="py-3 pr-4">{movement.details || "-"}</td>
                     <td className="py-3 pr-4">
