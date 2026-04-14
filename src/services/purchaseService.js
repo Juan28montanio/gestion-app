@@ -26,6 +26,7 @@ function normalizePurchaseItems(items) {
     const unitPrice = Number(item?.unit_price ?? item?.unitPrice);
     const ivaPct = Number(item?.iva_pct ?? item?.ivaPct ?? 0);
     const category = String(item?.category || "").trim();
+    const unit = String(item?.unit || "").trim();
 
     if (!ingredientId) {
       throw new Error("Cada item de compra debe vincular un insumo.");
@@ -47,6 +48,7 @@ function normalizePurchaseItems(items) {
       ingredient_id: ingredientId,
       ingredient_name: ingredientName,
       quantity,
+      unit,
       unit_price: unitPrice,
       iva_pct: ivaPct,
       category,
@@ -87,6 +89,8 @@ function buildPurchasePayload(purchase, items) {
     purchase_date: purchaseDate,
     items,
     total: items.reduce((sum, item) => sum + Number(item.total_cost || 0), 0),
+    type: "expense",
+    concept: `Compra ${invoiceNumber}`,
   };
 }
 

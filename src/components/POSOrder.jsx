@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Search, ShoppingBag, ShoppingCart, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Search,
+  ShoppingBag,
+  ShoppingCart,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useCart } from "../context/CartContext";
+import { subscribeToCustomers } from "../services/customerService";
 import { subscribeToProducts } from "../services/productService";
 import { subscribeToTables } from "../services/tableService";
 import {
@@ -35,21 +44,31 @@ function getCategoryStyle(category) {
   return CATEGORY_STYLES[key] || "from-slate-100 to-slate-50 text-slate-900";
 }
 
-function TableSelector({ tables, selectedTable, onSelectTable }) {
+function SearchSelector({
+  label,
+  placeholder,
+  items,
+  selectedItem,
+  onSelectItem,
+  getLabel,
+  getDescription,
+  icon: Icon,
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const filteredTables = useMemo(() => {
+  const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) {
-      return tables;
+      return items;
     }
 
-    return tables.filter((table) => {
-      const label = `${table.name || ""} ${table.number || ""}`.toLowerCase();
-      return label.includes(term);
+    return items.filter((item) => {
+      const labelValue = getLabel(item).toLowerCase();
+      const descriptionValue = String(getDescription?.(item) || "").toLowerCase();
+      return `${labelValue} ${descriptionValue}`.includes(term);
     });
-  }, [search, tables]);
+  }, [getDescription, getLabel, items, search]);
 
   return (
     <div className="relative">
@@ -59,9 +78,9 @@ function TableSelector({ tables, selectedTable, onSelectTable }) {
         className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 text-left ring-1 ring-slate-200 transition hover:ring-emerald-300 md:min-w-[280px]"
       >
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Seleccionar mesa</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
           <p className="mt-1 text-sm font-semibold text-slate-900">
-            {selectedTable ? selectedTable.name || `Mesa ${selectedTable.number}` : "Elegir mesa"}
+            {selectedItem ? getLabel(selectedItem) : placeholder}
           </p>
         </div>
         <ChevronDown size={16} className="text-slate-400" />
@@ -74,21 +93,20 @@ function TableSelector({ tables, selectedTable, onSelectTable }) {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar mesa..."
+              placeholder={`Buscar ${label.toLowerCase()}...`}
               className="w-full bg-transparent text-sm outline-none"
             />
           </div>
 
           <div className="max-h-64 space-y-2 overflow-y-auto">
-            {filteredTables.map((table) => {
-              const isSelected = selectedTable?.id === table.id;
-
+            {filteredItems.map((item) => {
+              const isSelected = selectedItem?.id === item.id;
               return (
                 <button
-                  key={table.id}
+                  key={item.id}
                   type="button"
                   onClick={() => {
-                    onSelectTable(table);
+                    onSelectItem(item);
                     setIsOpen(false);
                   }}
                   className={`flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition ${
@@ -97,15 +115,19 @@ function TableSelector({ tables, selectedTable, onSelectTable }) {
                       : "bg-slate-50 text-slate-700"
                   }`}
                 >
-                  <div>
-                    <p className="text-sm font-semibold">
-                      {table.name || `Mesa ${table.number}`}
-                    </p>
-                    <p className={`text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
-                      {table.capacity || table.seats} puestos
-                    </p>
+                  <div className="flex items-start gap-3">
+                    {Icon ? (
+                      <div className={`rounded-2xl p-2 ${isSelected ? "bg-white/10" : "bg-white"}`}>
+                        <Icon size={16} />
+                      </div>
+                    ) : null}
+                    <div>
+                      <p className="text-sm font-semibold">{getLabel(item)}</p>
+                      <p className={`text-xs ${isSelected ? "text-slate-300" : "text-slate-500"}`}>
+                        {getDescription?.(item)}
+                      </p>
+                    </div>
                   </div>
-
                   {isSelected ? <Check size={16} /> : null}
                 </button>
               );
@@ -119,8 +141,16 @@ function TableSelector({ tables, selectedTable, onSelectTable }) {
 
 function CartPanel({
   selectedTable,
+  selectedCustomer,
+  customers,
+  setSelectedCustomer,
   cartItems,
-  total,
+  subtotal,
+  chargedTotalInput,
+  setChargedTotalInput,
+  adjustmentAmount,
+  adjustmentPct,
+  debtAmount,
   paymentMethod,
   setPaymentMethod,
   loading,
@@ -133,8 +163,15 @@ function CartPanel({
   onClose,
   mobile = false,
 }) {
+  const adjustmentLabel =
+    adjustmentAmount < 0 ? "Descuento aplicado" : adjustmentAmount > 0 ? "Aumento aplicado" : "Sin ajuste";
+
   return (
-    <div className={`rounded-[28px] bg-[linear-gradient(180deg,#0f172a_0%,#1f2937_100%)] p-6 text-white shadow-lg ${mobile ? "h-full rounded-none" : ""}`}>
+    <div
+      className={`rounded-[28px] bg-[linear-gradient(180deg,#0f172a_0%,#1f2937_100%)] p-6 text-white shadow-lg ${
+        mobile ? "h-full rounded-none" : ""
+      }`}
+    >
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Carrito de pedido</h2>
@@ -156,6 +193,21 @@ function CartPanel({
         ) : null}
       </div>
 
+      <div className="mb-4">
+        <SearchSelector
+          label="Cliente"
+          placeholder="Cliente ocasional"
+          items={customers}
+          selectedItem={selectedCustomer}
+          onSelectItem={setSelectedCustomer}
+          getLabel={(customer) => customer.name}
+          getDescription={(customer) =>
+            `${customer.phone || "Sin telefono"} · Deuda ${formatCOP(customer.debt_balance || 0)}`
+          }
+          icon={UserRound}
+        />
+      </div>
+
       <div className="space-y-3">
         {cartItems.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-700 p-4 text-sm text-slate-400">
@@ -163,7 +215,10 @@ function CartPanel({
           </div>
         ) : (
           cartItems.map((item) => (
-            <article key={item.lineId} className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <article
+              key={item.lineId}
+              className="rounded-2xl border border-slate-800 bg-slate-900 p-4"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="font-medium">{item.name}</h3>
@@ -220,12 +275,46 @@ function CartPanel({
       </div>
 
       <div className="mt-6 border-t border-slate-800 pt-4">
-        <div className="mb-4 flex items-center justify-between text-lg font-semibold">
-          <span>Total</span>
-          <span>{formatCOP(total)}</span>
+        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+          <div className="flex items-center justify-between text-sm text-slate-300">
+            <span>Total real de productos</span>
+            <span>{formatCOP(subtotal)}</span>
+          </div>
+          <div className="grid gap-2">
+            <label className="text-xs uppercase tracking-[0.18em] text-slate-400">
+              Valor final cobrado
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={chargedTotalInput}
+              onChange={(event) => setChargedTotalInput(event.target.value)}
+              className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none"
+            />
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-300">{adjustmentLabel}</span>
+            <span
+              className={
+                adjustmentAmount < 0
+                  ? "font-semibold text-amber-300"
+                  : adjustmentAmount > 0
+                    ? "font-semibold text-emerald-300"
+                    : "font-semibold text-slate-200"
+              }
+            >
+              {formatCOP(adjustmentAmount)} ({adjustmentPct.toFixed(1)}%)
+            </span>
+          </div>
+          {selectedCustomer && debtAmount > 0 ? (
+            <div className="rounded-2xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200 ring-1 ring-rose-400/20">
+              Se cargaran {formatCOP(debtAmount)} como deuda a {selectedCustomer.name}.
+            </div>
+          ) : null}
         </div>
 
-        <div className="mb-5">
+        <div className="mb-5 mt-5">
           <p className="mb-3 text-sm text-slate-300">Metodo de pago</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {PAYMENT_OPTIONS.map((option) => (
@@ -289,9 +378,12 @@ export default function POSOrder({
 }) {
   const [products, setProducts] = useState([]);
   const [tables, setTables] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [chargedTotalInput, setChargedTotalInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
@@ -311,16 +403,19 @@ export default function POSOrder({
     const unsubscribeTables = subscribeToTables(businessId, (nextTables) =>
       setTables(nextTables.filter((table) => !table.deletedAt))
     );
+    const unsubscribeCustomers = subscribeToCustomers(businessId, setCustomers);
 
     return () => {
       unsubscribeProducts();
       unsubscribeTables();
+      unsubscribeCustomers();
     };
   }, [businessId]);
 
   useEffect(() => {
     if (!selectedTable?.id) {
       clearCart();
+      setSelectedCustomer(null);
       return undefined;
     }
 
@@ -331,7 +426,26 @@ export default function POSOrder({
     );
 
     return () => unsubscribeOrder();
-  }, [businessId, selectedTable?.id]);
+  }, [businessId, clearCart, loadOrderIntoCart, selectedTable?.id]);
+
+  useEffect(() => {
+    if (activeOrder?.customer_id) {
+      const matchedCustomer = customers.find((customer) => customer.id === activeOrder.customer_id);
+      setSelectedCustomer(
+        matchedCustomer || {
+          id: activeOrder.customer_id,
+          name: activeOrder.customer_name || "Cliente asociado",
+        }
+      );
+    } else if (!activeOrder?.id) {
+      setSelectedCustomer(null);
+    }
+  }, [activeOrder?.customer_id, activeOrder?.customer_name, activeOrder?.id, customers]);
+
+  useEffect(() => {
+    const sourceAmount = Number(activeOrder?.total ?? total ?? 0);
+    setChargedTotalInput(sourceAmount ? String(Math.round(sourceAmount)) : "");
+  }, [activeOrder?.id, activeOrder?.total, total]);
 
   useEffect(() => {
     if (!selectedTable?.id) {
@@ -348,13 +462,20 @@ export default function POSOrder({
     return products.filter((product) => {
       const matchesCategory =
         selectedCategory === "all" || product.category === selectedCategory;
-      const matchesSearch = product.name
-        .toLowerCase()
-        .includes(search.trim().toLowerCase());
+      const matchesSearch = product.name.toLowerCase().includes(search.trim().toLowerCase());
 
       return matchesCategory && matchesSearch;
     });
   }, [products, search, selectedCategory]);
+
+  const chargedTotal = useMemo(() => {
+    const parsed = Number(chargedTotalInput);
+    return Number.isFinite(parsed) ? parsed : total;
+  }, [chargedTotalInput, total]);
+
+  const adjustmentAmount = chargedTotal - total;
+  const adjustmentPct = total > 0 ? (adjustmentAmount / total) * 100 : 0;
+  const debtAmount = selectedCustomer && chargedTotal < total ? total - chargedTotal : 0;
 
   const handleAddProduct = (product) => {
     addItem(product);
@@ -374,6 +495,7 @@ export default function POSOrder({
         items: cartItems,
         total,
         orderId: activeOrder?.id,
+        customer: selectedCustomer,
       });
     } finally {
       setLoading(false);
@@ -392,9 +514,13 @@ export default function POSOrder({
         tableId: selectedTable.id,
         orderId: activeOrder.id,
         paymentMethod,
+        chargedTotal,
+        subtotal: total,
+        customer: selectedCustomer,
       });
       onPaymentSuccess?.(paymentMethod);
       clearCart();
+      setSelectedCustomer(null);
       setIsCartDrawerOpen(false);
       onOrderPaid?.();
     } finally {
@@ -414,6 +540,7 @@ export default function POSOrder({
         orderId: activeOrder.id,
       });
       clearCart();
+      setSelectedCustomer(null);
       setIsCartDrawerOpen(false);
       setIsCancelConfirmOpen(false);
       onOrderCancelled?.();
@@ -427,10 +554,14 @@ export default function POSOrder({
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-5 grid gap-4 xl:grid-cols-[auto_1fr] xl:items-end">
-            <TableSelector
-              tables={tables}
-              selectedTable={selectedTable}
-              onSelectTable={onSelectTable}
+            <SearchSelector
+              label="Seleccionar mesa"
+              placeholder="Elegir mesa"
+              items={tables}
+              selectedItem={selectedTable}
+              onSelectItem={onSelectTable}
+              getLabel={(table) => table.name || `Mesa ${table.number}`}
+              getDescription={(table) => `${table.capacity || table.seats} puestos`}
             />
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -492,7 +623,9 @@ export default function POSOrder({
                 onClick={() => handleAddProduct(product)}
                 className="group rounded-[28px] bg-white text-left shadow-lg ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-xl"
               >
-                <div className={`rounded-t-[28px] bg-gradient-to-br p-5 ${getCategoryStyle(product.category)}`}>
+                <div
+                  className={`rounded-t-[28px] bg-gradient-to-br p-5 ${getCategoryStyle(product.category)}`}
+                >
                   <div className="flex items-center justify-between gap-3">
                     <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em]">
                       {product.category}
@@ -526,8 +659,16 @@ export default function POSOrder({
         <div className="hidden xl:block">
           <CartPanel
             selectedTable={selectedTable}
+            selectedCustomer={selectedCustomer}
+            customers={customers}
+            setSelectedCustomer={setSelectedCustomer}
             cartItems={cartItems}
-            total={total}
+            subtotal={total}
+            chargedTotalInput={chargedTotalInput}
+            setChargedTotalInput={setChargedTotalInput}
+            adjustmentAmount={adjustmentAmount}
+            adjustmentPct={adjustmentPct}
+            debtAmount={debtAmount}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
             loading={loading}
@@ -543,12 +684,23 @@ export default function POSOrder({
 
       {isCartDrawerOpen ? (
         <div className="fixed inset-0 z-50 xl:hidden">
-          <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" onClick={() => setIsCartDrawerOpen(false)} />
+          <div
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
+            onClick={() => setIsCartDrawerOpen(false)}
+          />
           <div className="absolute inset-y-0 right-0 w-full max-w-md overflow-y-auto shadow-2xl">
             <CartPanel
               selectedTable={selectedTable}
+              selectedCustomer={selectedCustomer}
+              customers={customers}
+              setSelectedCustomer={setSelectedCustomer}
               cartItems={cartItems}
-              total={total}
+              subtotal={total}
+              chargedTotalInput={chargedTotalInput}
+              setChargedTotalInput={setChargedTotalInput}
+              adjustmentAmount={adjustmentAmount}
+              adjustmentPct={adjustmentPct}
+              debtAmount={debtAmount}
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
               loading={loading}

@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   onSnapshot,
+  orderBy,
   query,
   runTransaction,
   serverTimestamp,
@@ -24,6 +25,7 @@ function normalizeOrderItems(items) {
     const price = Number(item?.price);
     const name = String(item?.name || "").trim();
     const id = String(item?.id || item?.productId || `item-${index + 1}`).trim();
+    const note = String(item?.note || "").trim();
 
     if (!name) {
       throw new Error("Cada item debe incluir nombre.");
@@ -46,6 +48,7 @@ function normalizeOrderItems(items) {
       name,
       quantity,
       price,
+      note,
     };
   });
 }
@@ -57,11 +60,13 @@ function calculateOrderTotal(items) {
   );
 }
 
-export async function createOrder(businessId, tableId, items) {
+export async function createOrder(businessId, tableId, items, options = {}) {
   const normalizedBusinessId = String(businessId || "").trim();
   const normalizedTableId = String(tableId || "").trim();
   const normalizedItems = normalizeOrderItems(items);
   const total = calculateOrderTotal(normalizedItems);
+  const customerId = String(options.customer?.id || options.customerId || "").trim();
+  const customerName = String(options.customer?.name || options.customerName || "").trim();
 
   if (!normalizedBusinessId) {
     throw new Error("El business_id de la orden es obligatorio.");
@@ -85,6 +90,9 @@ export async function createOrder(businessId, tableId, items) {
       business_id: normalizedBusinessId,
       table_id: normalizedTableId,
       items: normalizedItems,
+      customer_id: customerId || null,
+      customer_name: customerName || "",
+      subtotal: total,
       total,
       status: "preparando",
       created_at: serverTimestamp(),
@@ -98,6 +106,40 @@ export async function createOrder(businessId, tableId, items) {
     });
 
     return createdOrderRef.id;
+  });
+}
+
+export function subscribeToActiveOrders(businessId, callback) {
+  if (!businessId) {
+    callback([]);
+    return () => {};
+  }
+
+  const ordersQuery = query(
+    ordersCollection,
+    where("business_id", "==", businessId),
+    where("status", "in", ["preparando", "cuenta_solicitada", "open", "requested_bill"])
+  );
+
+  return onSnapshot(ordersQuery, (snapshot) => {
+    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
+  });
+}
+
+export function subscribeToOrderHistory(businessId, callback) {
+  if (!businessId) {
+    callback([]);
+    return () => {};
+  }
+
+  const ordersQuery = query(
+    ordersCollection,
+    where("business_id", "==", businessId),
+    orderBy("updatedAt", "desc")
+  );
+
+  return onSnapshot(ordersQuery, (snapshot) => {
+    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
   });
 }
 
@@ -125,8 +167,12 @@ export async function submitOrder({
   items,
   total,
   orderId,
+  customer,
 }) {
   const normalizedItems = normalizeOrderItems(items);
+  const customerId = String(customer?.id || "").trim();
+  const customerName = String(customer?.name || "").trim();
+  const calculatedSubtotal = calculateOrderTotal(normalizedItems);
   const payload = {
     business_id: String(businessId || "").trim(),
     table_id: String(table?.id || "").trim(),
@@ -135,7 +181,10 @@ export async function submitOrder({
         ? "cuenta_solicitada"
         : "preparando",
     items: normalizedItems,
-    total: Number(total) || calculateOrderTotal(normalizedItems),
+    customer_id: customerId || null,
+    customer_name: customerName || "",
+    subtotal: calculatedSubtotal,
+    total: Number(total) || calculatedSubtotal,
     updatedAt: serverTimestamp(),
   };
 
@@ -153,7 +202,10 @@ export async function submitOrder({
     return orderId;
   }
 
-  return createOrder(payload.business_id, payload.table_id, normalizedItems);
+  return createOrder(payload.business_id, payload.table_id, normalizedItems, {
+    customerId,
+    customerName,
+  });
 }
 
 export async function requestPayment({
@@ -161,10 +213,16 @@ export async function requestPayment({
   tableId,
   orderId,
   paymentMethod,
+  chargedTotal,
+  subtotal,
+  customer,
 }) {
   await closeOrderAndLogSale(orderId, paymentMethod, {
     businessId,
     tableId,
+    chargedTotal,
+    subtotal,
+    customer,
   });
 }
 

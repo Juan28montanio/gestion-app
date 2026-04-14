@@ -8,6 +8,7 @@ import {
   Store,
   UtensilsCrossed,
 } from "lucide-react";
+import { subscribeToActiveOrders } from "../services/orderService";
 import { subscribeToTables } from "../services/tableService";
 
 const TABLE_STATUS_STYLES = {
@@ -48,11 +49,17 @@ export default function TableView({
   onSelectTable,
 }) {
   const [tables, setTables] = useState([]);
+  const [activeOrders, setActiveOrders] = useState([]);
 
   useEffect(() => {
     const unsubscribe = subscribeToTables(businessId, (nextTables) => {
       setTables(nextTables.filter((table) => !table.deletedAt));
     });
+    return () => unsubscribe();
+  }, [businessId]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToActiveOrders(businessId, setActiveOrders);
     return () => unsubscribe();
   }, [businessId]);
 
@@ -71,19 +78,24 @@ export default function TableView({
       </div>
 
       <div className="h-135 overflow-y-auto pr-1">
-        <div className="grid auto-rows-[92px] grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        <div className="grid auto-rows-[128px] grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           {tables.map((table) => {
             const isSelected = selectedTableId === table.id;
             const statusStyle = TABLE_STATUS_STYLES[table.status] || "bg-slate-400 text-white";
             const statusLabel = TABLE_STATUS_LABELS[table.status] || table.status;
             const Icon = TABLE_ICONS[table.icon] || UtensilsCrossed;
+            const currentOrder = activeOrders.find((order) => order.table_id === table.id);
+            const orderPreview = (currentOrder?.items || [])
+              .slice(0, 2)
+              .map((item) => `${item.quantity}x ${item.name}`)
+              .join(", ");
 
             return (
               <button
                 key={table.id}
                 type="button"
                 onClick={() => onSelectTable(table)}
-                className={`h-23 rounded-3xl p-3 text-left transition ${
+                className={`min-h-32 rounded-3xl p-3 text-left transition ${
                   isSelected
                     ? "shadow-lg ring-2 ring-emerald-500"
                     : "shadow-sm ring-1 ring-white/60 hover:shadow-md"
@@ -123,11 +135,16 @@ export default function TableView({
                     </div>
                   </div>
 
-                  <div className="flex items-end justify-between gap-2">
-                    <p className="text-xs text-slate-700">
-                      {table.capacity || table.seats} puestos
-                    </p>
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-700">{table.capacity || table.seats} puestos</p>
+                    {currentOrder ? (
+                      <p className="line-clamp-2 text-[11px] leading-4 text-slate-600">
+                        Pedido actual: {orderPreview || `${currentOrder.items?.length || 0} items`}
+                      </p>
+                    ) : null}
+                  </div>
 
+                  <div className="flex items-end justify-between gap-2">
                     <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${statusStyle}`}>
                       {statusLabel}
                     </span>

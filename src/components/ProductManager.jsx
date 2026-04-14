@@ -191,6 +191,11 @@ export default function ProductManager({ businessId }) {
     }, {});
   }, [recipeBooks]);
 
+  const productCategories = useMemo(
+    () => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(),
+    [products]
+  );
+
   const closeProductModal = () => {
     setIsProductModalOpen(false);
     setEditingProductId(null);
@@ -685,12 +690,19 @@ export default function ProductManager({ businessId }) {
               Categoria
               <input
                 required
+                list="product-category-options"
                 value={productForm.category}
                 onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))}
                 className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-300"
               />
             </label>
           </div>
+
+          <datalist id="product-category-options">
+            {productCategories.map((category) => (
+              <option key={category} value={category} />
+            ))}
+          </datalist>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="grid gap-2 text-sm font-medium text-slate-700">

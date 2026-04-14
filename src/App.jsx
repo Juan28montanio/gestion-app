@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
+  ContactRound,
   Menu,
   Package2,
   PanelLeftClose,
@@ -13,6 +14,7 @@ import {
 import TableView from "./components/TableView";
 import POSOrder from "./components/POSOrder";
 import AdminDashboard from "./components/AdminDashboard";
+import CustomerManager from "./components/CustomerManager";
 import ProductManager from "./components/ProductManager";
 import TableManager from "./components/TableManager";
 import CustomerMenu from "./components/CustomerMenu";
@@ -33,6 +35,7 @@ const NAV_ITEMS = [
   { id: "salon", label: "Salon", icon: PanelsTopLeft },
   { id: "pos", label: "Punto de Venta", icon: ReceiptText },
   { id: "inventory", label: "Productos", icon: Package2 },
+  { id: "clients", label: "Clientes", icon: ContactRound },
   { id: "finance", label: "Finanzas", icon: BarChart3 },
 ];
 
@@ -40,6 +43,7 @@ const SECTION_TITLES = {
   salon: "Salon",
   pos: "Punto de Venta",
   inventory: "Productos",
+  clients: "Clientes",
   finance: "Finanzas",
 };
 
@@ -361,6 +365,10 @@ export default function App() {
 
                 {activeSection === "inventory" ? (
                   <ProductManager businessId={BUSINESS_ID} />
+                ) : null}
+
+                {activeSection === "clients" ? (
+                  <CustomerManager businessId={BUSINESS_ID} />
                 ) : null}
 
                 {activeSection === "finance" ? (

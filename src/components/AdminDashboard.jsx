@@ -1,210 +1,282 @@
 import { useEffect, useMemo, useState } from "react";
-import { CreditCard, Landmark, Smartphone, Wallet } from "lucide-react";
-import { subscribeToDailySales } from "../services/financeService";
+import { ArrowDownCircle, ArrowUpCircle, Landmark, Search } from "lucide-react";
+import { subscribeToSalesHistory } from "../services/financeService";
+import { subscribeToPurchases } from "../services/purchaseService";
 import { formatCOP } from "../utils/formatters";
 
-const PAYMENT_METHOD_META = {
-  total: {
-    label: "Total del dia",
-    icon: Wallet,
-    classes: "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white ring-slate-950/10",
-    amountClass: "text-white",
-    description: "Vista general",
-  },
-  cash: {
-    label: "Efectivo",
-    icon: Wallet,
-    classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    amountClass: "text-emerald-900",
-    description: "Caja inmediata",
-  },
-  card: {
-    label: "Tarjeta",
-    icon: CreditCard,
-    classes: "bg-sky-50 text-sky-700 ring-sky-200",
-    amountClass: "text-sky-900",
-    description: "Datafono",
-  },
-  transfer: {
-    label: "Transferencia",
-    icon: Landmark,
-    classes: "bg-violet-50 text-violet-700 ring-violet-200",
-    amountClass: "text-violet-900",
-    description: "Banco",
-  },
-  nequi: {
-    label: "Nequi",
-    icon: Smartphone,
-    classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    amountClass: "text-emerald-900",
-    description: "Billetera digital",
-  },
-  daviplata: {
-    label: "Daviplata",
-    icon: Smartphone,
-    classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    amountClass: "text-emerald-900",
-    description: "Pago movil",
-  },
-};
+const RANGE_OPTIONS = [
+  { value: "daily", label: "Diario" },
+  { value: "weekly", label: "Semanal" },
+  { value: "monthly", label: "Mensual" },
+  { value: "annual", label: "Anual" },
+  { value: "custom", label: "Fecha puntual" },
+];
 
-const EMPTY_SUMMARY = {
-  total: 0,
-  byMethod: {
-    cash: 0,
-    transfer: 0,
-    card: 0,
-    nequi: 0,
-    daviplata: 0,
-  },
-  sales: [],
-};
+function normalizeDate(value) {
+  if (!value) {
+    return null;
+  }
 
-function resolvePaymentLabel(method) {
-  return PAYMENT_METHOD_META[method]?.label || method || "Sin metodo";
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  if (value?.toDate) {
+    return value.toDate();
+  }
+
+  return null;
+}
+
+function isInRange(date, range, selectedDate) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  const base = selectedDate ? new Date(selectedDate) : new Date();
+  const current = new Date(date);
+
+  const sameDay = current.toDateString() === base.toDateString();
+
+  if (range === "custom" || range === "daily") {
+    return sameDay;
+  }
+
+  if (range === "weekly") {
+    const start = new Date(base);
+    start.setDate(base.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(base);
+    end.setHours(23, 59, 59, 999);
+    return current >= start && current <= end;
+  }
+
+  if (range === "monthly") {
+    return (
+      current.getFullYear() === base.getFullYear() &&
+      current.getMonth() === base.getMonth()
+    );
+  }
+
+  if (range === "annual") {
+    return current.getFullYear() === base.getFullYear();
+  }
+
+  return true;
 }
 
 export default function AdminDashboard({ businessId }) {
-  const [summary, setSummary] = useState(EMPTY_SUMMARY);
-  const [selectedMethod, setSelectedMethod] = useState("total");
+  const [sales, setSales] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [selectedRange, setSelectedRange] = useState("daily");
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    const unsubscribe = subscribeToDailySales(businessId, (nextSummary) => {
-      setSummary({
-        total: nextSummary?.total || 0,
-        byMethod: {
-          ...EMPTY_SUMMARY.byMethod,
-          ...(nextSummary?.byMethod || {}),
-        },
-        sales: Array.isArray(nextSummary?.sales) ? nextSummary.sales : [],
-      });
-    });
+    const unsubscribeSales = subscribeToSalesHistory(businessId, setSales);
+    const unsubscribePurchases = subscribeToPurchases(businessId, setPurchases);
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeSales();
+      unsubscribePurchases();
+    };
   }, [businessId]);
 
-  const financeCards = useMemo(() => {
-    const cards = [
-      { key: "total", amount: summary.total },
-      ...Object.keys(EMPTY_SUMMARY.byMethod).map((method) => ({
-        key: method,
-        amount: summary.byMethod[method] || 0,
-      })),
-    ];
+  const movements = useMemo(() => {
+    const saleMovements = sales.map((sale) => ({
+      id: `sale-${sale.id}`,
+      type: "income",
+      date: normalizeDate(sale.closed_at || sale.createdAt),
+      concept: sale.customer_name
+        ? `${sale.table_name || sale.table_id || "Mesa"} · ${sale.customer_name}`
+        : sale.table_name || sale.table_id || "Venta POS",
+      category: (sale.items || []).map((item) => item.category).filter(Boolean).join(", "),
+      details: (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", "),
+      amount: Number(sale.total || 0),
+      raw: sale,
+    }));
 
-    return cards;
-  }, [summary]);
+    const purchaseMovements = purchases.map((purchase) => ({
+      id: `purchase-${purchase.id}`,
+      type: "expense",
+      date: normalizeDate(purchase.purchase_date),
+      concept: purchase.supplier_name || purchase.invoice_number || "Compra",
+      category: [...new Set((purchase.items || []).map((item) => item.category).filter(Boolean))].join(", "),
+      details: (purchase.items || []).map((item) => `${item.quantity}x ${item.ingredient_name}`).join(", "),
+      amount: Number(purchase.total || 0),
+      raw: purchase,
+    }));
 
-  const filteredSales = useMemo(() => {
-    if (selectedMethod === "total") {
-      return summary.sales;
-    }
+    return [...saleMovements, ...purchaseMovements].sort(
+      (a, b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0)
+    );
+  }, [purchases, sales]);
 
-    return summary.sales.filter((sale) => {
-      const method = sale.payment_method || sale.method;
-      return method === selectedMethod;
+  const filteredMovements = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    return movements.filter((movement) => {
+      const matchesRange = isInRange(movement.date, selectedRange, selectedDate);
+      const searchable = `${movement.concept} ${movement.category} ${movement.details}`
+        .toLowerCase();
+      const matchesSearch = !term || searchable.includes(term);
+      return matchesRange && matchesSearch;
     });
-  }, [selectedMethod, summary.sales]);
+  }, [movements, search, selectedDate, selectedRange]);
+
+  const summary = useMemo(() => {
+    return filteredMovements.reduce(
+      (acc, movement) => {
+        if (movement.type === "income") {
+          acc.income += movement.amount;
+        } else {
+          acc.expense += movement.amount;
+        }
+        return acc;
+      },
+      { income: 0, expense: 0 }
+    );
+  }, [filteredMovements]);
+
+  const balance = summary.income - summary.expense;
 
   return (
     <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-      <div className="mb-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Resumen financiero</h2>
           <p className="text-sm text-slate-500">
-            Haz clic en una tarjeta para filtrar las transacciones del dia.
+            Integra ingresos, compras y balance con filtros activos por tiempo y concepto.
           </p>
         </div>
 
-        <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-          {filteredSales.length} movimiento{filteredSales.length === 1 ? "" : "s"}
-        </span>
+        <div className="grid gap-3 md:grid-cols-[auto_auto_1fr]">
+          <select
+            value={selectedRange}
+            onChange={(event) => setSelectedRange(event.target.value)}
+            className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
+          >
+            {RANGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => setSelectedDate(event.target.value)}
+            className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
+          />
+
+          <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+            <Search size={16} className="text-slate-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar por concepto o categoria..."
+              className="w-full bg-transparent text-sm outline-none"
+            />
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {financeCards.map(({ key, amount }) => {
-          const meta = PAYMENT_METHOD_META[key];
-          const Icon = meta.icon;
-          const isSelected = selectedMethod === key;
+      <div className="grid gap-4 md:grid-cols-3">
+        <article className="rounded-[28px] bg-emerald-50 p-5 ring-1 ring-emerald-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-emerald-700">Ingresos</p>
+              <p className="mt-2 text-2xl font-black text-emerald-950">{formatCOP(summary.income)}</p>
+            </div>
+            <ArrowUpCircle className="text-emerald-600" size={24} />
+          </div>
+        </article>
 
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSelectedMethod(key)}
-              className={`rounded-[28px] p-5 text-left ring-1 transition hover:-translate-y-0.5 hover:shadow-lg ${meta.classes} ${
-                isSelected ? "shadow-lg ring-slate-900/10" : ""
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold">{meta.label}</p>
-                  <p className="mt-1 text-xs opacity-80">{meta.description}</p>
-                </div>
-                <div className="rounded-2xl border border-[#d4a72c]/25 bg-[#fff7df]/85 p-3 text-[#946200]">
-                  <Icon size={18} />
-                </div>
-              </div>
+        <article className="rounded-[28px] bg-rose-50 p-5 ring-1 ring-rose-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-rose-700">Egresos</p>
+              <p className="mt-2 text-2xl font-black text-rose-950">{formatCOP(summary.expense)}</p>
+            </div>
+            <ArrowDownCircle className="text-rose-600" size={24} />
+          </div>
+        </article>
 
-              <p className={`mt-6 text-2xl font-bold ${meta.amountClass}`}>
-                {formatCOP(amount)}
-              </p>
-            </button>
-          );
-        })}
+        <article className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] p-5 text-white ring-1 ring-slate-950/10">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Balance</p>
+              <p className="mt-2 text-2xl font-black">{formatCOP(balance)}</p>
+            </div>
+            <Landmark className="text-[#d4a72c]" size={24} />
+          </div>
+        </article>
       </div>
 
       <div className="mt-6 rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Transacciones</h3>
+            <h3 className="text-lg font-semibold text-slate-900">Historial de transacciones</h3>
             <p className="text-sm text-slate-500">
-              {selectedMethod === "total"
-                ? "Vista completa del historial del dia."
-                : `Filtrado por ${resolvePaymentLabel(selectedMethod)}.`}
+              {filteredMovements.length} movimiento{filteredMovements.length === 1 ? "" : "s"} en el filtro actual.
             </p>
           </div>
-
-          {selectedMethod !== "total" ? (
-            <button
-              type="button"
-              onClick={() => setSelectedMethod("total")}
-              className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100"
-            >
-              Ver todo
-            </button>
-          ) : null}
         </div>
 
-        {filteredSales.length === 0 ? (
+        {filteredMovements.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-            No hay transacciones para este filtro.
+            No hay movimientos para este filtro.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
-                  <th className="py-3 pr-4">Orden</th>
-                  <th className="py-3 pr-4">Metodo</th>
-                  <th className="py-3 pr-4">Items</th>
-                  <th className="py-3 pr-4">Total</th>
+                  <th className="py-3 pr-4">Tipo</th>
+                  <th className="py-3 pr-4">Concepto</th>
+                  <th className="py-3 pr-4">Categoria</th>
+                  <th className="py-3 pr-4">Detalle</th>
+                  <th className="py-3 pr-4">Fecha</th>
+                  <th className="py-3 pr-4">Valor</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredSales.map((sale) => (
-                  <tr key={sale.id} className="border-b border-slate-100 text-slate-700">
-                    <td className="py-3 pr-4 font-medium text-slate-900">
-                      {sale.order_id || sale.orderId || sale.id}
-                    </td>
+                {filteredMovements.map((movement) => (
+                  <tr key={movement.id} className="border-b border-slate-100 text-slate-700">
                     <td className="py-3 pr-4">
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
-                        {resolvePaymentLabel(sale.payment_method || sale.method)}
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${
+                          movement.type === "income"
+                            ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                            : "bg-rose-50 text-rose-700 ring-rose-200"
+                        }`}
+                      >
+                        {movement.type === "income" ? "Ingreso" : "Egreso"}
                       </span>
                     </td>
-                    <td className="py-3 pr-4">{sale.items?.length || 0}</td>
-                    <td className="py-3 pr-4 font-semibold text-slate-900">
-                      {formatCOP(sale.total || 0)}
+                    <td className="py-3 pr-4 font-medium text-slate-900">{movement.concept}</td>
+                    <td className="py-3 pr-4">{movement.category || "General"}</td>
+                    <td className="py-3 pr-4">{movement.details || "-"}</td>
+                    <td className="py-3 pr-4">
+                      {movement.date
+                        ? new Intl.DateTimeFormat("es-CO", {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          }).format(movement.date)
+                        : "-"}
+                    </td>
+                    <td
+                      className={`py-3 pr-4 font-semibold ${
+                        movement.type === "income" ? "text-emerald-800" : "text-rose-800"
+                      }`}
+                    >
+                      {movement.type === "income" ? "+" : "-"}
+                      {formatCOP(movement.amount)}
                     </td>
                   </tr>
                 ))}

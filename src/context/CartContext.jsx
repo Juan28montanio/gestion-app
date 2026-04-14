@@ -58,7 +58,13 @@ export function CartProvider({ children }) {
 
   const loadOrderIntoCart = (order) => {
     setActiveOrder(order);
-    setCartItems(order?.items || []);
+    setCartItems(
+      (order?.items || []).map((item) => ({
+        lineId: item.lineId || createLineId(),
+        productId: item.productId || item.id,
+        ...item,
+      }))
+    );
   };
 
   const total = useMemo(
