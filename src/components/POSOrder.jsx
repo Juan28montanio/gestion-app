@@ -396,6 +396,7 @@ export default function POSOrder({
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
   const [cartNotice, setCartNotice] = useState("");
   const previousTableIdRef = useRef(null);
+  const cartItemsRef = useRef([]);
   const {
     cartItems,
     activeOrder,
@@ -406,6 +407,10 @@ export default function POSOrder({
     loadOrderIntoCart,
     clearCart,
   } = useCart();
+
+  useEffect(() => {
+    cartItemsRef.current = cartItems;
+  }, [cartItems]);
 
   useEffect(() => {
     const unsubscribeProducts = subscribeToProducts(businessId, setProducts);
@@ -439,7 +444,7 @@ export default function POSOrder({
 
         if (order) {
           loadOrderIntoCart(order);
-        } else if (isFirstTableAssignment && cartItems.length > 0) {
+        } else if (isFirstTableAssignment && cartItemsRef.current.length > 0) {
           loadOrderIntoCart(null, { preserveItemsOnEmpty: true });
         } else if (isSwitchingTables) {
           clearCart();
@@ -452,7 +457,7 @@ export default function POSOrder({
     );
 
     return () => unsubscribeOrder();
-  }, [businessId, cartItems.length, clearCart, loadOrderIntoCart, selectedTable?.id]);
+  }, [businessId, clearCart, loadOrderIntoCart, selectedTable?.id]);
 
   useEffect(() => {
     if (activeOrder?.customer_id) {
