@@ -2,6 +2,7 @@ import {
   Timestamp,
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -10,6 +11,8 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { getCurrentOpenCashSession } from "./cashClosingService";
+import { QUICK_SALE_TABLE } from "../utils/posConstants";
 
 const DEFAULT_METHODS = { cash: 0, transfer: 0, card: 0, nequi: 0, daviplata: 0 };
 
@@ -124,6 +127,14 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
   const salesCollection = collection(db, "sales_history");
   let orderItemsForInventory = [];
   let businessIdForInventory = "";
+  const preloadedOrderSnapshot = await getDoc(orderRef);
+
+  if (!preloadedOrderSnapshot.exists()) {
+    throw new Error("La orden indicada no existe.");
+  }
+
+  const preloadedOrderData = preloadedOrderSnapshot.data();
+  const openCashSession = await getCurrentOpenCashSession(preloadedOrderData.business_id);
 
   await runTransaction(db, async (transaction) => {
     const orderSnapshot = await transaction.get(orderRef);
@@ -160,27 +171,31 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       throw new Error("No fue posible determinar el negocio asociado a la orden.");
     }
 
-    const tableRef = doc(db, "tables", resolvedTableId);
-    const tableSnapshot = await transaction.get(tableRef);
+    const isQuickSale = resolvedTableId === QUICK_SALE_TABLE.id;
+    const tableRef = isQuickSale ? null : doc(db, "tables", resolvedTableId);
+    const tableSnapshot = tableRef ? await transaction.get(tableRef) : null;
     const customerRef = customerId ? doc(db, "customers", customerId) : null;
     const customerSnapshot = customerRef ? await transaction.get(customerRef) : null;
 
-    if (!tableSnapshot.exists()) {
+    if (!isQuickSale && !tableSnapshot?.exists()) {
       throw new Error("La mesa asociada a la orden no existe.");
     }
 
-    const tableData = tableSnapshot.data();
+    const tableData = isQuickSale ? QUICK_SALE_TABLE : tableSnapshot.data();
 
     transaction.update(orderRef, {
       status: "pagada",
       payment_method: normalizedPaymentMethod,
       customer_id: customerId || null,
       customer_name: customerName || "",
+      closing_id: openCashSession?.id || null,
       subtotal,
       total: chargedTotal,
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
+      pending_debt_remaining: debtAmount,
+      settled_amount: 0,
       closed_at: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -198,9 +213,12 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
+      pending_debt_remaining: debtAmount,
+      settled_amount: 0,
       payment_method: normalizedPaymentMethod,
       concept: `Venta ${tableData.name || `Mesa ${tableData.number || ""}`.trim()}`,
       type: "income",
+      closing_id: openCashSession?.id || null,
       closed_at: serverTimestamp(),
       createdAt: serverTimestamp(),
     });
@@ -215,13 +233,15 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
         });
     }
 
-    transaction.update(tableRef, {
-      status: "disponible",
-      current_order_id: null,
-      current_order_summary: "",
-      current_total: 0,
-      updatedAt: serverTimestamp(),
-    });
+    if (tableRef) {
+      transaction.update(tableRef, {
+        status: "disponible",
+        current_order_id: null,
+        current_order_summary: "",
+        current_total: 0,
+        updatedAt: serverTimestamp(),
+      });
+    }
 
     orderItemsForInventory = orderData.items || [];
     businessIdForInventory = resolvedBusinessId;

@@ -13,6 +13,10 @@ import { subscribeToCustomers } from "../services/customerService";
 import { subscribeToProducts } from "../services/productService";
 import { subscribeToTables } from "../services/tableService";
 import {
+  getCashSessionLockInfo,
+  subscribeToOpenCashSession,
+} from "../services/cashClosingService";
+import {
   cancelOrder,
   requestPayment,
   submitOrder,
@@ -20,6 +24,7 @@ import {
 } from "../services/orderService";
 import ConfirmModal from "./ConfirmModal";
 import { formatCOP } from "../utils/formatters";
+import { QUICK_SALE_TABLE } from "../utils/posConstants";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "Efectivo" },
@@ -152,6 +157,7 @@ function CartPanel({
   adjustmentPct,
   debtAmount,
   cartNotice,
+  cashLockInfo,
   paymentMethod,
   setPaymentMethod,
   loading,
@@ -178,7 +184,9 @@ function CartPanel({
           <h2 className="text-xl font-semibold">Carrito de pedido</h2>
           <p className="text-sm text-slate-300">
             {selectedTable
-              ? `Tomando orden para ${selectedTable.name || `Mesa ${selectedTable.number}`}.`
+              ? selectedTable.isQuickSale
+                ? "Venta rapida lista para pago inmediato."
+                : `Tomando orden para ${selectedTable.name || `Mesa ${selectedTable.number}`}.`
               : "Selecciona una mesa para empezar."}
           </p>
         </div>
@@ -282,6 +290,12 @@ function CartPanel({
           </div>
         ) : null}
 
+        {cashLockInfo?.blocked ? (
+          <div className="mb-4 rounded-2xl bg-rose-500/10 px-4 py-3 text-xs text-rose-200 ring-1 ring-rose-400/20">
+            {cashLockInfo.message}
+          </div>
+        ) : null}
+
         <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
           <div className="flex items-center justify-between text-sm text-slate-300">
             <span>Total real de productos</span>
@@ -345,17 +359,22 @@ function CartPanel({
           <button
             type="button"
             onClick={handleCommand}
-            disabled={loading || !selectedTable || cartItems.length === 0}
+            disabled={loading || !selectedTable || cartItems.length === 0 || selectedTable?.isQuickSale}
             className="rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] transition hover:bg-[#fde9a8] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Comandar
+            {selectedTable?.isQuickSale ? "Venta inmediata" : "Comandar"}
           </button>
 
           <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
             <button
               type="button"
               onClick={handlePay}
-              disabled={loading || !selectedTable || !activeOrder?.id}
+              disabled={
+                loading ||
+                !selectedTable ||
+                cashLockInfo?.blocked ||
+                (!activeOrder?.id && cartItems.length === 0)
+              }
               className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-400 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Pagar
@@ -395,6 +414,7 @@ export default function POSOrder({
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
   const [cartNotice, setCartNotice] = useState("");
+  const [openCashSession, setOpenCashSession] = useState(null);
   const previousTableIdRef = useRef(null);
   const cartItemsRef = useRef([]);
   const {
@@ -418,11 +438,13 @@ export default function POSOrder({
       setTables(nextTables.filter((table) => !table.deletedAt))
     );
     const unsubscribeCustomers = subscribeToCustomers(businessId, setCustomers);
+    const unsubscribeCashSession = subscribeToOpenCashSession(businessId, setOpenCashSession);
 
     return () => {
       unsubscribeProducts();
       unsubscribeTables();
       unsubscribeCustomers();
+      unsubscribeCashSession();
     };
   }, [businessId]);
 
@@ -489,6 +511,16 @@ export default function POSOrder({
     [products]
   );
 
+  const availableTables = useMemo(
+    () => [QUICK_SALE_TABLE, ...tables],
+    [tables]
+  );
+
+  const cashLock = useMemo(
+    () => getCashSessionLockInfo(openCashSession),
+    [openCashSession]
+  );
+
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesCategory =
@@ -526,6 +558,11 @@ export default function POSOrder({
       return;
     }
 
+    if (selectedTable.isQuickSale) {
+      setCartNotice("La venta rapida no requiere comanda. Usa Pagar para cerrar de inmediato.");
+      return;
+    }
+
     setLoading(true);
     try {
       await submitOrder({
@@ -543,16 +580,38 @@ export default function POSOrder({
   };
 
   const handlePay = async () => {
-    if (!selectedTable?.id || !activeOrder?.id) {
+    if (!selectedTable?.id) {
+      return;
+    }
+
+    if (cashLock.blocked) {
+      setCartNotice(cashLock.message);
       return;
     }
 
     setLoading(true);
     try {
+      let resolvedOrderId = activeOrder?.id;
+
+      if (!resolvedOrderId && cartItems.length > 0) {
+        resolvedOrderId = await submitOrder({
+          businessId,
+          table: selectedTable,
+          items: cartItems,
+          total,
+          customer: selectedCustomer,
+        });
+      }
+
+      if (!resolvedOrderId) {
+        setCartNotice("No hay una orden activa para cobrar.");
+        return;
+      }
+
       await requestPayment({
         businessId,
         tableId: selectedTable.id,
-        orderId: activeOrder.id,
+        orderId: resolvedOrderId,
         paymentMethod,
         chargedTotal,
         subtotal: total,
@@ -599,11 +658,15 @@ export default function POSOrder({
             <SearchSelector
               label="Seleccionar mesa"
               placeholder="Elegir mesa"
-              items={tables}
+              items={availableTables}
               selectedItem={selectedTable}
               onSelectItem={onSelectTable}
               getLabel={(table) => table.name || `Mesa ${table.number}`}
-              getDescription={(table) => `${table.capacity || table.seats} puestos`}
+              getDescription={(table) =>
+                table.isQuickSale
+                  ? "Venta inmediata sin ocupar mesa"
+                  : `${table.capacity || table.seats} puestos`
+              }
             />
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -611,7 +674,9 @@ export default function POSOrder({
                 <h2 className="text-xl font-semibold text-slate-900">Punto de venta</h2>
                 <p className="text-sm text-slate-500">
                   {selectedTable
-                    ? `Mesa activa: ${selectedTable.name || `Mesa ${selectedTable.number}`}`
+                    ? selectedTable.isQuickSale
+                      ? "Modo venta rapida activo."
+                      : `Mesa activa: ${selectedTable.name || `Mesa ${selectedTable.number}`}`
                     : "Selecciona una mesa para empezar o asignala desde aqui."}
                 </p>
               </div>
@@ -712,6 +777,7 @@ export default function POSOrder({
             adjustmentPct={adjustmentPct}
             debtAmount={debtAmount}
             cartNotice={cartNotice}
+            cashLockInfo={cashLock}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
             loading={loading}
@@ -745,6 +811,7 @@ export default function POSOrder({
               adjustmentPct={adjustmentPct}
               debtAmount={debtAmount}
               cartNotice={cartNotice}
+              cashLockInfo={cashLock}
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
               loading={loading}

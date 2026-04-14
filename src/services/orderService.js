@@ -6,11 +6,13 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import { closeOrderAndLogSale } from "./financeService";
+import { QUICK_SALE_TABLE } from "../utils/posConstants";
 
 const ordersCollection = collection(db, "orders");
 const tablesCollection = collection(db, "tables");
@@ -84,6 +86,24 @@ export async function createOrder(businessId, tableId, items, options = {}) {
     throw new Error("El table_id de la orden es obligatorio.");
   }
 
+  if (normalizedTableId === QUICK_SALE_TABLE.id) {
+    const createdOrderRef = doc(ordersCollection);
+    await setDoc(createdOrderRef, {
+      business_id: normalizedBusinessId,
+      table_id: normalizedTableId,
+      table_name: QUICK_SALE_TABLE.name,
+      items: normalizedItems,
+      customer_id: customerId || null,
+      customer_name: customerName || "",
+      subtotal: total,
+      total,
+      status: "preparando",
+      created_at: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return createdOrderRef.id;
+  }
+
   return runTransaction(db, async (transaction) => {
     const tableRef = doc(tablesCollection, normalizedTableId);
     const tableSnapshot = await transaction.get(tableRef);
@@ -97,6 +117,7 @@ export async function createOrder(businessId, tableId, items, options = {}) {
     transaction.set(createdOrderRef, {
       business_id: normalizedBusinessId,
       table_id: normalizedTableId,
+      table_name: tableSnapshot.data().name || `Mesa ${tableSnapshot.data().number || ""}`.trim(),
       items: normalizedItems,
       customer_id: customerId || null,
       customer_name: customerName || "",
@@ -187,6 +208,7 @@ export async function submitOrder({
   const payload = {
     business_id: String(businessId || "").trim(),
     table_id: String(table?.id || "").trim(),
+    table_name: table?.name || `Mesa ${table?.number || ""}`.trim(),
     status:
       table?.status === "cuenta_solicitada" || table?.status === "requested_bill"
         ? "cuenta_solicitada"
@@ -205,13 +227,15 @@ export async function submitOrder({
 
   if (orderId) {
     await updateDoc(doc(db, "orders", orderId), payload);
-    await updateDoc(doc(db, "tables", table.id), {
-      status: "ocupada",
-      current_order_id: orderId,
-      current_order_summary: currentOrderSummary,
-      current_total: payload.total,
-      updatedAt: serverTimestamp(),
-    });
+    if (table?.id !== QUICK_SALE_TABLE.id) {
+      await updateDoc(doc(db, "tables", table.id), {
+        status: "ocupada",
+        current_order_id: orderId,
+        current_order_summary: currentOrderSummary,
+        current_total: payload.total,
+        updatedAt: serverTimestamp(),
+      });
+    }
     return orderId;
   }
 
@@ -245,6 +269,15 @@ export async function cancelOrder({ tableId, orderId }) {
 
   if (!normalizedOrderId || !normalizedTableId) {
     throw new Error("Para cancelar se requiere orderId y tableId.");
+  }
+
+  if (normalizedTableId === QUICK_SALE_TABLE.id) {
+    await updateDoc(doc(db, "orders", normalizedOrderId), {
+      status: "cancelada",
+      cancelled_at: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return;
   }
 
   const orderRef = doc(db, "orders", normalizedOrderId);

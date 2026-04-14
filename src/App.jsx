@@ -19,6 +19,10 @@ import ProductManager from "./components/ProductManager";
 import TableManager from "./components/TableManager";
 import CustomerMenu from "./components/CustomerMenu";
 import ToastViewport from "./components/ToastViewport";
+import {
+  getCashSessionLockInfo,
+  subscribeToOpenCashSession,
+} from "./services/cashClosingService";
 import { CartProvider } from "./context/CartContext";
 import { SmartProfitIsotype, SmartProfitWordmark } from "./components/SmartProfitMark";
 
@@ -101,6 +105,7 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
   const [isBooting, setIsBooting] = useState(true);
+  const [openCashSession, setOpenCashSession] = useState(null);
 
   useEffect(() => {
     const handleNavigation = () => setPathname(window.location.pathname);
@@ -122,6 +127,11 @@ export default function App() {
       window.removeEventListener("resize", handleResize);
       window.clearTimeout(splashTimeout);
     };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToOpenCashSession(BUSINESS_ID, setOpenCashSession);
+    return () => unsubscribe();
   }, []);
 
   const notify = (message) => {
@@ -161,6 +171,11 @@ export default function App() {
     []
   );
 
+  const cashLockInfo = useMemo(
+    () => getCashSessionLockInfo(openCashSession),
+    [openCashSession]
+  );
+
   useEffect(() => {
     const sectionLabel = SECTION_TITLES[activeSection] || "Dashboard";
     document.title = menuRoute
@@ -182,6 +197,30 @@ export default function App() {
       <CartProvider>
         <main className="min-h-screen bg-transparent text-slate-900">
           {isBooting ? <SplashScreen /> : null}
+          {!isBooting &&
+          cashLockInfo.blocked &&
+          cashLockInfo.reason !== "no_open_session" ? (
+            <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-lg rounded-[32px] bg-white p-8 shadow-2xl ring-1 ring-slate-200">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-600">
+                  Bloqueo de caja
+                </p>
+                <h2 className="mt-3 text-2xl font-black text-slate-950">
+                  Cierra la jornada anterior
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  {cashLockInfo.message}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("finance")}
+                  className="mt-6 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg"
+                >
+                  Ir a Cierre de Caja
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mx-auto flex min-h-screen max-w-[1800px]">
             {isMobileSidebarOpen ? (
