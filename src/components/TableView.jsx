@@ -85,10 +85,13 @@ export default function TableView({
             const statusLabel = TABLE_STATUS_LABELS[table.status] || table.status;
             const Icon = TABLE_ICONS[table.icon] || UtensilsCrossed;
             const currentOrder = activeOrders.find((order) => order.table_id === table.id);
-            const orderPreview = (currentOrder?.items || [])
-              .slice(0, 2)
-              .map((item) => `${item.quantity}x ${item.name}`)
-              .join(", ");
+            const orderPreview =
+              table.current_order_summary ||
+              (currentOrder?.items || [])
+                .slice(0, 2)
+                .map((item) => `${item.quantity}x ${item.name}`)
+                .join(", ");
+            const orderTotal = Number(table.current_total ?? currentOrder?.total ?? 0);
 
             return (
               <button
@@ -138,9 +141,18 @@ export default function TableView({
                   <div className="space-y-2">
                     <p className="text-xs text-slate-700">{table.capacity || table.seats} puestos</p>
                     {currentOrder ? (
-                      <p className="line-clamp-2 text-[11px] leading-4 text-slate-600">
-                        Pedido actual: {orderPreview || `${currentOrder.items?.length || 0} items`}
-                      </p>
+                      <>
+                        <p className="line-clamp-2 text-[11px] leading-4 text-slate-600">
+                          Pedido actual: {orderPreview || `${currentOrder.items?.length || 0} items`}
+                        </p>
+                        <p className="text-[11px] font-semibold text-slate-700">
+                          Total actual: {new Intl.NumberFormat("es-CO", {
+                            style: "currency",
+                            currency: "COP",
+                            maximumFractionDigits: 0,
+                          }).format(orderTotal)}
+                        </p>
+                      </>
                     ) : null}
                   </div>
 

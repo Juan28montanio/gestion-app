@@ -19,7 +19,7 @@ const startOfDay = () => {
   return Timestamp.fromDate(date);
 };
 
-async function decrementInventoryForSale(businessId, orderItems) {
+export async function handleStockReduction(businessId, orderItems) {
   const normalizedBusinessId = String(businessId || "").trim();
 
   if (!normalizedBusinessId || !Array.isArray(orderItems) || orderItems.length === 0) {
@@ -211,6 +211,7 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
         const customerData = customerSnapshot.data();
         transaction.update(customerRef, {
           debt_balance: Number(customerData.debt_balance || 0) + debtAmount,
+          pendingDebt: Number(customerData.pendingDebt || customerData.debt_balance || 0) + debtAmount,
           last_order_at: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -220,6 +221,8 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     transaction.update(tableRef, {
       status: "disponible",
       current_order_id: null,
+      current_order_summary: "",
+      current_total: 0,
       updatedAt: serverTimestamp(),
     });
 
@@ -227,7 +230,7 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     businessIdForInventory = resolvedBusinessId;
   });
 
-  await decrementInventoryForSale(businessIdForInventory, orderItemsForInventory);
+  await handleStockReduction(businessIdForInventory, orderItemsForInventory);
 }
 
 export function subscribeToSalesHistory(businessId, callback) {

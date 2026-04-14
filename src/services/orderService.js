@@ -60,11 +60,19 @@ function calculateOrderTotal(items) {
   );
 }
 
+function buildOrderSummary(items) {
+  return items
+    .slice(0, 3)
+    .map((item) => `${item.quantity}x ${item.name}`)
+    .join(", ");
+}
+
 export async function createOrder(businessId, tableId, items, options = {}) {
   const normalizedBusinessId = String(businessId || "").trim();
   const normalizedTableId = String(tableId || "").trim();
   const normalizedItems = normalizeOrderItems(items);
   const total = calculateOrderTotal(normalizedItems);
+  const currentOrderSummary = buildOrderSummary(normalizedItems);
   const customerId = String(options.customer?.id || options.customerId || "").trim();
   const customerName = String(options.customer?.name || options.customerName || "").trim();
 
@@ -102,6 +110,8 @@ export async function createOrder(businessId, tableId, items, options = {}) {
     transaction.update(tableRef, {
       status: "ocupada",
       current_order_id: createdOrderRef.id,
+      current_order_summary: currentOrderSummary,
+      current_total: total,
       updatedAt: serverTimestamp(),
     });
 
@@ -173,6 +183,7 @@ export async function submitOrder({
   const customerId = String(customer?.id || "").trim();
   const customerName = String(customer?.name || "").trim();
   const calculatedSubtotal = calculateOrderTotal(normalizedItems);
+  const currentOrderSummary = buildOrderSummary(normalizedItems);
   const payload = {
     business_id: String(businessId || "").trim(),
     table_id: String(table?.id || "").trim(),
@@ -197,6 +208,8 @@ export async function submitOrder({
     await updateDoc(doc(db, "tables", table.id), {
       status: "ocupada",
       current_order_id: orderId,
+      current_order_summary: currentOrderSummary,
+      current_total: payload.total,
       updatedAt: serverTimestamp(),
     });
     return orderId;
@@ -258,6 +271,8 @@ export async function cancelOrder({ tableId, orderId }) {
     transaction.update(tableRef, {
       status: "disponible",
       current_order_id: null,
+      current_order_summary: "",
+      current_total: 0,
       updatedAt: serverTimestamp(),
     });
   });

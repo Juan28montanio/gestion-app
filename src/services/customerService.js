@@ -35,7 +35,12 @@ function normalizeCustomerPayload(customer, businessId) {
     phone,
     email,
     notes,
-    debt_balance: Number(customer?.debt_balance || customer?.debtBalance || 0),
+    debt_balance: Number(
+      customer?.debt_balance ?? customer?.debtBalance ?? customer?.pendingDebt ?? 0
+    ),
+    pendingDebt: Number(
+      customer?.pendingDebt ?? customer?.debt_balance ?? customer?.debtBalance ?? 0
+    ),
   };
 }
 
