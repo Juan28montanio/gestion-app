@@ -37,6 +37,27 @@ const PAYMENT_METHOD_STYLES = {
   daviplata: "from-rose-500 to-pink-600 text-white ring-rose-500/20",
 };
 
+function getLocalDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDateInput(value) {
+  if (!value || typeof value !== "string") {
+    return new Date();
+  }
+
+  const [year, month, day] = value.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return new Date(value);
+  }
+
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
 function normalizeDate(value) {
   if (!value) {
     return null;
@@ -61,7 +82,7 @@ function isInRange(date, range, selectedDate) {
     return false;
   }
 
-  const base = selectedDate ? new Date(selectedDate) : new Date();
+  const base = selectedDate ? parseLocalDateInput(selectedDate) : new Date();
   const current = new Date(date);
   const sameDay = current.toDateString() === base.toDateString();
 
@@ -96,7 +117,7 @@ export default function AdminDashboard({ businessId }) {
   const [sales, setSales] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [selectedRange, setSelectedRange] = useState("daily");
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState(() => getLocalDateInputValue());
   const [search, setSearch] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
 
