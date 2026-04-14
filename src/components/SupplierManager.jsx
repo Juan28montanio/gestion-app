@@ -158,19 +158,22 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
 
       <div className="overflow-x-auto rounded-[28px] bg-slate-50 p-4 ring-1 ring-slate-200">
         <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-slate-500">
+          <thead className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
             <tr>
               <th className="py-3 pr-4">Proveedor</th>
               <th className="py-3 pr-4">Categoria</th>
               <th className="py-3 pr-4">Contacto</th>
               <th className="py-3 pr-4">Terminos</th>
-              <th className="py-3 pr-4">Volumen historico</th>
+              <th className="py-3 pr-4 text-right">Volumen historico</th>
               <th className="py-3 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {filteredSuppliers.map((supplier) => (
-              <tr key={supplier.id} className="border-b border-slate-100 text-slate-700">
+              <tr
+                key={supplier.id}
+                className="group border-b border-slate-100 text-slate-700 transition hover:bg-white/80"
+              >
                 <td className="py-3 pr-4">
                   <div>
                     <p className="font-semibold text-slate-900">{supplier.name}</p>
@@ -185,13 +188,13 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
                   </div>
                 </td>
                 <td className="py-3 pr-4">{supplier.payment_terms || "Contado"}</td>
-                <td className="py-3 pr-4 font-semibold text-slate-900">
+                <td className="py-3 pr-4 text-right font-mono font-semibold text-slate-900">
                   {formatCOP(
                     Number(supplier.total_purchases_value || supplierSpend[supplier.id] || 0)
                   )}
                 </td>
                 <td className="py-3 text-right">
-                  <div className="flex justify-end gap-2">
+                  <div className="flex justify-end gap-2 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
                     <button
                       type="button"
                       onClick={() => {

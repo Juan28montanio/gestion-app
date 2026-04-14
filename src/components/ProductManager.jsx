@@ -211,6 +211,45 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     () => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(),
     [products]
   );
+  const resourceStats = useMemo(() => {
+    const lowStockCount = supplies.filter((supply) => {
+      const stock = Number(supply.stock || 0);
+      const min = Number(supply.stock_min_alert || 0);
+      return stock <= 0 || stock <= min || stock <= min * 1.15;
+    }).length;
+    const latestPurchase = purchases[0];
+    const latestPurchaseLabel = latestPurchase?.purchase_date
+      ? latestPurchase.purchase_date
+      : "Sin cargas";
+    const averageMargin =
+      recipeBooks.length > 0
+        ? recipeBooks.reduce(
+            (sum, recipeBook) => sum + Number(recipeBook.current_margin_pct || 0),
+            0
+          ) / recipeBooks.length
+        : 0;
+
+    return [
+      {
+        id: "ingredients",
+        label: "Insumos",
+        value: `${lowStockCount} con stock bajo`,
+        hint: "Alertas activas",
+      },
+      {
+        id: "purchases",
+        label: "Compras",
+        value: latestPurchaseLabel,
+        hint: "Ultima carga",
+      },
+      {
+        id: "recipes",
+        label: "Fichas tecnicas",
+        value: `${averageMargin.toFixed(0)}% de margen`,
+        hint: "Promedio actual",
+      },
+    ];
+  }, [purchases, recipeBooks, supplies]);
 
   const productModalMetrics = useMemo(() => {
     if (!currentProductRecipe) {
@@ -365,47 +404,19 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <div className="flex min-w-max gap-3">
-                {ONBOARDING_STEPS.map((step) => {
-                  const Icon = step.icon;
-                  const isActive = activeTab === step.id;
-
-                  return (
-                    <button
-                      key={step.id}
-                      type="button"
-                      onClick={() => setActiveTab(step.id)}
-                      className={`min-w-[210px] rounded-[24px] px-4 py-4 text-left ring-1 transition ${
-                        isActive
-                          ? "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white shadow-lg ring-slate-950/10"
-                          : "bg-white text-slate-700 ring-slate-200 hover:shadow-md"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`rounded-2xl p-3 ${isActive ? "bg-white/10" : "bg-slate-100"}`}
-                        >
-                          <Icon
-                            size={18}
-                            className={isActive ? "text-emerald-300" : "text-slate-500"}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-semibold">{step.title}</h3>
-                          <p
-                            className={`mt-1 text-xs leading-5 ${
-                              isActive ? "text-slate-300" : "text-slate-500"
-                            }`}
-                          >
-                            {step.description}
-                          </p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="flex flex-wrap gap-3">
+              {resourceStats.map((stat) => (
+                <article
+                  key={stat.id}
+                  className="min-w-[220px] flex-1 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    {stat.label}
+                  </p>
+                  <p className="mt-3 text-lg font-semibold text-slate-900">{stat.value}</p>
+                  <p className="mt-1 text-sm text-slate-500">{stat.hint}</p>
+                </article>
+              ))}
             </div>
           </section>
 
@@ -723,7 +734,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               return (
                 <article
                   key={product.id}
-                  className={`rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200 ${productView === "list" ? "flex flex-col gap-4 md:flex-row md:items-center md:justify-between" : ""}`}
+                  className={`group rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200 ${productView === "list" ? "flex flex-col gap-4 md:flex-row md:items-center md:justify-between" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -740,11 +751,13 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   <div className="mt-5 grid gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Precio</p>
-                      <p className="mt-2 text-lg font-black text-slate-950">{formatCOP(product.price)}</p>
+                      <p className="mt-2 text-right font-mono text-lg font-black text-slate-950">
+                        {formatCOP(product.price)}
+                      </p>
                     </div>
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo real</p>
-                      <p className="mt-2 font-semibold text-slate-900">
+                      <p className="mt-2 text-right font-mono font-semibold text-slate-900">
                         {formatCOP(recipeBook?.real_cost || 0)}
                       </p>
                     </div>
@@ -753,14 +766,14 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                         <Sparkles size={14} />
                         Sugerido
                       </p>
-                      <p className="mt-2 font-semibold text-slate-900">
+                      <p className="mt-2 text-right font-mono font-semibold text-slate-900">
                         {formatCOP(recipeBook?.suggested_price || product.price)}
                       </p>
                     </div>
                   </div>
 
                   <div
-                    className={`mt-5 grid gap-3 ${isCatalogMode ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
+                    className={`mt-5 grid gap-3 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 ${isCatalogMode ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
                   >
                     <button
                       type="button"

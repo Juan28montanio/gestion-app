@@ -9,6 +9,7 @@ import {
   PanelLeftOpen,
   PanelsTopLeft,
   ReceiptText,
+  Workflow,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -36,12 +37,12 @@ const PAYMENT_METHOD_LABELS = {
 };
 
 const NAV_ITEMS = [
-  { id: "salon", label: "Salon", icon: PanelsTopLeft },
-  { id: "pos", label: "Punto de Venta", icon: ReceiptText },
-  { id: "inventory", label: "Productos", icon: Package2 },
-  { id: "resources", label: "Centro de Recursos", icon: Boxes },
-  { id: "clients", label: "Clientes", icon: ContactRound },
-  { id: "finance", label: "Finanzas", icon: BarChart3 },
+  { id: "salon", label: "Salon", icon: PanelsTopLeft, section: "Ventas" },
+  { id: "pos", label: "Punto de Venta", icon: ReceiptText, section: "Ventas" },
+  { id: "inventory", label: "Productos", icon: Package2, section: "Ventas" },
+  { id: "resources", label: "Centro de Recursos", icon: Workflow, section: "Administracion" },
+  { id: "clients", label: "Clientes", icon: ContactRound, section: "Administracion" },
+  { id: "finance", label: "Finanzas", icon: BarChart3, section: "Administracion" },
 ];
 
 const SECTION_TITLES = {
@@ -177,6 +178,15 @@ export default function App() {
     () => getCashSessionLockInfo(openCashSession),
     [openCashSession]
   );
+  const navSections = useMemo(() => {
+    return NAV_ITEMS.reduce((acc, item) => {
+      if (!acc[item.section]) {
+        acc[item.section] = [];
+      }
+      acc[item.section].push(item);
+      return acc;
+    }, {});
+  }, []);
 
   useEffect(() => {
     const sectionLabel = SECTION_TITLES[activeSection] || "Dashboard";
@@ -237,30 +247,39 @@ export default function App() {
                     El control que tu rentabilidad merece.
                   </p>
 
-                  <nav className="mt-8 grid gap-2">
-                    {NAV_ITEMS.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = activeSection === item.id;
+                  <nav className="mt-8 space-y-5">
+                    {Object.entries(navSections).map(([sectionLabel, items]) => (
+                      <div key={sectionLabel}>
+                        <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                          {sectionLabel}
+                        </p>
+                        <div className="grid gap-2">
+                          {items.map((item) => {
+                            const Icon = item.icon;
+                            const isActive = activeSection === item.id;
 
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            setActiveSection(item.id);
-                            setIsMobileSidebarOpen(false);
-                          }}
-                          className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
-                            isActive
-                              ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-950/30"
-                              : "bg-white/6 text-slate-300 hover:bg-white/10"
-                          }`}
-                        >
-                          <Icon size={18} />
-                          {item.label}
-                        </button>
-                      );
-                    })}
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveSection(item.id);
+                                  setIsMobileSidebarOpen(false);
+                                }}
+                                className={`flex items-center gap-3 rounded-2xl border-l-4 px-4 py-3 text-left text-sm font-semibold transition ${
+                                  isActive
+                                    ? "border-emerald-400 bg-emerald-500/10 text-white"
+                                    : "border-transparent bg-white/6 text-slate-300 hover:bg-white/10"
+                                }`}
+                              >
+                                <Icon size={18} strokeWidth={1.8} />
+                                {item.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </nav>
                 </aside>
               </div>
@@ -286,27 +305,38 @@ export default function App() {
                 ) : null}
               </div>
 
-              <nav className="mt-6 grid gap-2">
-                {NAV_ITEMS.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeSection === item.id;
+              <nav className="mt-6 space-y-5">
+                {Object.entries(navSections).map(([sectionLabel, items]) => (
+                  <div key={sectionLabel}>
+                    {!isSidebarCollapsed ? (
+                      <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                        {sectionLabel}
+                      </p>
+                    ) : null}
+                    <div className="grid gap-2">
+                      {items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeSection === item.id;
 
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setActiveSection(item.id)}
-                      className={`flex items-center rounded-2xl py-3 text-left text-sm font-semibold transition ${
-                        isActive
-                          ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-950/30"
-                          : "bg-white/6 text-slate-300 hover:bg-white/10"
-                      } ${isSidebarCollapsed ? "justify-center px-2" : "gap-3 px-4"}`}
-                    >
-                      <Icon size={18} />
-                      {!isSidebarCollapsed ? item.label : null}
-                    </button>
-                  );
-                })}
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setActiveSection(item.id)}
+                            className={`flex items-center rounded-2xl border-l-4 py-3 text-left text-sm font-semibold transition ${
+                              isActive
+                                ? "border-emerald-400 bg-emerald-500/10 text-white"
+                                : "border-transparent bg-white/6 text-slate-300 hover:bg-white/10"
+                            } ${isSidebarCollapsed ? "justify-center px-2" : "gap-3 px-4"}`}
+                          >
+                            <Icon size={18} strokeWidth={1.8} />
+                            {!isSidebarCollapsed ? item.label : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </nav>
 
               <div className="mt-auto rounded-[28px] border border-[#d4a72c]/20 bg-[linear-gradient(135deg,rgba(212,167,44,0.16),rgba(15,23,42,0.15))] p-5 ring-1 ring-white/5">
