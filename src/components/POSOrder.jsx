@@ -697,7 +697,11 @@ export default function POSOrder({
     setIsPaymentModalOpen(true);
   };
 
-  const executePayment = async ({ paymentMethodOverride = paymentMethod, splitPaymentsOverride = [] } = {}) => {
+  const executePayment = async ({
+    paymentMethodOverride = paymentMethod,
+    chargedTotalOverride = chargedTotal,
+    splitPaymentsOverride = [],
+  } = {}) => {
     if (!selectedTable?.id) {
       return;
     }
@@ -731,7 +735,7 @@ export default function POSOrder({
         tableId: selectedTable.id,
         orderId: resolvedOrderId,
         paymentMethod: paymentMethodOverride,
-        chargedTotal,
+        chargedTotal: chargedTotalOverride,
         subtotal: payableSubtotal,
         ticketConsumption,
         splitPayments: splitPaymentsOverride,
@@ -762,6 +766,19 @@ export default function POSOrder({
     await executePayment({
       paymentMethodOverride: "split",
       splitPaymentsOverride: normalizedSplitPayments,
+    });
+  };
+
+  const handleChargeToAccount = async () => {
+    if (!selectedCustomer?.id) {
+      setCartNotice("Selecciona un cliente para cargar esta orden a cuenta.");
+      return;
+    }
+
+    await executePayment({
+      paymentMethodOverride: "account_credit",
+      chargedTotalOverride: 0,
+      splitPaymentsOverride: [],
     });
   };
 
@@ -1229,6 +1246,21 @@ export default function POSOrder({
                   : "Confirmar pago"}
             </button>
           </div>
+
+          {selectedCustomer ? (
+            <button
+              type="button"
+              onClick={handleChargeToAccount}
+              disabled={loading || payableSubtotal <= 0}
+              className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800"
+            >
+              Cargar a cuenta de {selectedCustomer.name}
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              Selecciona un cliente para habilitar la opcion de cargar a cuenta.
+            </div>
+          )}
         </div>
       </ModalWrapper>
 

@@ -6,6 +6,7 @@ export const PAYMENT_METHOD_LABELS = {
   nequi: "Nequi",
   daviplata: "Daviplata",
   ticket_wallet: "Tiquetera",
+  account_credit: "Cuenta por cobrar",
   split: "Pago dividido",
   expense: "Compra",
 };

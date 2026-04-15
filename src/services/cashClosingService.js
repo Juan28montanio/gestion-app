@@ -62,8 +62,11 @@ function formatCOP(value) {
   }).format(Number(value || 0));
 }
 
-function buildClosingCode(closingId, closedAt = new Date()) {
-  return `CIERRE-${closedAt.getFullYear()}-${String(closingId || "").slice(-4).toUpperCase()}`;
+function buildClosingCode(closedAt = new Date(), sequence = 1) {
+  const month = `${closedAt.getMonth() + 1}`.padStart(2, "0");
+  const day = `${closedAt.getDate()}`.padStart(2, "0");
+  const year = `${closedAt.getFullYear()}`.slice(-2);
+  return `CIERRE-${month}${day}${year}-${String(sequence || 1).padStart(3, "0")}`;
 }
 
 export function getCashSessionLockInfo(session) {
@@ -194,13 +197,23 @@ export async function openCashSession(businessId, options = {}) {
   const openingAmount = Number(options.openingAmount || 0);
   const cashierName = String(options.cashierName || "Operador SmartProfit").trim();
   const now = new Date();
+  const openedDateKey = getLocalDateKey(now);
+  const previousSessionsSnapshot = await getDocs(
+    query(
+      cashClosingsCollection,
+      where("business_id", "==", normalizedBusinessId),
+      where("opened_date_key", "==", openedDateKey)
+    )
+  );
+  const dailySequence = previousSessionsSnapshot.size + 1;
   const createdRef = await addDoc(cashClosingsCollection, {
     business_id: normalizedBusinessId,
     status: "open",
     opening_amount: openingAmount,
     cashier_name: cashierName,
     opened_at: serverTimestamp(),
-    opened_date_key: getLocalDateKey(now),
+    opened_date_key: openedDateKey,
+    daily_sequence: dailySequence,
     notification_sent: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -304,7 +317,7 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
           .join(", ") || "Sin detalle",
       at: normalizeDate(order.cancelled_at || order.updatedAt || order.created_at || order.createdAt),
     }));
-  const closingCode = buildClosingCode(normalizedClosingId, now);
+  const closingCode = buildClosingCode(now, Number(closingData.daily_sequence || 1));
   const cashierName = String(
     closingData.cashier_name || closingData.opened_by_name || "Operador SmartProfit"
   ).trim();
@@ -483,7 +496,7 @@ export function buildCashClosingReportHtml(report) {
             <h2 style="margin:18px 0 0;font-size:32px;">Reporte de cierre de caja</h2>
           </div>
           <div style="text-align:right;">
-            <span class="pill">${report.closingCode || buildClosingCode(report.id, report.closedAt)}</span>
+            <span class="pill">${report.closingCode || buildClosingCode(report.closedAt, 1)}</span>
             <p style="margin:16px 0 0;"><strong>Cajero:</strong> ${report.cashierName || "Operador SmartProfit"}</p>
             <p style="margin:6px 0 0;"><strong>Apertura:</strong> ${report.openedAt.toLocaleString("es-CO")}</p>
             <p style="margin:6px 0 0;"><strong>Cierre:</strong> ${report.closedAt.toLocaleString("es-CO")}</p>

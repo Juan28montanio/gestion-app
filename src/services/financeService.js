@@ -237,6 +237,8 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     const paymentLabel =
       primaryPaymentMethod === "split"
         ? "Pago dividido"
+        : primaryPaymentMethod === "account_credit"
+          ? "Cuenta por cobrar"
         : isTicketWalletPayment
           ? "Tiquetera"
           : primaryPaymentMethod;
@@ -288,9 +290,12 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
+      payment_status: debtAmount > 0 ? "pending" : "paid",
       payment_kind:
         primaryPaymentMethod === "split"
           ? "split_cashflow"
+          : primaryPaymentMethod === "account_credit"
+            ? "receivable"
           : isTicketWalletPayment
             ? "prepaid_ticket"
             : "cashflow",
@@ -316,6 +321,7 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
+      payment_status: debtAmount > 0 ? "pending" : "paid",
       payment_method: primaryPaymentMethod,
       payment_label: paymentLabel,
       payment_breakdown: paymentBreakdown,

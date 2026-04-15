@@ -266,6 +266,11 @@ export default function TicketWalletManager({ businessId }) {
                           ? wallet.expiresAt.toLocaleDateString("es-CO")
                           : "sin fecha"}
                       </p>
+                      {Number(customer.pendingDebt || customer.debt_balance || 0) > 0 ? (
+                        <p className="mt-2 text-xs font-semibold text-rose-700">
+                          Deuda ticketera/cliente: {formatCOP(customer.pendingDebt || customer.debt_balance || 0)}
+                        </p>
+                      ) : null}
                     </div>
                     <span className="rounded-full bg-[#fff7df] px-3 py-1 text-xs font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20">
                       {wallet.balance} tickets

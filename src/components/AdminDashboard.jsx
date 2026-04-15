@@ -727,6 +727,18 @@ export default function AdminDashboard({ businessId }) {
             </article>
           </div>
 
+          <div className="mb-6 rounded-[28px] border border-amber-200 bg-[#fff7df] p-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[#946200]">Cartera pendiente</p>
+                <p className="mt-2 text-2xl font-black text-slate-950">{formatCOP(totalReceivable)}</p>
+              </div>
+              <p className="max-w-xl text-sm text-slate-600">
+                Este valor no hace parte del efectivo real en caja. SmartProfit lo mantiene separado para no inflar el cierre del turno.
+              </p>
+            </div>
+          </div>
+
           <div className="mb-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
             {paymentMethodCards.map(({ method, total, variation }) => {
               const isActive = selectedPaymentMethod === method;
