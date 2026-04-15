@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -186,6 +186,7 @@ function CartPanel({
   onClose,
   mobile = false,
 }) {
+  const chargedTotalId = useId();
   const adjustmentLabel =
     adjustmentAmount < 0 ? "Descuento aplicado" : adjustmentAmount > 0 ? "Aumento aplicado" : "Sin ajuste";
 
@@ -352,10 +353,11 @@ function CartPanel({
             <span className="font-semibold">{formatCOP(payableSubtotal)}</span>
           </div>
           <div className="grid gap-2">
-            <label className="text-xs uppercase tracking-[0.18em] text-slate-400">
+            <label htmlFor={chargedTotalId} className="text-xs uppercase tracking-[0.18em] text-slate-400">
               Valor final cobrado
             </label>
             <input
+              id={chargedTotalId}
               type="number"
               min="0"
               step="1"
@@ -1154,11 +1156,15 @@ export default function POSOrder({
                       key={line.id}
                       className="grid gap-3 rounded-3xl bg-white p-4 ring-1 ring-slate-200 md:grid-cols-[1.1fr_0.9fr_auto]"
                     >
-                      <label className="grid gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      <div className="grid gap-2">
+                        <label
+                          htmlFor={`split-method-${line.id}`}
+                          className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400"
+                        >
                           Metodo {index + 1}
-                        </span>
+                        </label>
                         <select
+                          id={`split-method-${line.id}`}
                           value={line.method}
                           onChange={(event) =>
                             handleUpdateSplitPaymentLine(line.id, { method: event.target.value })
@@ -1171,13 +1177,17 @@ export default function POSOrder({
                             </option>
                           ))}
                         </select>
-                      </label>
+                      </div>
 
-                      <label className="grid gap-2">
-                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      <div className="grid gap-2">
+                        <label
+                          htmlFor={`split-amount-${line.id}`}
+                          className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400"
+                        >
                           Valor
-                        </span>
+                        </label>
                         <input
+                          id={`split-amount-${line.id}`}
                           type="number"
                           min="0"
                           step="1"
@@ -1187,7 +1197,7 @@ export default function POSOrder({
                           }
                           className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
                         />
-                      </label>
+                      </div>
 
                       <div className="flex items-end">
                         <button

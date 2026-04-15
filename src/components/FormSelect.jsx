@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 export default function FormSelect({
   label,
   hint,
@@ -5,12 +7,17 @@ export default function FormSelect({
   selectClassName = "",
   options = [],
   children,
+  id,
   ...props
 }) {
+  const generatedId = useId();
+  const selectId = id || generatedId;
+
   return (
-    <label className={`grid gap-2 text-sm font-medium text-slate-700 ${className}`}>
-      <span>{label}</span>
+    <div className={`grid gap-2 text-sm font-medium text-slate-700 ${className}`}>
+      <label htmlFor={selectId}>{label}</label>
       <select
+        id={selectId}
         className={`w-full rounded-2xl bg-white px-4 py-3 text-sm text-slate-900 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-500 ${selectClassName}`}
         {...props}
       >
@@ -22,6 +29,6 @@ export default function FormSelect({
           ))}
       </select>
       {hint ? <span className="text-xs text-slate-400">{hint}</span> : null}
-    </label>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Pencil, Plus, Ticket, WalletCards, X } from "lucide-react";
 import {
   adjustCustomerTicketWallet,
@@ -44,6 +44,7 @@ function buildPlanForm(plan) {
 }
 
 export default function TicketWalletManager({ businessId }) {
+  const assignmentCustomerId = useId();
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
@@ -405,9 +406,10 @@ export default function TicketWalletManager({ businessId }) {
         description="Usa esta herramienta para migrar clientes antiguos o corregir el saldo de una tiquetera."
       >
         <form onSubmit={handleAssignTickets} className="grid gap-6">
-          <label className="grid gap-2 text-sm font-medium text-slate-700">
-            Cliente
+          <div className="grid gap-2 text-sm font-medium text-slate-700">
+            <label htmlFor={assignmentCustomerId}>Cliente</label>
             <select
+              id={assignmentCustomerId}
               value={assignmentForm.customerId}
               onChange={(event) =>
                 setAssignmentForm((current) => ({ ...current, customerId: event.target.value }))
@@ -421,7 +423,7 @@ export default function TicketWalletManager({ businessId }) {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <FormInput
               label="Saldo inicial"
