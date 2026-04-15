@@ -258,6 +258,8 @@ export async function requestPayment({
   paymentMethod,
   chargedTotal,
   subtotal,
+  ticketConsumption,
+  splitPayments,
   customer,
 }) {
   await closeOrderAndLogSale(orderId, paymentMethod, {
@@ -265,6 +267,8 @@ export async function requestPayment({
     tableId,
     chargedTotal,
     subtotal,
+    ticketConsumption,
+    splitPayments,
     customer,
   });
 }

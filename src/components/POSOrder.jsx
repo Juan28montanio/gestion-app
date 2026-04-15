@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
+  Plus,
   Search,
   ShoppingBag,
   ShoppingCart,
@@ -23,8 +24,10 @@ import {
   subscribeToActiveOrder,
 } from "../services/orderService";
 import ConfirmModal from "./ConfirmModal";
+import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 import { QUICK_SALE_TABLE } from "../utils/posConstants";
+import { PAYMENT_METHOD_LABELS } from "../utils/payments";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "Efectivo" },
@@ -47,6 +50,14 @@ const CATEGORY_STYLES = {
 function getCategoryStyle(category) {
   const key = String(category || "").trim().toLowerCase();
   return CATEGORY_STYLES[key] || "from-slate-100 to-slate-50 text-slate-900";
+}
+
+function createSplitPaymentLine(method = "cash", amount = "") {
+  return {
+    id: `split-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    method,
+    amount,
+  };
 }
 
 function SearchSelector({
@@ -163,6 +174,7 @@ function CartPanel({
   cashLockInfo,
   paymentMethod,
   setPaymentMethod,
+  canUseSplitPayment,
   loading,
   activeOrder,
   updateItem,
@@ -366,12 +378,17 @@ function CartPanel({
               {formatCOP(adjustmentAmount)} ({adjustmentPct.toFixed(1)}%)
             </span>
           </div>
-          {selectedCustomer && debtAmount > 0 ? (
-            <div className="rounded-2xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200 ring-1 ring-rose-400/20">
-              Se cargaran {formatCOP(debtAmount)} como deuda a {selectedCustomer.name}.
-            </div>
-          ) : null}
-        </div>
+        {selectedCustomer && debtAmount > 0 ? (
+          <div className="rounded-2xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200 ring-1 ring-rose-400/20">
+            Se cargaran {formatCOP(debtAmount)} como deuda a {selectedCustomer.name}.
+          </div>
+        ) : null}
+        {canUseSplitPayment && payableSubtotal > 0 ? (
+          <div className="rounded-2xl bg-sky-500/10 px-3 py-2 text-xs text-sky-100 ring-1 ring-sky-400/20">
+            SmartProfit puede dividir este cobro entre varios metodos desde el modal de pago.
+          </div>
+        ) : null}
+      </div>
 
         <div className="mb-5 mt-5">
           {selectedCustomer && selectedCustomerTicketState?.isActive && payableSubtotal === 0 && ticketCoveredAmount > 0 ? (
@@ -426,7 +443,7 @@ function CartPanel({
               }
               className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-400 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Pagar
+              Pagar o dividir
             </button>
             <button
               type="button"
@@ -463,6 +480,9 @@ export default function POSOrder({
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
   const [isTicketConfirmOpen, setIsTicketConfirmOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentMode, setPaymentMode] = useState("total");
+  const [splitPayments, setSplitPayments] = useState([createSplitPaymentLine()]);
   const [cartNotice, setCartNotice] = useState("");
   const [openCashSession, setOpenCashSession] = useState(null);
   const previousTableIdRef = useRef(null);
@@ -606,6 +626,22 @@ export default function POSOrder({
     () => getTicketWalletState(selectedCustomer),
     [selectedCustomer]
   );
+  const normalizedSplitPayments = useMemo(
+    () =>
+      splitPayments
+        .map((line) => ({
+          ...line,
+          method: String(line.method || "cash").trim() || "cash",
+          amount: Number(line.amount || 0),
+        }))
+        .filter((line) => line.amount > 0),
+    [splitPayments]
+  );
+  const splitPaymentsTotal = useMemo(
+    () => normalizedSplitPayments.reduce((sum, line) => sum + Number(line.amount || 0), 0),
+    [normalizedSplitPayments]
+  );
+  const splitPaymentsDifference = Number((chargedTotal - splitPaymentsTotal).toFixed(2));
 
   const handleAddProduct = (product) => {
     addItem(product);
@@ -646,7 +682,22 @@ export default function POSOrder({
     }
   };
 
-  const handlePay = async () => {
+  const openPaymentFlow = () => {
+    if (!selectedTable?.id) {
+      return;
+    }
+
+    if (cashLock.blocked) {
+      setCartNotice(cashLock.message);
+      return;
+    }
+
+    setPaymentMode("total");
+    setSplitPayments([createSplitPaymentLine(paymentMethod, chargedTotal ? String(Math.round(chargedTotal)) : "")]);
+    setIsPaymentModalOpen(true);
+  };
+
+  const executePayment = async ({ paymentMethodOverride = paymentMethod, splitPaymentsOverride = [] } = {}) => {
     if (!selectedTable?.id) {
       return;
     }
@@ -679,21 +730,39 @@ export default function POSOrder({
         businessId,
         tableId: selectedTable.id,
         orderId: resolvedOrderId,
-        paymentMethod,
+        paymentMethod: paymentMethodOverride,
         chargedTotal,
         subtotal: payableSubtotal,
         ticketConsumption,
+        splitPayments: splitPaymentsOverride,
         customer: selectedCustomer,
       });
-      onPaymentSuccess?.(paymentMethod);
+      onPaymentSuccess?.(paymentMethodOverride);
       clearCart();
       setSelectedCustomer(null);
       setIsCartDrawerOpen(false);
+      setIsPaymentModalOpen(false);
       setCartNotice("");
       onOrderPaid?.();
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePay = async () => {
+    await executePayment();
+  };
+
+  const handleSplitPayment = async () => {
+    if (Math.abs(splitPaymentsDifference) > 1) {
+      setCartNotice("La suma de los pagos divididos debe coincidir con el valor final cobrado.");
+      return;
+    }
+
+    await executePayment({
+      paymentMethodOverride: "split",
+      splitPaymentsOverride: normalizedSplitPayments,
+    });
   };
 
   const finalizeTicketPayment = async () => {
@@ -746,6 +815,22 @@ export default function POSOrder({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddSplitPaymentLine = () => {
+    setSplitPayments((current) => [...current, createSplitPaymentLine(paymentMethod, "")]);
+  };
+
+  const handleUpdateSplitPaymentLine = (lineId, patch) => {
+    setSplitPayments((current) =>
+      current.map((line) => (line.id === lineId ? { ...line, ...patch } : line))
+    );
+  };
+
+  const handleRemoveSplitPaymentLine = (lineId) => {
+    setSplitPayments((current) =>
+      current.length > 1 ? current.filter((line) => line.id !== lineId) : current
+    );
   };
 
   const handleTicketPay = async () => {
@@ -922,12 +1007,13 @@ export default function POSOrder({
             cashLockInfo={cashLock}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
+            canUseSplitPayment={payableSubtotal > 0}
             loading={loading}
             activeOrder={activeOrder}
             updateItem={updateItem}
             removeItem={removeItem}
             handleCommand={handleCommand}
-            handlePay={handlePay}
+            handlePay={openPaymentFlow}
             handleTicketPay={handleTicketPay}
             handleOpenCancel={() => setIsCancelConfirmOpen(true)}
           />
@@ -960,12 +1046,13 @@ export default function POSOrder({
               cashLockInfo={cashLock}
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
+              canUseSplitPayment={payableSubtotal > 0}
               loading={loading}
               activeOrder={activeOrder}
               updateItem={updateItem}
               removeItem={removeItem}
               handleCommand={handleCommand}
-              handlePay={handlePay}
+              handlePay={openPaymentFlow}
               handleTicketPay={handleTicketPay}
               handleOpenCancel={() => setIsCancelConfirmOpen(true)}
               onClose={() => setIsCartDrawerOpen(false)}
@@ -974,6 +1061,176 @@ export default function POSOrder({
           </div>
         </div>
       ) : null}
+
+      <ModalWrapper
+        open={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        maxWidthClass="max-w-3xl"
+        icon={{ main: <ShoppingCart size={20} />, close: <X size={18} /> }}
+        title="Cobro de la orden"
+        description="Define si este cierre sera total o dividido antes de registrar el ingreso."
+      >
+        <div className="grid gap-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setPaymentMode("total")}
+              className={`rounded-3xl px-5 py-4 text-left ring-1 transition ${
+                paymentMode === "total"
+                  ? "bg-emerald-50 text-emerald-900 ring-emerald-300"
+                  : "bg-slate-50 text-slate-600 ring-slate-200"
+              }`}
+            >
+              <p className="text-sm font-semibold">Pago total</p>
+              <p className="mt-1 text-sm">Un solo metodo para cerrar la orden completa.</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentMode("split")}
+              className={`rounded-3xl px-5 py-4 text-left ring-1 transition ${
+                paymentMode === "split"
+                  ? "bg-sky-50 text-sky-900 ring-sky-300"
+                  : "bg-slate-50 text-slate-600 ring-slate-200"
+              }`}
+            >
+              <p className="text-sm font-semibold">Pago dividido</p>
+              <p className="mt-1 text-sm">Combina efectivo, Nequi, tarjeta u otros canales.</p>
+            </button>
+          </div>
+
+          {paymentMode === "total" ? (
+            <div className="rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Metodo actual</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    {PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Total a registrar</p>
+                  <p className="mt-2 text-2xl font-black text-slate-950">{formatCOP(chargedTotal)}</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              <div className="rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Lineas de pago</p>
+                    <p className="text-sm text-slate-500">La suma debe coincidir con el valor final cobrado.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddSplitPaymentLine}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                  >
+                    <Plus size={16} />
+                    Agregar linea
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {splitPayments.map((line, index) => (
+                    <div
+                      key={line.id}
+                      className="grid gap-3 rounded-3xl bg-white p-4 ring-1 ring-slate-200 md:grid-cols-[1.1fr_0.9fr_auto]"
+                    >
+                      <label className="grid gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Metodo {index + 1}
+                        </span>
+                        <select
+                          value={line.method}
+                          onChange={(event) =>
+                            handleUpdateSplitPaymentLine(line.id, { method: event.target.value })
+                          }
+                          className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
+                        >
+                          {PAYMENT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="grid gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                          Valor
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={line.amount}
+                          onChange={(event) =>
+                            handleUpdateSplitPaymentLine(line.id, { amount: event.target.value })
+                          }
+                          className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
+                        />
+                      </label>
+
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSplitPaymentLine(line.id)}
+                          disabled={splitPayments.length === 1}
+                          className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 disabled:opacity-50"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Total final</p>
+                  <p className="mt-2 text-xl font-black text-slate-950">{formatCOP(chargedTotal)}</p>
+                </div>
+                <div className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Distribuido</p>
+                  <p className="mt-2 text-xl font-black text-slate-950">{formatCOP(splitPaymentsTotal)}</p>
+                </div>
+                <div className="rounded-3xl bg-[#fff7df] p-4 ring-1 ring-[#d4a72c]/20">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#946200]">Diferencia</p>
+                  <p className="mt-2 text-xl font-black text-slate-950">{formatCOP(splitPaymentsDifference)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setIsPaymentModalOpen(false)}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+            >
+              Volver
+            </button>
+            <button
+              type="button"
+              onClick={paymentMode === "split" ? handleSplitPayment : handlePay}
+              disabled={
+                loading ||
+                (paymentMode === "split" && Math.abs(splitPaymentsDifference) > 1) ||
+                chargedTotal < 0
+              }
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+            >
+              {loading
+                ? "Procesando..."
+                : paymentMode === "split"
+                  ? "Registrar pago dividido"
+                  : "Confirmar pago"}
+            </button>
+          </div>
+        </div>
+      </ModalWrapper>
 
       <ConfirmModal
         open={isCancelConfirmOpen}

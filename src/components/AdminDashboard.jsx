@@ -23,6 +23,13 @@ import {
 } from "../services/cashClosingService";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
+import {
+  accumulatePaymentBreakdown,
+  createEmptyPaymentTotals,
+  normalizePaymentBreakdown,
+  PAYMENT_METHOD_LABELS,
+  paymentBreakdownIncludesMethod,
+} from "../utils/payments";
 
 const RANGE_OPTIONS = [
   { value: "daily", label: "Diario" },
@@ -31,16 +38,6 @@ const RANGE_OPTIONS = [
   { value: "annual", label: "Anual" },
   { value: "custom", label: "Fecha puntual" },
 ];
-
-const PAYMENT_METHOD_LABELS = {
-  all: "Todos",
-  cash: "Efectivo",
-  card: "Tarjeta",
-  transfer: "Transferencia",
-  nequi: "Nequi",
-  daviplata: "Daviplata",
-  ticket_wallet: "Tiquetera",
-};
 
 const PAYMENT_METHOD_STYLES = {
   all: "from-slate-900 to-slate-700 text-white ring-slate-900/10",
@@ -190,11 +187,15 @@ export default function AdminDashboard({ businessId }) {
   const paymentMethodTotals = useMemo(() => {
     return sales.reduce(
       (accumulator, sale) => {
-        const method = String(sale.payment_method || "cash").trim() || "cash";
-        accumulator[method] = (accumulator[method] || 0) + Number(sale.total || 0);
+        accumulatePaymentBreakdown(
+          accumulator,
+          sale.payment_breakdown,
+          sale.payment_method || "cash",
+          Number(sale.total || 0)
+        );
         return accumulator;
       },
-      { cash: 0, card: 0, transfer: 0, nequi: 0, daviplata: 0, ticket_wallet: 0 }
+      createEmptyPaymentTotals()
     );
   }, [sales]);
 
@@ -210,6 +211,11 @@ export default function AdminDashboard({ businessId }) {
       details: (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", "),
       amount: Number(sale.total || 0),
       paymentMethod: sale.payment_method || "cash",
+      paymentBreakdown: normalizePaymentBreakdown(
+        sale.payment_breakdown,
+        sale.payment_method || "cash",
+        Number(sale.total || 0)
+      ),
       raw: sale,
     }));
 
@@ -238,7 +244,12 @@ export default function AdminDashboard({ businessId }) {
       const matchesPayment =
         selectedPaymentMethod === "all" ||
         movement.type === "expense" ||
-        movement.paymentMethod === selectedPaymentMethod;
+        paymentBreakdownIncludesMethod(
+          movement.paymentBreakdown,
+          selectedPaymentMethod,
+          movement.paymentMethod,
+          movement.amount
+        );
       const searchable = `${movement.concept} ${movement.category} ${movement.details}`.toLowerCase();
       return matchesRange && matchesPayment && (!term || searchable.includes(term));
     });
@@ -557,15 +568,31 @@ export default function AdminDashboard({ businessId }) {
                     <td className="py-3 pr-4 font-medium text-slate-900">{movement.concept}</td>
                     <td className="py-3 pr-4">
                       {movement.type === "income" ? (
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            movement.paymentMethod === "ticket_wallet"
-                              ? "bg-[#fff7df] text-[#946200]"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {PAYMENT_METHOD_LABELS[movement.paymentMethod] || movement.paymentMethod}
-                        </span>
+                        <div className="space-y-1">
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                              movement.paymentMethod === "ticket_wallet"
+                                ? "bg-[#fff7df] text-[#946200]"
+                                : movement.paymentMethod === "split"
+                                  ? "bg-sky-50 text-sky-700"
+                                  : "bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            {PAYMENT_METHOD_LABELS[movement.paymentMethod] || movement.paymentMethod}
+                          </span>
+                          {movement.paymentBreakdown?.length > 1 ? (
+                            <p className="text-xs text-slate-500">
+                              {movement.paymentBreakdown
+                                .map(
+                                  (line) =>
+                                    `${PAYMENT_METHOD_LABELS[line.method] || line.method}: ${formatCOP(
+                                      line.amount
+                                    )}`
+                                )
+                                .join(" · ")}
+                            </p>
+                          ) : null}
+                        </div>
                       ) : (
                         <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
                           Compra

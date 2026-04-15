@@ -12,10 +12,16 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import {
+  accumulatePaymentBreakdown,
+  createEmptyPaymentTotals,
+  PAYMENT_METHOD_LABELS,
+} from "../utils/payments";
 
 const cashClosingsCollection = collection(db, "cash_closings");
 const salesHistoryCollection = collection(db, "sales_history");
 const purchasesCollection = collection(db, "purchases");
+const ordersCollection = collection(db, "orders");
 
 export function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -46,6 +52,18 @@ function normalizeDate(value) {
   }
 
   return null;
+}
+
+function formatCOP(value) {
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+}
+
+function buildClosingCode(closingId, closedAt = new Date()) {
+  return `CIERRE-${closedAt.getFullYear()}-${String(closingId || "").slice(-4).toUpperCase()}`;
 }
 
 export function getCashSessionLockInfo(session) {
@@ -174,11 +192,13 @@ export async function openCashSession(businessId, options = {}) {
   }
 
   const openingAmount = Number(options.openingAmount || 0);
+  const cashierName = String(options.cashierName || "Operador SmartProfit").trim();
   const now = new Date();
   const createdRef = await addDoc(cashClosingsCollection, {
     business_id: normalizedBusinessId,
     status: "open",
     opening_amount: openingAmount,
+    cashier_name: cashierName,
     opened_at: serverTimestamp(),
     opened_date_key: getLocalDateKey(now),
     notification_sent: false,
@@ -208,9 +228,10 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
   const openedAt = normalizeDate(closingData.opened_at || closingData.createdAt) || new Date();
   const now = new Date();
 
-  const [salesSnapshot, purchasesSnapshot] = await Promise.all([
+  const [salesSnapshot, purchasesSnapshot, ordersSnapshot] = await Promise.all([
     getDocs(query(salesHistoryCollection, where("business_id", "==", normalizedBusinessId))),
     getDocs(query(purchasesCollection, where("business_id", "==", normalizedBusinessId))),
+    getDocs(query(ordersCollection, where("business_id", "==", normalizedBusinessId))),
   ]);
 
   const relevantSales = salesSnapshot.docs
@@ -233,14 +254,24 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
       return purchaseDate && purchaseDate >= openedAt && purchaseDate <= now;
     });
 
-  const byMethod = relevantSales.reduce(
-    (accumulator, sale) => {
-      const method = String(sale.payment_method || "cash").trim() || "cash";
-      accumulator[method] = (accumulator[method] || 0) + Number(sale.total || 0);
-      return accumulator;
-    },
-    { cash: 0, card: 0, transfer: 0, nequi: 0, daviplata: 0, ticket_wallet: 0 }
-  );
+  const relevantOrders = ordersSnapshot.docs
+    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+    .filter((order) => {
+      const activityDate = normalizeDate(
+        order.cancelled_at || order.closed_at || order.updatedAt || order.created_at || order.createdAt
+      );
+      return activityDate && activityDate >= openedAt && activityDate <= now;
+    });
+
+  const byMethod = relevantSales.reduce((accumulator, sale) => {
+    accumulatePaymentBreakdown(
+      accumulator,
+      sale.payment_breakdown,
+      sale.payment_method || "cash",
+      Number(sale.total) || 0
+    );
+    return accumulator;
+  }, createEmptyPaymentTotals());
   const ticketWalletUnits = relevantSales.reduce(
     (sum, sale) => sum + Number(sale.ticket_units_consumed || 0),
     0
@@ -254,6 +285,29 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
   const expectedCash = Number(closingData.opening_amount || 0) + Number(byMethod.cash || 0);
   const countedCash = Number(cashCounted || 0);
   const cashDifference = countedCash - expectedCash;
+  const totalCollected = Object.values(byMethod).reduce(
+    (sum, amount) => sum + Number(amount || 0),
+    0
+  );
+  const auditEntries = relevantOrders
+    .filter((order) => {
+      const status = String(order.status || "").trim().toLowerCase();
+      return status === "cancelada" || status === "anulada";
+    })
+    .map((order) => ({
+      id: order.id,
+      type: "Orden anulada",
+      tableName: order.table_name || order.table_id || "Salon",
+      detail:
+        (order.items || [])
+          .map((item) => `${item.quantity}x ${item.name}`)
+          .join(", ") || "Sin detalle",
+      at: normalizeDate(order.cancelled_at || order.updatedAt || order.created_at || order.createdAt),
+    }));
+  const closingCode = buildClosingCode(normalizedClosingId, now);
+  const cashierName = String(
+    closingData.cashier_name || closingData.opened_by_name || "Operador SmartProfit"
+  ).trim();
 
   const batch = writeBatch(db);
 
@@ -269,15 +323,19 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
   batch.update(closingRef, {
     status: "closed",
     closed_at: serverTimestamp(),
+    closing_code: closingCode,
+    cashier_name: cashierName,
     sales_total: totalSales,
     expenses_total: totalExpenses,
     net_balance: totalSales - totalExpenses,
+    total_collected: totalCollected,
     by_method: byMethod,
     ticket_wallet_units: ticketWalletUnits,
     cash_expected: expectedCash,
     cash_counted: countedCash,
     cash_difference: cashDifference,
     total_sales_count: relevantSales.length,
+    audit_count: auditEntries.length,
     updatedAt: serverTimestamp(),
   });
 
@@ -287,16 +345,20 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
     id: normalizedClosingId,
     openedAt,
     closedAt: now,
+    closingCode,
+    cashierName,
     openingAmount: Number(closingData.opening_amount || 0),
     salesTotal: totalSales,
     expensesTotal: totalExpenses,
     netBalance: totalSales - totalExpenses,
+    totalCollected,
     byMethod,
     ticketWalletUnits,
     cashExpected: expectedCash,
     cashCounted: countedCash,
     cashDifference,
     totalSalesCount: relevantSales.length,
+    auditEntries,
   };
 }
 
@@ -380,7 +442,13 @@ export function buildCashClosingReportHtml(report) {
   const byMethodRows = Object.entries(report.byMethod || {})
     .map(
       ([method, total]) =>
-        `<tr><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;">${method}</td><td style="padding:8px 0;border-bottom:1px solid #e2e8f0;text-align:right;">${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(total)}</td></tr>`
+        `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${PAYMENT_METHOD_LABELS[method] || method}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${formatCOP(total)}</td></tr>`
+    )
+    .join("");
+  const auditRows = (report.auditEntries || [])
+    .map(
+      (entry) =>
+        `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.type}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.tableName}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.detail}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${entry.at ? entry.at.toLocaleString("es-CO") : "-"}</td></tr>`
     )
     .join("");
 
@@ -389,22 +457,118 @@ export function buildCashClosingReportHtml(report) {
     <head>
       <meta charset="utf-8" />
       <title>Reporte de cierre SmartProfit</title>
+      <style>
+        body { font-family: Inter, Arial, sans-serif; padding: 32px; color: #0f172a; background: #f8fafc; }
+        .sheet { max-width: 980px; margin: 0 auto; background: white; border-radius: 28px; padding: 32px; box-shadow: 0 20px 60px rgba(15,23,42,.12); }
+        .topbar { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:24px; }
+        .brand { display:flex; flex-direction:column; gap:6px; }
+        .pill { display:inline-flex; align-items:center; border-radius:999px; padding:8px 14px; font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; background:#fff7df; color:#946200; }
+        .grid { display:grid; gap:16px; }
+        .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+        .card { border:1px solid #e2e8f0; border-radius:24px; padding:20px; background:#fff; }
+        .card.dark { background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%); color:#fff; border:none; }
+        .eyebrow { font-size:12px; letter-spacing:.18em; text-transform:uppercase; font-weight:700; color:#94a3b8; }
+        .value { font-size:28px; font-weight:800; margin-top:10px; }
+        table { width:100%; border-collapse: collapse; }
+        th { text-align:left; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#64748b; padding:10px 12px; border-bottom:1px solid #cbd5e1; }
+        .section-title { font-size:18px; font-weight:700; margin:28px 0 14px; }
+      </style>
     </head>
-    <body style="font-family: Arial, sans-serif; padding: 32px; color: #0f172a;">
-      <h1 style="margin:0 0 8px;">SmartProfit</h1>
-      <p style="margin:0 0 24px;">El control que tu rentabilidad merece</p>
-      <h2 style="margin:0 0 16px;">Reporte de cierre de caja</h2>
-      <p><strong>Apertura:</strong> ${report.openedAt.toLocaleString("es-CO")}</p>
-      <p><strong>Cierre:</strong> ${report.closedAt.toLocaleString("es-CO")}</p>
-      <p><strong>Ventas:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.salesTotal)}</p>
-      <p><strong>Gastos:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.expensesTotal)}</p>
-      <p><strong>Balance neto:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.netBalance)}</p>
-      <p><strong>Efectivo esperado:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.cashExpected)}</p>
-      <p><strong>Efectivo contado:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.cashCounted)}</p>
-      <p><strong>Diferencia:</strong> ${new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(report.cashDifference)}</p>
-      <p><strong>Servicios por tiquetera:</strong> ${report.ticketWalletUnits || 0} unidades</p>
-      <h3 style="margin-top:32px;">Resumen por canal</h3>
-      <table style="width:100%; border-collapse:collapse;">${byMethodRows}</table>
+    <body>
+      <div class="sheet">
+        <div class="topbar">
+          <div class="brand">
+            <h1 style="margin:0;font-size:22px;">SmartProfit</h1>
+            <p style="margin:0;color:#64748b;">El control que tu rentabilidad merece</p>
+            <h2 style="margin:18px 0 0;font-size:32px;">Reporte de cierre de caja</h2>
+          </div>
+          <div style="text-align:right;">
+            <span class="pill">${report.closingCode || buildClosingCode(report.id, report.closedAt)}</span>
+            <p style="margin:16px 0 0;"><strong>Cajero:</strong> ${report.cashierName || "Operador SmartProfit"}</p>
+            <p style="margin:6px 0 0;"><strong>Apertura:</strong> ${report.openedAt.toLocaleString("es-CO")}</p>
+            <p style="margin:6px 0 0;"><strong>Cierre:</strong> ${report.closedAt.toLocaleString("es-CO")}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-3">
+          <div class="card">
+            <div class="eyebrow">Ventas del turno</div>
+            <div class="value">${formatCOP(report.salesTotal)}</div>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Gastos del turno</div>
+            <div class="value">${formatCOP(report.expensesTotal)}</div>
+          </div>
+          <div class="card dark">
+            <div class="eyebrow" style="color:#cbd5e1;">Balance neto</div>
+            <div class="value">${formatCOP(report.netBalance)}</div>
+          </div>
+        </div>
+
+        <div class="section-title">Resumen de medios</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Concepto</th>
+              <th style="text-align:right;">Esperado en sistema</th>
+              <th style="text-align:right;">Declarado por cajero</th>
+              <th style="text-align:right;">Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;">Efectivo</td>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">${formatCOP(report.cashExpected)}</td>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">${formatCOP(report.cashCounted)}</td>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">${formatCOP(report.cashDifference)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="section-title">Movimientos del turno</div>
+        <div class="grid grid-3">
+          <div class="card">
+            <div class="eyebrow">Total recaudado</div>
+            <div class="value">${formatCOP(report.totalCollected)}</div>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Ventas registradas</div>
+            <div class="value">${report.totalSalesCount || 0}</div>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Servicios por tiquetera</div>
+            <div class="value">${report.ticketWalletUnits || 0} uds</div>
+          </div>
+        </div>
+
+        <div class="section-title">Resumen por canal</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Canal</th>
+              <th style="text-align:right;">Total</th>
+            </tr>
+          </thead>
+          <tbody>${byMethodRows}</tbody>
+        </table>
+
+        <div class="section-title">Auditoria del turno</div>
+        ${
+          auditRows
+            ? `<table>
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    <th>Mesa</th>
+                    <th>Detalle</th>
+                    <th style="text-align:right;">Hora</th>
+                  </tr>
+                </thead>
+                <tbody>${auditRows}</tbody>
+              </table>`
+            : `<div class="card" style="background:#f8fafc;">No se registraron ordenes anuladas ni ajustes auditables en este turno.</div>`
+        }
+      </div>
     </body>
   </html>`;
 }

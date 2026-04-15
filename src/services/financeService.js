@@ -14,15 +14,12 @@ import { db } from "../firebase/firebaseConfig";
 import { getCurrentOpenCashSession } from "./cashClosingService";
 import { QUICK_SALE_TABLE } from "../utils/posConstants";
 import { getTicketWalletState } from "./customerService";
-
-const DEFAULT_METHODS = {
-  cash: 0,
-  transfer: 0,
-  card: 0,
-  nequi: 0,
-  daviplata: 0,
-  ticket_wallet: 0,
-};
+import {
+  accumulatePaymentBreakdown,
+  createEmptyPaymentTotals,
+  getPrimaryPaymentMethod,
+  normalizePaymentBreakdown,
+} from "../utils/payments";
 
 function getTicketProductGrant(items = []) {
   return items.reduce(
@@ -223,6 +220,26 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       orderData.items || [],
       options.ticketConsumption || {}
     );
+    const paymentBreakdown = normalizePaymentBreakdown(
+      options.splitPayments || [],
+      normalizedPaymentMethod,
+      chargedTotal
+    );
+    const paymentBreakdownTotal = paymentBreakdown.reduce(
+      (sum, line) => sum + Number(line.amount || 0),
+      0
+    );
+    const primaryPaymentMethod = getPrimaryPaymentMethod(
+      paymentBreakdown,
+      normalizedPaymentMethod,
+      chargedTotal
+    );
+    const paymentLabel =
+      primaryPaymentMethod === "split"
+        ? "Pago dividido"
+        : isTicketWalletPayment
+          ? "Tiquetera"
+          : primaryPaymentMethod;
 
     if (!resolvedTableId) {
       throw new Error("No fue posible determinar la mesa asociada a la orden.");
@@ -240,6 +257,10 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       throw new Error("Debes seleccionar un cliente para aplicar tickets en esta venta.");
     }
 
+    if (paymentBreakdown.length > 1 && Math.abs(paymentBreakdownTotal - chargedTotal) > 1) {
+      throw new Error("La suma del pago dividido debe coincidir con el valor final cobrado.");
+    }
+
     const isQuickSale = resolvedTableId === QUICK_SALE_TABLE.id;
     const tableRef = isQuickSale ? null : doc(db, "tables", resolvedTableId);
     const tableSnapshot = tableRef ? await transaction.get(tableRef) : null;
@@ -254,8 +275,9 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     transaction.update(orderRef, {
       status: "pagada",
-      payment_method: normalizedPaymentMethod,
-      payment_label: isTicketWalletPayment ? "Tiquetera" : normalizedPaymentMethod,
+      payment_method: primaryPaymentMethod,
+      payment_label: paymentLabel,
+      payment_breakdown: paymentBreakdown,
       customer_id: customerId || null,
       customer_name: customerName || "",
       closing_id: openCashSession?.id || null,
@@ -266,7 +288,12 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
-      payment_kind: isTicketWalletPayment ? "prepaid_ticket" : "cashflow",
+      payment_kind:
+        primaryPaymentMethod === "split"
+          ? "split_cashflow"
+          : isTicketWalletPayment
+            ? "prepaid_ticket"
+            : "cashflow",
       ticket_units_consumed: ticketConsumption.units,
       ticket_units_granted: ticketGrantUnits,
       ticket_covered_amount: ticketConsumption.coveredAmount,
@@ -289,8 +316,9 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
-      payment_method: normalizedPaymentMethod,
-      payment_label: isTicketWalletPayment ? "Tiquetera" : normalizedPaymentMethod,
+      payment_method: primaryPaymentMethod,
+      payment_label: paymentLabel,
+      payment_breakdown: paymentBreakdown,
       concept: `Venta ${tableData.name || `Mesa ${tableData.number || ""}`.trim()}`,
       type: "income",
       income_kind:
@@ -388,10 +416,14 @@ export function subscribeToDailySales(businessId, callback) {
     }));
 
     const byMethod = sales.reduce((accumulator, sale) => {
-      const method = sale.payment_method || sale.method || "unknown";
-      accumulator[method] = (accumulator[method] || 0) + (Number(sale.total) || 0);
+      accumulatePaymentBreakdown(
+        accumulator,
+        sale.payment_breakdown,
+        sale.payment_method || sale.method || "cash",
+        Number(sale.total) || 0
+      );
       return accumulator;
-    }, { ...DEFAULT_METHODS });
+    }, createEmptyPaymentTotals());
 
     callback({
       sales,
