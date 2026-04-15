@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
+  Clock3,
   CreditCard,
+  Eye,
   Landmark,
   Printer,
   ReceiptText,
   Search,
+  Store,
+  Truck,
   Wallet,
 } from "lucide-react";
 import { subscribeToSalesHistory } from "../services/financeService";
@@ -37,6 +41,21 @@ const RANGE_OPTIONS = [
   { value: "monthly", label: "Mensual" },
   { value: "annual", label: "Anual" },
   { value: "custom", label: "Fecha puntual" },
+];
+
+const QUICK_FILTERS = [
+  { label: "Hoy", range: "daily", getDate: () => getLocalDateInputValue(new Date()) },
+  {
+    label: "Ayer",
+    range: "custom",
+    getDate: () => {
+      const date = new Date();
+      date.setDate(date.getDate() - 1);
+      return getLocalDateInputValue(date);
+    },
+  },
+  { label: "Esta semana", range: "weekly", getDate: () => getLocalDateInputValue(new Date()) },
+  { label: "Mes", range: "monthly", getDate: () => getLocalDateInputValue(new Date()) },
 ];
 
 const PAYMENT_METHOD_STYLES = {
@@ -138,6 +157,81 @@ function summarizeMovements(movements) {
   );
 }
 
+function getPreviousRangeConfig(range, selectedDate) {
+  const base = selectedDate ? parseLocalDateInput(selectedDate) : new Date();
+
+  if (range === "daily" || range === "custom") {
+    const previous = new Date(base);
+    previous.setDate(previous.getDate() - 1);
+    return { range: "custom", selectedDate: getLocalDateInputValue(previous) };
+  }
+
+  if (range === "weekly") {
+    const previous = new Date(base);
+    previous.setDate(previous.getDate() - 7);
+    return { range: "weekly", selectedDate: getLocalDateInputValue(previous) };
+  }
+
+  if (range === "monthly") {
+    const previous = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+    return { range: "monthly", selectedDate: getLocalDateInputValue(previous) };
+  }
+
+  if (range === "annual") {
+    const previous = new Date(base.getFullYear() - 1, 0, 1);
+    return { range: "annual", selectedDate: getLocalDateInputValue(previous) };
+  }
+
+  return { range, selectedDate };
+}
+
+function getVariation(current, previous) {
+  if (!previous) {
+    return { value: null, label: "Sin base comparativa" };
+  }
+
+  const delta = ((current - previous) / previous) * 100;
+  const sign = delta > 0 ? "+" : "";
+  return {
+    value: delta,
+    label: `${sign}${delta.toFixed(0)}% vs periodo anterior`,
+  };
+}
+
+function formatDuration(durationMs) {
+  const totalMinutes = Math.max(Math.floor(durationMs / 60000), 0);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${minutes}min`;
+}
+
+function getMovementVisual(movement) {
+  if (movement.type === "expense") {
+    return {
+      icon: Truck,
+      badge: "Compra",
+      accent: "bg-rose-50 text-rose-700 ring-rose-200",
+      iconWrap: "bg-rose-50 text-rose-600",
+    };
+  }
+
+  if (movement.raw?.table_id === "quick_sale" || movement.raw?.table_name === "Mostrador") {
+    return {
+      icon: Wallet,
+      badge: "Venta rapida",
+      accent: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+      iconWrap: "bg-emerald-50 text-emerald-600",
+    };
+  }
+
+  return {
+    icon: Store,
+    badge: "Salon",
+    accent: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    iconWrap: "bg-emerald-50 text-emerald-600",
+  };
+}
+
 function openPrintableReport(report) {
   const html = buildCashClosingReportHtml(report);
   const reportWindow = window.open("", "_blank", "width=960,height=720");
@@ -165,8 +259,10 @@ export default function AdminDashboard({ businessId }) {
   const [cashCounted, setCashCounted] = useState("");
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [saleToSettle, setSaleToSettle] = useState(null);
+  const [selectedMovement, setSelectedMovement] = useState(null);
   const [settlementMethod, setSettlementMethod] = useState("cash");
   const [isBusy, setIsBusy] = useState(false);
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     const unsubscribeSales = subscribeToSalesHistory(businessId, setSales);
@@ -181,6 +277,11 @@ export default function AdminDashboard({ businessId }) {
       unsubscribeOpenSession();
     };
   }, [businessId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const lockInfo = useMemo(() => getCashSessionLockInfo(openSession), [openSession]);
 
@@ -255,6 +356,17 @@ export default function AdminDashboard({ businessId }) {
     });
   }, [movements, search, selectedDate, selectedPaymentMethod, selectedRange]);
 
+  const previousRangeConfig = useMemo(
+    () => getPreviousRangeConfig(selectedRange, selectedDate),
+    [selectedDate, selectedRange]
+  );
+
+  const previousFilteredMovements = useMemo(() => {
+    return movements.filter((movement) =>
+      isInRange(movement.date, previousRangeConfig.range, previousRangeConfig.selectedDate)
+    );
+  }, [movements, previousRangeConfig]);
+
   const todayKey = getLocalDateKey();
   const todayMovements = useMemo(
     () => movements.filter((movement) => movement.date && getLocalDateKey(movement.date) === todayKey),
@@ -264,7 +376,19 @@ export default function AdminDashboard({ businessId }) {
   const todaySummary = useMemo(() => summarizeMovements(todayMovements), [todayMovements]);
   const accumulatedSummary = useMemo(() => summarizeMovements(movements), [movements]);
   const filteredSummary = useMemo(() => summarizeMovements(filteredMovements), [filteredMovements]);
+  const previousFilteredSummary = useMemo(
+    () => summarizeMovements(previousFilteredMovements),
+    [previousFilteredMovements]
+  );
   const balance = filteredSummary.income - filteredSummary.expense;
+  const balanceVariation = useMemo(
+    () =>
+      getVariation(
+        filteredSummary.income - filteredSummary.expense,
+        previousFilteredSummary.income - previousFilteredSummary.expense
+      ),
+    [filteredSummary, previousFilteredSummary]
+  );
 
   const accountsReceivable = useMemo(() => {
     return sales
@@ -309,6 +433,51 @@ export default function AdminDashboard({ businessId }) {
       ),
     };
   }, [cashCounted, openSession, paymentMethodTotals.cash, todayMovements]);
+
+  const boxOpenDuration = useMemo(() => {
+    const openedAt = normalizeDate(openSession?.opened_at || openSession?.createdAt);
+    if (!openedAt) {
+      return null;
+    }
+
+    const elapsed = now.getTime() - openedAt.getTime();
+    return {
+      label: formatDuration(elapsed),
+      isAlert: elapsed >= 15 * 60 * 60 * 1000,
+    };
+  }, [now, openSession]);
+
+  const paymentMethodCards = useMemo(() => {
+    return ["all", "cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map((method) => {
+      const total = method === "all" ? filteredSummary.income : paymentMethodTotals[method] || 0;
+      const previousTotal =
+        method === "all"
+          ? previousFilteredSummary.income
+          : previousFilteredMovements.reduce((sum, movement) => {
+              if (movement.type !== "income") {
+                return sum;
+              }
+              return paymentBreakdownIncludesMethod(
+                movement.paymentBreakdown,
+                method,
+                movement.paymentMethod,
+                movement.amount
+              )
+                ? sum + movement.amount
+                : sum;
+            }, 0);
+      return {
+        method,
+        total,
+        variation: getVariation(total, previousTotal),
+      };
+    });
+  }, [filteredSummary.income, paymentMethodTotals, previousFilteredMovements, previousFilteredSummary.income]);
+
+  const applyQuickFilter = (range, dateValue) => {
+    setSelectedRange(range);
+    setSelectedDate(dateValue);
+  };
 
   const handleOpenCash = async () => {
     setIsBusy(true);
@@ -366,12 +535,37 @@ export default function AdminDashboard({ businessId }) {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {openSession && boxOpenDuration ? (
+                <div
+                  className={`inline-flex items-center gap-3 rounded-2xl px-4 py-2.5 ring-1 ${
+                    boxOpenDuration.isAlert
+                      ? "bg-rose-50 text-rose-800 ring-rose-200"
+                      : "bg-slate-50 text-slate-700 ring-slate-200"
+                  }`}
+                >
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                      boxOpenDuration.isAlert ? "bg-rose-100 text-rose-700" : "bg-white text-slate-600"
+                    }`}
+                  >
+                    <Clock3 size={16} />
+                  </span>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
+                      Caja abierta
+                    </p>
+                    <p className={`text-sm font-semibold ${boxOpenDuration.isAlert ? "animate-pulse" : ""}`}>
+                      {boxOpenDuration.label}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
               {openSession ? (
                 <button
                   type="button"
                   onClick={() => setIsCloseModalOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] px-4 py-2.5 text-sm font-semibold text-white shadow-lg"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#a56c00_0%,#d4a72c_100%)] px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-900/20"
                 >
                   <ReceiptText size={16} />
                   Cierre de caja
@@ -390,14 +584,30 @@ export default function AdminDashboard({ businessId }) {
             </div>
           </div>
 
-          {lockInfo.blocked ? (
-            <div className="mb-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
-              {lockInfo.message}
-            </div>
-          ) : null}
+            {lockInfo.blocked ? (
+              <div className="mb-6 rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+                {lockInfo.message}
+              </div>
+            ) : null}
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+            <article className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] p-6 text-white ring-1 ring-slate-950/10">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-300">Balance del periodo</p>
+              <p className="mt-3 text-4xl font-black">{formatCOP(balance)}</p>
+              <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-emerald-200">
+                  Ingresos {formatCOP(filteredSummary.income)}
+                </span>
+                <span className="rounded-full bg-rose-400/10 px-3 py-1 text-rose-200">
+                  Egresos {formatCOP(filteredSummary.expense)}
+                </span>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-slate-200">
+                  {balanceVariation.label}
+                </span>
+              </div>
+            </article>
+
+            <div className="grid gap-4 md:grid-cols-2">
               <article className="rounded-[28px] bg-emerald-50 p-5 ring-1 ring-emerald-200">
                 <p className="text-sm font-semibold text-emerald-700">Ventas hoy</p>
                 <p className="mt-2 text-2xl font-black text-emerald-950">{formatCOP(todaySummary.income)}</p>
@@ -406,20 +616,9 @@ export default function AdminDashboard({ businessId }) {
                 <p className="text-sm font-semibold text-rose-700">Gastos hoy</p>
                 <p className="mt-2 text-2xl font-black text-rose-950">{formatCOP(todaySummary.expense)}</p>
               </article>
-              <article className="rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] p-5 text-white ring-1 ring-slate-950/10">
-                <p className="text-sm font-semibold text-slate-200">Balance neto hoy</p>
-                <p className="mt-2 text-2xl font-black">{formatCOP(todaySummary.income - todaySummary.expense)}</p>
-              </article>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
               <article className="rounded-[28px] bg-white p-5 ring-1 ring-slate-200">
                 <p className="text-sm font-semibold text-slate-500">Ventas acumuladas</p>
                 <p className="mt-2 text-2xl font-black text-slate-950">{formatCOP(accumulatedSummary.income)}</p>
-              </article>
-              <article className="rounded-[28px] bg-white p-5 ring-1 ring-slate-200">
-                <p className="text-sm font-semibold text-slate-500">Gastos acumulados</p>
-                <p className="mt-2 text-2xl font-black text-slate-950">{formatCOP(accumulatedSummary.expense)}</p>
               </article>
               <article className="rounded-[28px] bg-[#fff7df] p-5 ring-1 ring-[#d4a72c]/20">
                 <p className="text-sm font-semibold text-[#946200]">Balance acumulado</p>
@@ -440,35 +639,58 @@ export default function AdminDashboard({ businessId }) {
               </p>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-[auto_auto_1fr]">
-              <select
-                value={selectedRange}
-                onChange={(event) => setSelectedRange(event.target.value)}
-                className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
-              >
-                {RANGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            <div className="grid gap-3 xl:min-w-[620px]">
+              <div className="flex flex-wrap gap-2">
+                {QUICK_FILTERS.map((filter) => {
+                  const isActive =
+                    selectedRange === filter.range && selectedDate === filter.getDate();
+                  return (
+                    <button
+                      key={filter.label}
+                      type="button"
+                      onClick={() => applyQuickFilter(filter.range, filter.getDate())}
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        isActive
+                          ? "bg-emerald-500 text-white shadow-lg shadow-emerald-900/15"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {filter.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
-                className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
-              />
+              <div className="grid gap-3 md:grid-cols-[auto_auto_1fr]">
+                <select
+                  value={selectedRange}
+                  onChange={(event) => setSelectedRange(event.target.value)}
+                  className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
+                >
+                  {RANGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
 
-              <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                <Search size={16} className="text-slate-400" />
                 <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Buscar por concepto, categoria o mesa..."
-                  className="w-full bg-transparent text-sm outline-none"
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value)}
+                  className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
                 />
+
+                <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                  <Search size={16} className="text-slate-400" />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Buscar por concepto, categoria o mesa..."
+                    className="w-full bg-transparent text-sm outline-none"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -506,9 +728,8 @@ export default function AdminDashboard({ businessId }) {
           </div>
 
           <div className="mb-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            {["all", "cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map((method) => {
+            {paymentMethodCards.map(({ method, total, variation }) => {
               const isActive = selectedPaymentMethod === method;
-              const total = method === "all" ? filteredSummary.income : paymentMethodTotals[method] || 0;
               const Icon = method === "all" ? Wallet : CreditCard;
 
               return (
@@ -533,6 +754,9 @@ export default function AdminDashboard({ businessId }) {
                   <p className={`mt-4 text-lg font-black ${isActive ? "text-white" : "text-slate-900"}`}>
                     {formatCOP(total)}
                   </p>
+                  <p className={`mt-1 text-xs ${isActive ? "text-white/80" : "text-slate-500"}`}>
+                    {variation.label}
+                  </p>
                 </button>
               );
             })}
@@ -553,19 +777,41 @@ export default function AdminDashboard({ businessId }) {
               </thead>
               <tbody>
                 {filteredMovements.map((movement) => (
-                  <tr key={movement.id} className="border-b border-slate-100 text-slate-700">
+                  <tr key={movement.id} className="group border-b border-slate-100 text-slate-700">
                     <td className="py-3 pr-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${
-                          movement.type === "income"
-                            ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                            : "bg-rose-50 text-rose-700 ring-rose-200"
-                        }`}
-                      >
-                        {movement.type === "income" ? "Ingreso" : "Egreso"}
-                      </span>
+                      {(() => {
+                        const visual = getMovementVisual(movement);
+                        const Icon = visual.icon;
+                        return (
+                          <div className="flex items-center gap-3">
+                            <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${visual.iconWrap}`}>
+                              <Icon size={16} />
+                            </span>
+                            <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${visual.accent}`}>
+                              {visual.badge}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
-                    <td className="py-3 pr-4 font-medium text-slate-900">{movement.concept}</td>
+                    <td className="py-3 pr-4 font-medium text-slate-900">
+                      <div className="space-y-1">
+                        <p>{movement.concept}</p>
+                        <div className="flex items-center gap-2 opacity-0 transition group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMovement(movement)}
+                            className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+                          >
+                            <Eye size={12} />
+                            Ver detalle
+                          </button>
+                          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                            Editar requiere PIN admin
+                          </span>
+                        </div>
+                      </div>
+                    </td>
                     <td className="py-3 pr-4">
                       {movement.type === "income" ? (
                         <div className="space-y-1">
@@ -609,7 +855,11 @@ export default function AdminDashboard({ businessId }) {
                           }).format(movement.date)
                         : "-"}
                     </td>
-                    <td className={`py-3 pr-4 font-semibold ${movement.type === "income" ? "text-emerald-800" : "text-rose-800"}`}>
+                    <td
+                      className={`py-3 pr-4 text-right font-mono font-semibold ${
+                        movement.type === "income" ? "text-emerald-800" : "text-rose-800"
+                      }`}
+                    >
                       {movement.type === "income" ? "+" : "-"}
                       {formatCOP(movement.amount)}
                     </td>
@@ -711,6 +961,73 @@ export default function AdminDashboard({ businessId }) {
           </div>
         </article>
       </section>
+
+      <ModalWrapper
+        open={Boolean(selectedMovement)}
+        onClose={() => setSelectedMovement(null)}
+        maxWidthClass="max-w-3xl"
+        icon={{ main: <Eye size={20} />, close: "X" }}
+        title="Detalle de transaccion"
+        description="Consulta origen, metodo y detalle operativo de este movimiento."
+      >
+        <div className="grid gap-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Concepto</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900">{selectedMovement?.concept || "-"}</p>
+              <p className="mt-4 text-sm text-slate-500">{selectedMovement?.details || "Sin detalle adicional."}</p>
+            </div>
+            <div className="rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Valor</p>
+              <p
+                className={`mt-2 text-2xl font-black ${
+                  selectedMovement?.type === "income" ? "text-emerald-700" : "text-rose-700"
+                }`}
+              >
+                {selectedMovement
+                  ? `${selectedMovement.type === "income" ? "+" : "-"}${formatCOP(selectedMovement.amount)}`
+                  : "-"}
+              </p>
+              <p className="mt-4 text-sm text-slate-500">
+                {selectedMovement?.date
+                  ? new Intl.DateTimeFormat("es-CO", {
+                      dateStyle: "full",
+                      timeStyle: "short",
+                    }).format(selectedMovement.date)
+                  : "Sin fecha"}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white p-5 ring-1 ring-slate-200">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Medio y categoria</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Metodo</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {selectedMovement
+                    ? PAYMENT_METHOD_LABELS[selectedMovement.paymentMethod] || selectedMovement.paymentMethod
+                    : "-"}
+                </p>
+                {selectedMovement?.paymentBreakdown?.length > 1 ? (
+                  <p className="mt-2 text-sm text-slate-500">
+                    {selectedMovement.paymentBreakdown
+                      .map(
+                        (line) =>
+                          `${PAYMENT_METHOD_LABELS[line.method] || line.method}: ${formatCOP(line.amount)}`
+                      )
+                      .join(" · ")}
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Categoria</p>
+                <p className="mt-1 text-sm text-slate-500">{selectedMovement?.category || "General"}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ModalWrapper>
 
       <ModalWrapper
         open={isCloseModalOpen}
