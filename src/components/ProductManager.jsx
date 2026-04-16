@@ -127,7 +127,13 @@ function getSupplyHealth(supply) {
   return { label: "Sano", classes: "bg-emerald-100 text-emerald-700 ring-emerald-200" };
 }
 
-export default function ProductManager({ businessId, mode = "resources" }) {
+export default function ProductManager({
+  businessId,
+  mode = "resources",
+  activeTab: externalActiveTab = null,
+  onActiveTabChange = null,
+  showResourceShell = true,
+}) {
   const [products, setProducts] = useState([]);
   const [supplies, setSupplies] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -146,14 +152,17 @@ export default function ProductManager({ businessId, mode = "resources" }) {
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const isCatalogMode = mode === "catalog";
+  const resolvedActiveTab = externalActiveTab ?? activeTab;
   const currentProductRecipe = useMemo(
     () => recipeBooks.find((recipeBook) => recipeBook.product_id === editingProductId) || null,
     [editingProductId, recipeBooks]
   );
 
   useEffect(() => {
-    setActiveTab(mode === "catalog" ? "products" : "suppliers");
-  }, [mode]);
+    if (!externalActiveTab) {
+      setActiveTab(mode === "catalog" ? "products" : "suppliers");
+    }
+  }, [externalActiveTab, mode]);
 
   useEffect(() => {
     const unsubscribeProducts = subscribeToProducts(businessId, setProducts);
@@ -399,9 +408,18 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     }
   };
 
+  const handleTabChange = (nextTab) => {
+    if (externalActiveTab && typeof onActiveTabChange === "function") {
+      onActiveTabChange(nextTab);
+      return;
+    }
+
+    setActiveTab(nextTab);
+  };
+
   return (
     <section className="space-y-6">
-      {!isCatalogMode ? (
+      {!isCatalogMode && showResourceShell ? (
         <>
           <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
             <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -440,9 +458,9 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => handleTabChange(tab.id)}
                     className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      activeTab === tab.id
+                      resolvedActiveTab === tab.id
                         ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                     }`}
@@ -457,11 +475,11 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         </>
       ) : null}
 
-      {activeTab === "suppliers" && !isCatalogMode ? (
+      {resolvedActiveTab === "suppliers" && !isCatalogMode ? (
         <SupplierManager businessId={businessId} suppliers={suppliers} purchases={purchases} />
       ) : null}
 
-      {activeTab === "purchases" && !isCatalogMode ? (
+      {resolvedActiveTab === "purchases" && !isCatalogMode ? (
         <PurchaseManager
           businessId={businessId}
           suppliers={suppliers}
@@ -470,7 +488,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         />
       ) : null}
 
-      {activeTab === "recipes" && !isCatalogMode ? (
+      {resolvedActiveTab === "recipes" && !isCatalogMode ? (
         <RecipeBookManager
           businessId={businessId}
           products={products}
@@ -479,7 +497,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         />
       ) : null}
 
-      {activeTab === "ingredients" && !isCatalogMode ? (
+      {resolvedActiveTab === "ingredients" && !isCatalogMode ? (
         <section className="space-y-6">
           <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
             <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -672,7 +690,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         </section>
       ) : null}
 
-      {activeTab === "products" ? (
+      {resolvedActiveTab === "products" ? (
         <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
@@ -802,7 +820,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     {!isCatalogMode ? (
                       <button
                         type="button"
-                        onClick={() => setActiveTab("recipes")}
+                        onClick={() => handleTabChange("recipes")}
                         className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
                       >
                         <Sparkles size={16} />
@@ -1040,7 +1058,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                       type="button"
                       onClick={() => {
                         closeProductModal();
-                        setActiveTab("recipes");
+                        handleTabChange("recipes");
                       }}
                       className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
@@ -1055,7 +1073,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     onClick={() => {
                       if (!isCatalogMode) {
                         closeProductModal();
-                        setActiveTab("recipes");
+                        handleTabChange("recipes");
                       }
                     }}
                     disabled={isCatalogMode}
