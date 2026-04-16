@@ -15,11 +15,21 @@ import { getCurrentOpenCashSession } from "./cashClosingService";
 import { QUICK_SALE_TABLE } from "../utils/posConstants";
 import { getTicketWalletState } from "./customerService";
 import {
+  buildCashMovementPayload,
+  buildOrderPaymentPayload,
+  getCashMovementsCollection,
+  getOrderPaymentsCollection,
+} from "./paymentService";
+import {
   accumulatePaymentBreakdown,
   createEmptyPaymentTotals,
   getPrimaryPaymentMethod,
   normalizePaymentBreakdown,
 } from "../utils/payments";
+
+const salesHistoryCollection = collection(db, "sales_history");
+const orderPaymentsCollection = getOrderPaymentsCollection();
+const cashMovementsCollection = getCashMovementsCollection();
 
 function getTicketProductGrant(items = []) {
   return items.reduce(
@@ -174,7 +184,6 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
   }
 
   const orderRef = doc(db, "orders", normalizedOrderId);
-  const salesCollection = collection(db, "sales_history");
   let orderItemsForInventory = [];
   let businessIdForInventory = "";
   const preloadedOrderSnapshot = await getDoc(orderRef);
@@ -274,6 +283,66 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     }
 
     const tableData = isQuickSale ? QUICK_SALE_TABLE : tableSnapshot.data();
+    const tableName = tableData.name || `Mesa ${tableData.number || ""}`.trim();
+    const saleRef = doc(salesHistoryCollection);
+    const financialStatus = debtAmount > 0 ? "partially_paid" : "paid";
+    const paymentRecords = paymentBreakdown
+      .filter(
+        (line) => Number(line.amount || 0) > 0 || String(line.method || "").trim() === "ticket_wallet"
+      )
+      .map((line) => {
+        const method = String(line.method || "cash").trim() || "cash";
+        const amount = Number(line.amount || 0);
+        const paymentRef = doc(orderPaymentsCollection);
+        return {
+          ref: paymentRef,
+          amount,
+          method,
+          payload: buildOrderPaymentPayload({
+            businessId: resolvedBusinessId,
+            saleId: saleRef.id,
+            orderId: normalizedOrderId,
+            customerId: customerId || null,
+            customerName,
+            tableId: resolvedTableId,
+            tableName,
+            paymentMethod: method,
+            amount,
+            closingId: openCashSession?.id || null,
+            paymentKind: method === "ticket_wallet" ? "prepaid_consumption" : "order_payment",
+            status: amount > 0 || method === "ticket_wallet" ? "posted" : "pending",
+            affectsCashDrawer: method === "cash",
+            affectsCashflow: amount > 0,
+            metadata: {
+              payment_label: paymentLabel,
+              ticket_units_consumed: ticketConsumption.units,
+            },
+          }),
+        };
+      });
+    const cashMovements = paymentRecords
+      .filter((paymentRecord) => paymentRecord.amount > 0)
+      .map((paymentRecord) => ({
+        ref: doc(cashMovementsCollection),
+        payload: buildCashMovementPayload({
+          businessId: resolvedBusinessId,
+          saleId: saleRef.id,
+          orderId: normalizedOrderId,
+          paymentId: paymentRecord.ref.id,
+          customerId: customerId || null,
+          customerName,
+          tableId: resolvedTableId,
+          tableName,
+          paymentMethod: paymentRecord.method,
+          amount: paymentRecord.amount,
+          closingId: openCashSession?.id || null,
+          sourceType: "order_payment",
+          concept: `Cobro ${tableName}`,
+          metadata: {
+            payment_label: paymentLabel,
+          },
+        }),
+      }));
 
     transaction.update(orderRef, {
       status: "pagada",
@@ -283,14 +352,22 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       customer_id: customerId || null,
       customer_name: customerName || "",
       closing_id: openCashSession?.id || null,
+      sale_id: saleRef.id,
       subtotal,
+      operational_total: subtotal,
       total: chargedTotal,
+      collected_total: chargedTotal,
+      pending_total: debtAmount,
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
       payment_status: debtAmount > 0 ? "pending" : "paid",
+      financial_status: financialStatus,
+      payments_count: paymentRecords.length,
+      latest_payment_method: primaryPaymentMethod,
+      latest_payment_at: serverTimestamp(),
       payment_kind:
         primaryPaymentMethod === "split"
           ? "split_cashflow"
@@ -306,26 +383,33 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       updatedAt: serverTimestamp(),
     });
 
-    transaction.set(doc(salesCollection), {
+    transaction.set(saleRef, {
       business_id: resolvedBusinessId,
       order_id: normalizedOrderId,
       table_id: resolvedTableId,
-      table_name: tableData.name || `Mesa ${tableData.number || ""}`.trim(),
+      table_name: tableName,
       customer_id: customerId || null,
       customer_name: customerName || "",
       items: orderData.items || [],
       subtotal,
+      operational_total: subtotal,
       total: chargedTotal,
+      collected_total: chargedTotal,
+      pending_total: debtAmount,
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
       settled_amount: 0,
       payment_status: debtAmount > 0 ? "pending" : "paid",
+      financial_status: financialStatus,
       payment_method: primaryPaymentMethod,
       payment_label: paymentLabel,
       payment_breakdown: paymentBreakdown,
-      concept: `Venta ${tableData.name || `Mesa ${tableData.number || ""}`.trim()}`,
+      payments_count: paymentRecords.length,
+      sale_kind: "pos_sale",
+      source_type: "order_checkout",
+      concept: `Venta ${tableName}`,
       type: "income",
       income_kind:
         ticketConsumption.units > 0
@@ -339,6 +423,15 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       closing_id: openCashSession?.id || null,
       closed_at: serverTimestamp(),
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    paymentRecords.forEach((paymentRecord) => {
+      transaction.set(paymentRecord.ref, paymentRecord.payload);
+    });
+
+    cashMovements.forEach((movement) => {
+      transaction.set(movement.ref, movement.payload);
     });
 
     if (customerRef && customerSnapshot?.exists()) {
@@ -401,7 +494,7 @@ export function subscribeToSalesHistory(businessId, callback) {
     return () => {};
   }
 
-  const salesQuery = query(collection(db, "sales_history"), where("business_id", "==", businessId));
+  const salesQuery = query(salesHistoryCollection, where("business_id", "==", businessId));
 
   return onSnapshot(salesQuery, (snapshot) => {
     callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
@@ -410,7 +503,7 @@ export function subscribeToSalesHistory(businessId, callback) {
 
 export function subscribeToDailySales(businessId, callback) {
   const salesQuery = query(
-    collection(db, "sales_history"),
+    salesHistoryCollection,
     where("business_id", "==", businessId),
     where("closed_at", ">=", startOfDay())
   );

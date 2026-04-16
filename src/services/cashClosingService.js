@@ -13,6 +13,12 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import {
+  buildCashMovementPayload,
+  buildOrderPaymentPayload,
+  getCashMovementsCollection,
+  getOrderPaymentsCollection,
+} from "./paymentService";
+import {
   accumulatePaymentBreakdown,
   createEmptyPaymentTotals,
   PAYMENT_METHOD_LABELS,
@@ -22,6 +28,8 @@ const cashClosingsCollection = collection(db, "cash_closings");
 const salesHistoryCollection = collection(db, "sales_history");
 const purchasesCollection = collection(db, "purchases");
 const ordersCollection = collection(db, "orders");
+const cashMovementsCollection = getCashMovementsCollection();
+const orderPaymentsCollection = getOrderPaymentsCollection();
 
 export function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -241,10 +249,11 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
   const openedAt = normalizeDate(closingData.opened_at || closingData.createdAt) || new Date();
   const now = new Date();
 
-  const [salesSnapshot, purchasesSnapshot, ordersSnapshot] = await Promise.all([
+  const [salesSnapshot, purchasesSnapshot, ordersSnapshot, movementsSnapshot] = await Promise.all([
     getDocs(query(salesHistoryCollection, where("business_id", "==", normalizedBusinessId))),
     getDocs(query(purchasesCollection, where("business_id", "==", normalizedBusinessId))),
     getDocs(query(ordersCollection, where("business_id", "==", normalizedBusinessId))),
+    getDocs(query(cashMovementsCollection, where("business_id", "==", normalizedBusinessId))),
   ]);
 
   const relevantSales = salesSnapshot.docs
@@ -275,13 +284,26 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
       );
       return activityDate && activityDate >= openedAt && activityDate <= now;
     });
+  const relevantCashMovements = movementsSnapshot.docs
+    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+    .filter((movement) => {
+      const movementDate = normalizeDate(movement.occurred_at || movement.createdAt);
+      if (!movementDate) {
+        return false;
+      }
 
-  const byMethod = relevantSales.reduce((accumulator, sale) => {
+      const belongsToSession = movement.closing_id === normalizedClosingId;
+      const isOrphanMovement =
+        !movement.closing_id && movementDate >= openedAt && movementDate <= now;
+      return movement.type === "income" && (belongsToSession || isOrphanMovement);
+    });
+
+  const byMethod = relevantCashMovements.reduce((accumulator, movement) => {
     accumulatePaymentBreakdown(
       accumulator,
-      sale.payment_breakdown,
-      sale.payment_method || "cash",
-      Number(sale.total) || 0
+      [{ method: movement.payment_method || "cash", amount: Number(movement.amount || 0) }],
+      movement.payment_method || "cash",
+      Number(movement.amount || 0)
     );
     return accumulator;
   }, createEmptyPaymentTotals());
@@ -298,8 +320,8 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
   const expectedCash = Number(closingData.opening_amount || 0) + Number(byMethod.cash || 0);
   const countedCash = Number(cashCounted || 0);
   const cashDifference = countedCash - expectedCash;
-  const totalCollected = Object.values(byMethod).reduce(
-    (sum, amount) => sum + Number(amount || 0),
+  const totalCollected = relevantCashMovements.reduce(
+    (sum, movement) => sum + Number(movement.amount || 0),
     0
   );
   const auditEntries = relevantOrders
@@ -328,6 +350,15 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
     .filter((sale) => !sale.closing_id)
     .forEach((sale) => {
       batch.update(doc(db, "sales_history", sale.id), {
+        closing_id: normalizedClosingId,
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+  relevantCashMovements
+    .filter((movement) => !movement.closing_id)
+    .forEach((movement) => {
+      batch.update(doc(db, "cash_movements", movement.id), {
         closing_id: normalizedClosingId,
         updatedAt: serverTimestamp(),
       });
@@ -401,7 +432,11 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
 
   const customerId = String(saleData.customer_id || "").trim();
   const customerRef = customerId ? doc(db, "customers", customerId) : null;
+  const orderId = String(saleData.order_id || "").trim();
+  const orderRef = orderId ? doc(db, "orders", orderId) : null;
   const openSession = await getCurrentOpenCashSession(saleData.business_id);
+  const paymentRef = doc(orderPaymentsCollection);
+  const movementRef = doc(cashMovementsCollection);
 
   const batch = writeBatch(db);
 
@@ -410,8 +445,23 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
     settled_amount: Number(saleData.settled_amount || 0) + pendingAmount,
     settled_at: serverTimestamp(),
     settlement_payment_method: normalizedPaymentMethod,
+    payment_status: "paid",
+    financial_status: "paid",
+    last_settlement_payment_id: paymentRef.id,
     updatedAt: serverTimestamp(),
   });
+
+  if (orderRef) {
+    batch.update(orderRef, {
+      pending_debt_remaining: 0,
+      settled_amount: Number(saleData.settled_amount || 0) + pendingAmount,
+      payment_status: "paid",
+      financial_status: "paid",
+      latest_payment_method: normalizedPaymentMethod,
+      latest_payment_at: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
 
   if (customerRef) {
     const customerSnapshot = await getDoc(customerRef);
@@ -425,6 +475,51 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
     }
   }
 
+  batch.set(
+    paymentRef,
+    buildOrderPaymentPayload({
+      businessId: saleData.business_id,
+      saleId: normalizedSaleId,
+      orderId: orderId || null,
+      customerId: saleData.customer_id || null,
+      customerName: saleData.customer_name || "",
+      tableId: saleData.table_id || null,
+      tableName: saleData.table_name || "Cartera",
+      paymentMethod: normalizedPaymentMethod,
+      amount: pendingAmount,
+      closingId: openSession?.id || null,
+      paymentKind: "debt_settlement",
+      status: "posted",
+      affectsCashDrawer: normalizedPaymentMethod === "cash",
+      affectsCashflow: true,
+      metadata: {
+        linked_sale_id: normalizedSaleId,
+      },
+    })
+  );
+
+  batch.set(
+    movementRef,
+    buildCashMovementPayload({
+      businessId: saleData.business_id,
+      saleId: normalizedSaleId,
+      orderId: orderId || null,
+      paymentId: paymentRef.id,
+      customerId: saleData.customer_id || null,
+      customerName: saleData.customer_name || "",
+      tableId: saleData.table_id || null,
+      tableName: saleData.table_name || "Cartera",
+      paymentMethod: normalizedPaymentMethod,
+      amount: pendingAmount,
+      closingId: openSession?.id || null,
+      sourceType: "debt_settlement",
+      concept: `Abono cartera ${saleData.customer_name || "Cliente"}`,
+      metadata: {
+        linked_sale_id: normalizedSaleId,
+      },
+    })
+  );
+
   const settlementRef = doc(salesHistoryCollection);
   batch.set(settlementRef, {
     business_id: saleData.business_id,
@@ -437,14 +532,22 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
     table_name: saleData.table_name || "Cartera",
     items: [],
     subtotal: pendingAmount,
+    operational_total: 0,
     total: pendingAmount,
+    collected_total: pendingAmount,
+    pending_total: 0,
     payment_method: normalizedPaymentMethod,
+    payment_breakdown: [{ method: normalizedPaymentMethod, amount: pendingAmount }],
     debt_amount: 0,
     pending_debt_remaining: 0,
+    payment_status: "paid",
+    financial_status: "paid",
+    sale_kind: "receivable_settlement",
     settlement: true,
     closing_id: openSession?.id || null,
     closed_at: serverTimestamp(),
     createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   });
 
   await batch.commit();
