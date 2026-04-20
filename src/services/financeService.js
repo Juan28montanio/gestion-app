@@ -8,6 +8,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
@@ -202,6 +203,12 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       Number.isFinite(chargedTotalCandidate) && chargedTotalCandidate >= 0
         ? chargedTotalCandidate
         : subtotal;
+    const cashReceivedCandidate = Number(options.cashReceived);
+    const cashReceived =
+      Number.isFinite(cashReceivedCandidate) && cashReceivedCandidate >= 0
+        ? cashReceivedCandidate
+        : chargedTotal;
+    const cashChange = Math.max(Number((cashReceived - chargedTotal).toFixed(2)), 0);
     const adjustmentAmount = chargedTotal - subtotal;
     const adjustmentPct = subtotal > 0 ? (adjustmentAmount / subtotal) * 100 : 0;
     const customerId = String(
@@ -263,6 +270,10 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       throw new Error("La suma del pago dividido debe coincidir con el valor final cobrado.");
     }
 
+    if (normalizedPaymentMethod === "cash" && cashReceived < chargedTotal) {
+      throw new Error("El efectivo recibido no cubre el valor final cobrado.");
+    }
+
     const isQuickSale = resolvedTableId === QUICK_SALE_TABLE.id;
     const tableRef = isQuickSale ? null : doc(db, "tables", resolvedTableId);
     const tableSnapshot = tableRef ? await transaction.get(tableRef) : null;
@@ -285,6 +296,8 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       closing_id: openCashSession?.id || null,
       subtotal,
       total: chargedTotal,
+      cash_received: normalizedPaymentMethod === "cash" ? cashReceived : 0,
+      cash_change: normalizedPaymentMethod === "cash" ? cashChange : 0,
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
@@ -316,6 +329,8 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       items: orderData.items || [],
       subtotal,
       total: chargedTotal,
+      cash_received: normalizedPaymentMethod === "cash" ? cashReceived : 0,
+      cash_change: normalizedPaymentMethod === "cash" ? cashChange : 0,
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
@@ -406,6 +421,32 @@ export function subscribeToSalesHistory(businessId, callback) {
   return onSnapshot(salesQuery, (snapshot) => {
     callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
   });
+}
+
+export async function updateSaleHistoryEntry(saleId, updates = {}) {
+  const normalizedSaleId = String(saleId || "").trim();
+  if (!normalizedSaleId) {
+    throw new Error("La venta a editar es obligatoria.");
+  }
+
+  const nextTotal = Number(updates.total);
+  const nextMethod = String(updates.paymentMethod || "").trim();
+  const payload = {
+    concept: String(updates.concept || "").trim(),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (Number.isFinite(nextTotal) && nextTotal >= 0) {
+    payload.total = nextTotal;
+  }
+
+  if (nextMethod) {
+    payload.payment_method = nextMethod;
+    payload.payment_label = nextMethod;
+    payload.payment_breakdown = normalizePaymentBreakdown([], nextMethod, nextTotal || 0);
+  }
+
+  await updateDoc(doc(db, "sales_history", normalizedSaleId), payload);
 }
 
 export function subscribeToDailySales(businessId, callback) {

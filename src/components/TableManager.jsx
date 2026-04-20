@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Armchair,
+  Clock3,
   Coffee,
   DoorClosed,
   Ellipsis,
   Flame,
   GlassWater,
-  Clock3,
   Pencil,
   Plus,
   Store,
@@ -90,6 +90,54 @@ function getElapsedLabel(timestamp) {
   return restMinutes ? `${hours} h ${restMinutes} min` : `${hours} h`;
 }
 
+function getOperationalMessage(table, currentOrder) {
+  const normalizedStatus = String(table.status || "disponible").toLowerCase();
+  const itemCount = (currentOrder?.items || []).reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
+
+  if (normalizedStatus === "cuenta_solicitada" || normalizedStatus === "requested_bill") {
+    return "Lista para cierre y cobro.";
+  }
+
+  if (normalizedStatus === "ocupada" || normalizedStatus === "occupied") {
+    if (itemCount > 0) {
+      return `Pedido abierto con ${itemCount} item${itemCount === 1 ? "" : "s"} registrados.`;
+    }
+    return "Mesa ocupada pendiente de registrar pedido.";
+  }
+
+  if (normalizedStatus === "pagada" || normalizedStatus === "paid") {
+    return "Servicio cerrado. Puede volver a habilitarse.";
+  }
+
+  return "Disponible para abrir servicio.";
+}
+
+function getOrderedItemsLabel(order) {
+  const names = (order?.items || [])
+    .map((item) => String(item.name || "").trim())
+    .filter(Boolean);
+
+  if (!names.length) {
+    return "";
+  }
+
+  return names.slice(0, 3).join(", ");
+}
+
+function getOrderedItemsPreview(order) {
+  const names = (order?.items || [])
+    .map((item) => String(item.name || "").trim())
+    .filter(Boolean);
+
+  return {
+    visible: names.slice(0, 2),
+    extra: Math.max(names.length - 2, 0),
+  };
+}
+
 export default function TableManager({ businessId, selectedTableId, onSelectTable, onNotify }) {
   const [tables, setTables] = useState([]);
   const [activeOrders, setActiveOrders] = useState([]);
@@ -118,6 +166,22 @@ export default function TableManager({ businessId, selectedTableId, onSelectTabl
     () => [...tables].sort((a, b) => Number(a.number || 0) - Number(b.number || 0)),
     [tables]
   );
+  const tableSummary = useMemo(() => {
+    return sortedTables.reduce(
+      (summary, table) => {
+        const status = String(table.status || "disponible").toLowerCase();
+        if (status === "ocupada" || status === "occupied") {
+          summary.occupied += 1;
+        } else if (status === "cuenta_solicitada" || status === "requested_bill") {
+          summary.requestedBill += 1;
+        } else {
+          summary.available += 1;
+        }
+        return summary;
+      },
+      { available: 0, occupied: 0, requestedBill: 0 }
+    );
+  }, [sortedTables]);
 
   const selectedIconOption = useMemo(
     () =>
@@ -212,15 +276,30 @@ export default function TableManager({ businessId, selectedTableId, onSelectTabl
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-slate-900">Salon</h2>
         <p className="text-sm text-slate-500">
-          Una sola cuadrícula interactiva para ocupación, pedido actual y gestión rápida.
+          Supervisa ocupacion, pedido activo y mesas listas para cobrar desde una sola vista.
         </p>
+      </div>
+
+      <div className="mb-5 grid gap-4 md:grid-cols-3">
+        <article className="rounded-[24px] bg-emerald-50 p-4 ring-1 ring-emerald-200">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Disponibles</p>
+          <p className="mt-2 text-2xl font-black text-emerald-900">{tableSummary.available}</p>
+        </article>
+        <article className="rounded-[24px] bg-rose-50 p-4 ring-1 ring-rose-200">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">Ocupadas</p>
+          <p className="mt-2 text-2xl font-black text-rose-900">{tableSummary.occupied}</p>
+        </article>
+        <article className="rounded-[24px] bg-amber-50 p-4 ring-1 ring-amber-200">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Listas para cobrar</p>
+          <p className="mt-2 text-2xl font-black text-amber-900">{tableSummary.requestedBill}</p>
+        </article>
       </div>
 
       <div className="rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Mesas activas</h3>
-            <p className="text-sm text-slate-500">Selecciona una mesa o abre el menú contextual para gestionarla.</p>
+            <p className="text-sm text-slate-500">Selecciona una mesa o usa el menu contextual para gestionarla.</p>
           </div>
           <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
             {sortedTables.length} mesa{sortedTables.length === 1 ? "" : "s"}
@@ -228,7 +307,7 @@ export default function TableManager({ businessId, selectedTableId, onSelectTabl
         </div>
 
         <div className="h-[640px] overflow-y-auto pr-1">
-          <div className="grid auto-rows-[236px] gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid auto-rows-[248px] gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sortedTables.map((table) => {
               const Icon =
                 TABLE_ICON_OPTIONS.find((option) => option.value === table.icon)?.icon ||
@@ -241,15 +320,16 @@ export default function TableManager({ businessId, selectedTableId, onSelectTabl
               const orderTotal = Number(table.current_total ?? currentOrder?.total ?? 0);
               const customerName = currentOrder?.customer_name || "";
               const elapsed = getElapsedLabel(currentOrder?.created_at);
-              const isBusy =
-                String(table.status || "").toLowerCase() === "ocupada" ||
-                String(table.status || "").toLowerCase() === "occupied";
+              const operationalMessage = getOperationalMessage(table, currentOrder);
+              const orderedItemsPreview = getOrderedItemsPreview(currentOrder);
+              const normalizedStatus = String(table.status || "").toLowerCase();
+              const isBusy = normalizedStatus === "ocupada" || normalizedStatus === "occupied";
               const isSelected = selectedTableId === table.id;
 
               return (
                 <article
                   key={table.id}
-                  className={`group relative flex h-[236px] flex-col justify-between rounded-[28px] bg-white p-5 shadow-lg transition-shadow hover:shadow-xl ${
+                  className={`group relative flex h-[248px] flex-col rounded-[28px] bg-white p-5 shadow-lg transition-shadow hover:shadow-xl ${
                     isSelected
                       ? "ring-2 ring-emerald-500"
                       : isBusy
@@ -280,7 +360,7 @@ export default function TableManager({ businessId, selectedTableId, onSelectTabl
                     <div className="flex items-start gap-2">
                       {orderTotal > 0 ? (
                         <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                          {formatTableStatus(table.status) === "Ocupada" ? `$${orderTotal.toLocaleString("es-CO")}` : `$${orderTotal.toLocaleString("es-CO")}`}
+                          ${orderTotal.toLocaleString("es-CO")}
                         </span>
                       ) : null}
                       <div className="relative">
@@ -321,40 +401,63 @@ export default function TableManager({ businessId, selectedTableId, onSelectTabl
                     </div>
                   </div>
 
-                  <div className="relative z-10 mt-4 flex flex-1 flex-col justify-between">
-                    <div>
-                      <p className="text-5xl font-black leading-none text-slate-900">
-                        {table.capacity || table.seats}
-                      </p>
-                      <p className="mt-2 text-base text-slate-500">puestos</p>
-                    </div>
+                  <div className="relative z-10 mt-4 flex flex-1 flex-col">
+                    <div className="grid flex-1 gap-4 md:grid-cols-[110px_minmax(0,1fr)]">
+                      <div className="rounded-[24px] bg-slate-50 px-4 py-4 ring-1 ring-slate-200">
+                        <p className="text-5xl font-black leading-none text-slate-900">
+                          {table.capacity || table.seats}
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-slate-500">puestos</p>
+                      </div>
 
-                    <div className="space-y-3">
-                      {itemCount > 0 ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                            {itemCount} item{itemCount === 1 ? "" : "s"}
-                          </span>
-                          {elapsed ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                              <Clock3 size={12} />
-                              {elapsed}
-                            </span>
-                          ) : null}
-                          {customerName ? (
-                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
-                              {customerName}
-                            </span>
+                      <div className="flex min-h-0 flex-col justify-between">
+                        <div>
+                          <p className="text-sm leading-6 text-slate-500">{operationalMessage}</p>
+
+                          {itemCount > 0 || elapsed || customerName ? (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              {orderedItemsPreview.visible.map((name) => (
+                                <span
+                                  key={name}
+                                  className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                                >
+                                  {name}
+                                </span>
+                              ))}
+                              {orderedItemsPreview.extra > 0 ? (
+                                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                                  +{orderedItemsPreview.extra} mas
+                                </span>
+                              ) : null}
+                              {elapsed ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                                  <Clock3 size={12} />
+                                  {elapsed}
+                                </span>
+                              ) : null}
+                              {customerName ? (
+                                <span className="max-w-full truncate rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                                  {customerName}
+                                </span>
+                              ) : null}
+                            </div>
                           ) : null}
                         </div>
-                      ) : null}
 
-                      <span
-                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
-                      >
-                        <span className="h-2 w-2 rounded-full bg-current opacity-80 shadow-[0_0_12px_currentColor]" />
-                        {formatTableStatus(table.status)}
-                      </span>
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          {itemCount > 0 ? (
+                            <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
+                              {itemCount} item{itemCount === 1 ? "" : "s"}
+                            </span>
+                          ) : null}
+                          <span
+                            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${getTableStatusClasses(table.status)}`}
+                          >
+                            <span className="h-2 w-2 rounded-full bg-current opacity-80 shadow-[0_0_12px_currentColor]" />
+                            {formatTableStatus(table.status)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </article>
@@ -364,7 +467,7 @@ export default function TableManager({ businessId, selectedTableId, onSelectTabl
             <button
               type="button"
               onClick={openCreateModal}
-              className="flex h-[236px] flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-slate-300 bg-white/70 p-5 text-center text-slate-500 transition hover:border-slate-400 hover:bg-white hover:text-slate-700"
+              className="flex h-[248px] flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-slate-300 bg-white/70 p-5 text-center text-slate-500 transition hover:border-slate-400 hover:bg-white hover:text-slate-700"
             >
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
                 <Plus size={28} />

@@ -7,53 +7,88 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import { refreshRecipeBooksForIngredients } from "./recipeBookService";
+import { buildSupplySearchKey, listSupplies } from "./supplyService";
 
 const purchasesCollection = collection(db, "purchases");
+
+function toNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function toBoolean(value) {
+  if (typeof value === "string") {
+    return value === "true";
+  }
+  return Boolean(value);
+}
 
 function normalizePurchaseItems(items) {
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error("La compra debe incluir al menos un item.");
   }
 
-  return items.map((item) => {
+  return items.map((item, index) => {
     const ingredientId = String(item?.ingredient_id || item?.ingredientId || "").trim();
-    const ingredientName = String(item?.ingredient_name || item?.ingredientName || "").trim();
-    const quantity = Number(item?.quantity);
-    const unitPrice = Number(item?.unit_price ?? item?.unitPrice);
-    const ivaPct = Number(item?.iva_pct ?? item?.ivaPct ?? 0);
+    const ingredientName = String(
+      item?.ingredient_name || item?.ingredientName || item?.manual_name || item?.manualName || ""
+    ).trim();
+    const quantity = toNumber(item?.quantity);
+    const explicitLineTotal = toNumber(item?.line_total ?? item?.lineTotal ?? item?.total_cost);
+    const rawUnitPrice = toNumber(item?.unit_price ?? item?.unitPrice);
+    const applyIva = toBoolean(item?.apply_iva ?? item?.applyIva);
+    const ivaPct = applyIva ? toNumber(item?.iva_pct ?? item?.ivaPct ?? 0) : 0;
     const category = String(item?.category || "").trim();
-    const unit = String(item?.unit || "").trim();
+    const unit = String(item?.unit || "").trim().toLowerCase();
 
-    if (!ingredientId) {
-      throw new Error("Cada item de compra debe vincular un insumo.");
+    if (!ingredientId && !ingredientName) {
+      throw new Error(`El item ${index + 1} debe seleccionar o crear un insumo.`);
     }
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
       throw new Error("Cada item de compra debe incluir una cantidad valida.");
     }
 
-    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-      throw new Error("Cada item de compra debe incluir un precio unitario valido.");
+    if (!unit) {
+      throw new Error("Cada item de compra debe incluir una unidad de medida.");
     }
 
     if (!Number.isFinite(ivaPct) || ivaPct < 0) {
       throw new Error("Cada item de compra debe incluir un IVA valido.");
     }
 
+    const lineTotal = Number.isFinite(explicitLineTotal)
+      ? explicitLineTotal
+      : Number.isFinite(rawUnitPrice)
+        ? quantity * rawUnitPrice * (1 + (applyIva ? ivaPct : 0) / 100)
+        : NaN;
+
+    if (!Number.isFinite(lineTotal) || lineTotal <= 0) {
+      throw new Error("Cada item de compra debe incluir un valor valido.");
+    }
+
+    const netTotal = applyIva ? lineTotal / (1 + ivaPct / 100) : lineTotal;
+    const netUnitCost = netTotal / quantity;
+    const landedUnitCost = lineTotal / quantity;
+
     return {
       ingredient_id: ingredientId,
       ingredient_name: ingredientName,
+      search_name: buildSupplySearchKey(ingredientName),
       quantity,
       unit,
-      unit_price: unitPrice,
-      iva_pct: ivaPct,
       category,
-      total_cost: quantity * unitPrice * (1 + ivaPct / 100),
-      landed_unit_cost: unitPrice * (1 + ivaPct / 100),
+      apply_iva: applyIva,
+      iva_pct: applyIva ? ivaPct : 0,
+      line_total: lineTotal,
+      unit_price: netUnitCost,
+      total_cost: lineTotal,
+      landed_unit_cost: landedUnitCost,
     };
   });
 }
@@ -73,10 +108,6 @@ function buildPurchasePayload(purchase, items) {
     throw new Error("Debes seleccionar un proveedor para registrar la compra.");
   }
 
-  if (!invoiceNumber) {
-    throw new Error("El numero de factura es obligatorio.");
-  }
-
   if (!purchaseDate) {
     throw new Error("La fecha de la compra es obligatoria.");
   }
@@ -85,13 +116,42 @@ function buildPurchasePayload(purchase, items) {
     business_id: businessId,
     supplier_id: supplierId,
     supplier_name: supplierName,
-    invoice_number: invoiceNumber,
+    invoice_number: invoiceNumber || `COMP-${Date.now()}`,
     purchase_date: purchaseDate,
     items,
     total: items.reduce((sum, item) => sum + Number(item.total_cost || 0), 0),
     type: "expense",
-    concept: `Compra ${invoiceNumber}`,
+    concept: `Compra ${invoiceNumber || "sin consecutivo"}`,
   };
+}
+
+function resolveIngredientDrafts(payload, supplies) {
+  const supplyById = new Map(supplies.map((supply) => [supply.id, supply]));
+  const supplyByName = new Map(
+    supplies.map((supply) => [buildSupplySearchKey(supply.name), supply])
+  );
+
+  return payload.items.map((item) => {
+    const byId = item.ingredient_id ? supplyById.get(item.ingredient_id) : null;
+    const byName = !byId && item.search_name ? supplyByName.get(item.search_name) : null;
+    const resolvedSupply = byId || byName || null;
+
+    if (resolvedSupply) {
+      return {
+        ...item,
+        ingredient_id: resolvedSupply.id,
+        ingredient_name: resolvedSupply.name,
+        category: item.category || resolvedSupply.category || "",
+        unit: item.unit || resolvedSupply.unit || "und",
+        is_new_supply: false,
+      };
+    }
+
+    return {
+      ...item,
+      is_new_supply: true,
+    };
+  });
 }
 
 export function subscribeToPurchases(businessId, callback) {
@@ -114,7 +174,8 @@ export function subscribeToPurchases(businessId, callback) {
 export async function createPurchase(purchase) {
   const normalizedItems = normalizePurchaseItems(purchase?.items);
   const payload = buildPurchasePayload(purchase, normalizedItems);
-
+  const supplies = await listSupplies(payload.business_id);
+  const resolvedItems = resolveIngredientDrafts(payload, supplies);
   const touchedIngredientIds = [];
 
   const createdPurchaseId = await runTransaction(db, async (transaction) => {
@@ -125,23 +186,56 @@ export async function createPurchase(purchase) {
       throw new Error("El proveedor seleccionado no existe.");
     }
 
-    const createdPurchaseRef = doc(purchasesCollection);
+    const ingredientRefsById = new Map();
+    const ingredientSnapshots = new Map();
 
-    transaction.set(createdPurchaseRef, {
-      ...payload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    for (const item of payload.items) {
-      const ingredientRef = doc(db, "ingredients", item.ingredient_id);
-      touchedIngredientIds.push(item.ingredient_id);
-      const ingredientSnapshot = await transaction.get(ingredientRef);
-
-      if (!ingredientSnapshot.exists()) {
-        throw new Error("Uno de los insumos de la factura no existe.");
+    for (const item of resolvedItems) {
+      if (item.is_new_supply) {
+        continue;
       }
 
+      const ingredientRef = doc(db, "ingredients", item.ingredient_id);
+      ingredientRefsById.set(item.ingredient_id, ingredientRef);
+
+      const ingredientSnapshot = await transaction.get(ingredientRef);
+      if (!ingredientSnapshot.exists()) {
+        throw new Error(`El insumo ${item.ingredient_name || item.ingredient_id} no existe.`);
+      }
+
+      ingredientSnapshots.set(item.ingredient_id, ingredientSnapshot);
+    }
+
+    const createdPurchaseRef = doc(purchasesCollection);
+
+    for (const item of resolvedItems) {
+      if (item.is_new_supply) {
+        const ingredientRef = doc(collection(db, "ingredients"));
+        item.ingredient_id = ingredientRef.id;
+        touchedIngredientIds.push(ingredientRef.id);
+
+        transaction.set(ingredientRef, {
+          business_id: payload.business_id,
+          name: item.ingredient_name,
+          search_name: item.search_name,
+          category: item.category,
+          unit: item.unit,
+          base_unit: item.unit,
+          stock: item.quantity,
+          stock_min_alert: 0,
+          average_cost: item.landed_unit_cost,
+          cost_per_unit: item.landed_unit_cost,
+          last_purchase_cost: item.landed_unit_cost,
+          supplier_id: payload.supplier_id,
+          supplier_name: payload.supplier_name,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        continue;
+      }
+
+      touchedIngredientIds.push(item.ingredient_id);
+      const ingredientSnapshot = ingredientSnapshots.get(item.ingredient_id);
+      const ingredientRef = ingredientRefsById.get(item.ingredient_id);
       const ingredientData = ingredientSnapshot.data();
       const previousStock = Number(ingredientData.stock || 0);
       const previousAverageCost = Number(
@@ -161,9 +255,32 @@ export async function createPurchase(purchase) {
         cost_per_unit: weightedAverageCost,
         last_purchase_cost: incomingCost,
         category: item.category || ingredientData.category || "",
+        unit: item.unit || ingredientData.unit || "und",
+        base_unit: item.unit || ingredientData.base_unit || ingredientData.unit || "und",
+        supplier_id: payload.supplier_id,
+        supplier_name: payload.supplier_name,
         updatedAt: serverTimestamp(),
       });
     }
+
+    transaction.set(createdPurchaseRef, {
+      ...payload,
+      items: resolvedItems.map((item) => ({
+        ingredient_id: item.ingredient_id,
+        ingredient_name: item.ingredient_name,
+        quantity: item.quantity,
+        unit: item.unit,
+        category: item.category,
+        apply_iva: item.apply_iva,
+        iva_pct: item.iva_pct,
+        line_total: item.line_total,
+        unit_price: item.unit_price,
+        total_cost: item.total_cost,
+        landed_unit_cost: item.landed_unit_cost,
+      })),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
     const currentSupplier = supplierSnapshot.data();
     transaction.update(supplierRef, {
@@ -210,4 +327,23 @@ export async function getIngredientPriceHistory(businessId, ingredientId) {
         }));
     })
     .slice(0, 12);
+}
+
+export async function updatePurchaseMovement(purchaseId, updates = {}) {
+  const normalizedPurchaseId = String(purchaseId || "").trim();
+  if (!normalizedPurchaseId) {
+    throw new Error("La compra a editar es obligatoria.");
+  }
+
+  const nextTotal = Number(updates.total);
+  const payload = {
+    concept: String(updates.concept || "").trim(),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (Number.isFinite(nextTotal) && nextTotal >= 0) {
+    payload.total = nextTotal;
+  }
+
+  await updateDoc(doc(db, "purchases", normalizedPurchaseId), payload);
 }

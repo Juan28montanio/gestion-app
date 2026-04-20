@@ -14,12 +14,12 @@ export default function FormInput({
   const generatedId = useId();
   const inputId = id || generatedId;
   const baseClasses =
-    "w-full rounded-2xl bg-white px-4 py-3 text-sm text-slate-900 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-500";
+    "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5";
   const stateClasses = readOnly ? "bg-slate-50 text-slate-500" : "";
 
   return (
-    <div className={`grid gap-2 text-sm font-medium text-slate-700 ${className}`}>
-      <label htmlFor={inputId}>{label}</label>
+    <label className={`grid gap-2 text-sm text-slate-700 ${className}`} htmlFor={inputId}>
+      <span className="font-medium text-slate-700">{label}</span>
       {multiline ? (
         <textarea
           id={inputId}
@@ -36,7 +36,7 @@ export default function FormInput({
           {...props}
         />
       )}
-      {hint ? <span className="text-xs text-slate-400">{hint}</span> : null}
-    </div>
+      {hint ? <span className="text-xs leading-5 text-slate-500">{hint}</span> : null}
+    </label>
   );
 }

@@ -18,7 +18,7 @@ export default function ToastViewport({ toasts, onDismiss }) {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className="pointer-events-auto rounded-3xl bg-slate-950 px-4 py-3 text-sm font-medium text-white shadow-2xl ring-1 ring-white/10"
+          className="animate-enter-up pointer-events-auto rounded-3xl bg-slate-950 px-4 py-3 text-sm font-medium text-white shadow-2xl ring-1 ring-white/10"
         >
           {toast.message}
         </div>

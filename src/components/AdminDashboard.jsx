@@ -4,6 +4,7 @@ import {
   ArrowUpCircle,
   Clock3,
   CreditCard,
+  Pencil,
   Eye,
   Landmark,
   Printer,
@@ -13,8 +14,8 @@ import {
   Truck,
   Wallet,
 } from "lucide-react";
-import { subscribeToSalesHistory } from "../services/financeService";
-import { subscribeToPurchases } from "../services/purchaseService";
+import { subscribeToSalesHistory, updateSaleHistoryEntry } from "../services/financeService";
+import { subscribeToPurchases, updatePurchaseMovement } from "../services/purchaseService";
 import {
   buildCashClosingReportHtml,
   closeCashSession,
@@ -205,6 +206,27 @@ function formatDuration(durationMs) {
   return `${hours}h ${minutes}min`;
 }
 
+function getBalanceStatus(balance) {
+  if (balance > 0) {
+    return {
+      label: "Dia rentable",
+      classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    };
+  }
+
+  if (balance < 0) {
+    return {
+      label: "Margen en riesgo",
+      classes: "bg-rose-50 text-rose-700 ring-rose-200",
+    };
+  }
+
+  return {
+    label: "Punto de equilibrio",
+    classes: "bg-slate-100 text-slate-700 ring-slate-200",
+  };
+}
+
 function getMovementVisual(movement) {
   if (movement.type === "expense") {
     return {
@@ -232,6 +254,150 @@ function getMovementVisual(movement) {
   };
 }
 
+function buildExecutiveInsights({
+  balance,
+  filteredSummary,
+  totalReceivable,
+  accountsReceivableCount,
+  paymentMethodTotals,
+  incomeTotal,
+  openSession,
+}) {
+  const cashShare = incomeTotal > 0 ? (Number(paymentMethodTotals.cash || 0) / incomeTotal) * 100 : 0;
+  const cardShare =
+    incomeTotal > 0
+      ? ((Number(paymentMethodTotals.card || 0) +
+          Number(paymentMethodTotals.transfer || 0) +
+          Number(paymentMethodTotals.nequi || 0) +
+          Number(paymentMethodTotals.daviplata || 0)) /
+          incomeTotal) *
+        100
+      : 0;
+
+  const insights = [
+    balance >= 0
+      ? {
+          title: "Rentabilidad del periodo",
+          body:
+            filteredSummary.expense === 0
+              ? "No hay egresos filtrados en este rango. Revisa si falta registrar compras para leer la utilidad real."
+              : "El periodo actual mantiene saldo positivo. Este es buen momento para revisar que los costos cargados sigan al dia.",
+          accent: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+          icon: ArrowUpCircle,
+        }
+      : {
+          title: "Margen en riesgo",
+          body: "Los egresos filtrados ya superan el ingreso del periodo. Conviene revisar compras recientes, deuda y productos menos rentables.",
+          accent: "bg-rose-50 text-rose-800 ring-rose-200",
+          icon: ArrowDownCircle,
+        },
+    totalReceivable > 0
+      ? {
+          title: "Dinero por recuperar",
+          body: `Hay ${accountsReceivableCount} venta${accountsReceivableCount === 1 ? "" : "s"} con saldo pendiente. Recuperar esta cartera mejora caja sin depender de nuevas ventas.`,
+          accent: "bg-amber-50 text-amber-800 ring-amber-200",
+          icon: Landmark,
+        }
+      : {
+          title: "Cartera controlada",
+          body: "No hay deuda pendiente en clientes para este momento. La caja depende de lo que ya se esta cobrando en la operacion.",
+          accent: "bg-sky-50 text-sky-800 ring-sky-200",
+          icon: CreditCard,
+        },
+    {
+      title: cashShare >= cardShare ? "Dependencia de efectivo" : "Cobros digitales activos",
+      body:
+        cashShare >= cardShare
+          ? `El ${cashShare.toFixed(0)}% del ingreso llega por efectivo. Mantener caja abierta demasiado tiempo aumenta riesgo operativo.`
+          : `El ${cardShare.toFixed(0)}% del ingreso llega por pagos digitales. Esto reduce presion sobre el efectivo disponible en caja.`,
+      accent: "bg-slate-100 text-slate-800 ring-slate-200",
+      icon: Wallet,
+    },
+  ];
+
+  if (!openSession) {
+    insights.push({
+      title: "Caja pendiente de apertura",
+      body: "Antes de iniciar la jornada conviene abrir caja para que los movimientos del dia queden trazados desde el inicio.",
+      accent: "bg-[#fff7df] text-[#7a5500] ring-[#d4a72c]/25",
+      icon: ReceiptText,
+    });
+  }
+
+  return insights.slice(0, 3);
+}
+
+function buildCashActionItems({
+  lockInfo,
+  openSession,
+  boxOpenDuration,
+  totalReceivable,
+  accountsReceivableCount,
+  closingPreview,
+}) {
+  const items = [];
+
+  if (lockInfo.blocked) {
+    items.push({
+      title: "Resolver cierre pendiente",
+      body: lockInfo.message,
+      eyebrow: "Accion inmediata",
+      tone: "bg-amber-50 text-amber-900 ring-amber-200",
+      icon: ReceiptText,
+    });
+  } else if (!openSession) {
+    items.push({
+      title: "Abrir caja para iniciar jornada",
+      body: "Abre caja al comenzar el turno para que ventas, egresos y diferencias queden trazados desde el inicio.",
+      eyebrow: "Inicio del dia",
+      tone: "bg-emerald-50 text-emerald-900 ring-emerald-200",
+      icon: Wallet,
+    });
+  } else {
+    items.push({
+      title: "Caja operativa en curso",
+      body: boxOpenDuration?.isAlert
+        ? `La caja lleva ${boxOpenDuration.label} abierta. Conviene planear el cierre para reducir riesgo operativo.`
+        : `La jornada sigue activa${boxOpenDuration?.label ? ` desde hace ${boxOpenDuration.label}` : ""}. Mantén compras y cobros actualizados.`,
+      eyebrow: "Seguimiento del turno",
+      tone: boxOpenDuration?.isAlert
+        ? "bg-rose-50 text-rose-900 ring-rose-200"
+        : "bg-slate-100 text-slate-800 ring-slate-200",
+      icon: Clock3,
+    });
+  }
+
+  if (totalReceivable > 0) {
+    items.push({
+      title: "Recuperar cartera mejora caja",
+      body: `Hay ${accountsReceivableCount} cuenta${accountsReceivableCount === 1 ? "" : "s"} pendiente${accountsReceivableCount === 1 ? "" : "s"} por ${formatCOP(totalReceivable)}. Liquidarlas mejora el dia sin depender de nuevas ventas.`,
+      eyebrow: "Flujo de caja",
+      tone: "bg-[#fff7df] text-[#7a5500] ring-[#d4a72c]/25",
+      icon: Landmark,
+    });
+  } else {
+    items.push({
+      title: "Sin deuda pendiente de clientes",
+      body: "La caja actual depende de ventas nuevas y no de saldos atrasados por recuperar.",
+      eyebrow: "Control de cartera",
+      tone: "bg-sky-50 text-sky-900 ring-sky-200",
+      icon: CreditCard,
+    });
+  }
+
+  if (openSession && closingPreview) {
+    items.push({
+      title: "Ten listo el conteo fisico",
+      body: `El cierre espera ${formatCOP(closingPreview.expectedCash || 0)} en efectivo. Tener este valor presente acelera la validacion final del turno.`,
+      eyebrow: "Preparacion del cierre",
+      tone: "bg-white text-slate-900 ring-slate-200",
+      icon: Printer,
+    });
+  }
+
+  return items.slice(0, 3);
+}
+
 function openPrintableReport(report) {
   const html = buildCashClosingReportHtml(report);
   const reportWindow = window.open("", "_blank", "width=960,height=720");
@@ -247,7 +413,13 @@ function openPrintableReport(report) {
   window.setTimeout(() => reportWindow.print(), 300);
 }
 
-export default function AdminDashboard({ businessId }) {
+export default function AdminDashboard({
+  businessId,
+  business,
+  userProfile,
+  currentUser,
+  requestAuditPin,
+}) {
   const [sales, setSales] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [cashClosings, setCashClosings] = useState([]);
@@ -260,6 +432,12 @@ export default function AdminDashboard({ businessId }) {
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [saleToSettle, setSaleToSettle] = useState(null);
   const [selectedMovement, setSelectedMovement] = useState(null);
+  const [movementToEdit, setMovementToEdit] = useState(null);
+  const [movementEditForm, setMovementEditForm] = useState({
+    concept: "",
+    total: "",
+    paymentMethod: "cash",
+  });
   const [settlementMethod, setSettlementMethod] = useState("cash");
   const [isBusy, setIsBusy] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -305,9 +483,11 @@ export default function AdminDashboard({ businessId }) {
       id: `sale-${sale.id}`,
       type: "income",
       date: normalizeDate(sale.closed_at || sale.createdAt),
-      concept: sale.customer_name
-        ? `${sale.table_name || sale.table_id || "Mesa"} - ${sale.customer_name}`
-        : sale.table_name || sale.table_id || "Venta POS",
+      concept:
+        sale.concept ||
+        (sale.customer_name
+          ? `${sale.table_name || sale.table_id || "Mesa"} - ${sale.customer_name}`
+          : sale.table_name || sale.table_id || "Venta POS"),
       category: (sale.items || []).map((item) => item.category).filter(Boolean).join(", "),
       details: (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", "),
       amount: Number(sale.total || 0),
@@ -324,7 +504,7 @@ export default function AdminDashboard({ businessId }) {
       id: `purchase-${purchase.id}`,
       type: "expense",
       date: normalizeDate(purchase.purchase_date),
-      concept: purchase.supplier_name || purchase.invoice_number || "Compra",
+      concept: purchase.concept || purchase.supplier_name || purchase.invoice_number || "Compra",
       category: [...new Set((purchase.items || []).map((item) => item.category).filter(Boolean))].join(", "),
       details: (purchase.items || []).map((item) => `${item.quantity}x ${item.ingredient_name}`).join(", "),
       amount: Number(purchase.total || 0),
@@ -381,6 +561,8 @@ export default function AdminDashboard({ businessId }) {
     [previousFilteredMovements]
   );
   const balance = filteredSummary.income - filteredSummary.expense;
+  const todayBalance = todaySummary.income - todaySummary.expense;
+  const todayBalanceStatus = useMemo(() => getBalanceStatus(todayBalance), [todayBalance]);
   const balanceVariation = useMemo(
     () =>
       getVariation(
@@ -473,6 +655,31 @@ export default function AdminDashboard({ businessId }) {
       };
     });
   }, [filteredSummary.income, paymentMethodTotals, previousFilteredMovements, previousFilteredSummary.income]);
+  const executiveInsights = useMemo(
+    () =>
+      buildExecutiveInsights({
+        balance,
+        filteredSummary,
+        totalReceivable,
+        accountsReceivableCount: accountsReceivable.length,
+        paymentMethodTotals,
+        incomeTotal: filteredSummary.income,
+        openSession,
+      }),
+    [accountsReceivable.length, balance, filteredSummary, openSession, paymentMethodTotals, totalReceivable]
+  );
+  const cashActionItems = useMemo(
+    () =>
+      buildCashActionItems({
+        lockInfo,
+        openSession,
+        boxOpenDuration,
+        totalReceivable,
+        accountsReceivableCount: accountsReceivable.length,
+        closingPreview,
+      }),
+    [accountsReceivable.length, boxOpenDuration, closingPreview, lockInfo, openSession, totalReceivable]
+  );
 
   const applyQuickFilter = (range, dateValue) => {
     setSelectedRange(range);
@@ -482,7 +689,11 @@ export default function AdminDashboard({ businessId }) {
   const handleOpenCash = async () => {
     setIsBusy(true);
     try {
-      await openCashSession(businessId);
+      await openCashSession(businessId, {
+        cashierName:
+          userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Operador SmartProfit",
+        cashierEmail: currentUser?.email || userProfile?.email || "",
+      });
     } finally {
       setIsBusy(false);
     }
@@ -499,6 +710,12 @@ export default function AdminDashboard({ businessId }) {
         businessId,
         closingId: openSession.id,
         cashCounted: Number(cashCounted || 0),
+        context: {
+          businessName: business?.name || "SmartProfit",
+          operatorName:
+            userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Operador SmartProfit",
+          cashierEmail: currentUser?.email || userProfile?.email || "",
+        },
       });
       setIsCloseModalOpen(false);
       setCashCounted("");
@@ -523,9 +740,165 @@ export default function AdminDashboard({ businessId }) {
     }
   };
 
+  const openMovementEditor = async (movement) => {
+    const isAuthorized = await requestAuditPin?.({
+      title: "Validar PIN de auditoria",
+      description: "Confirma el PIN para editar un movimiento financiero.",
+    });
+
+    if (!isAuthorized) {
+      return;
+    }
+
+    setMovementToEdit(movement);
+    setMovementEditForm({
+      concept: movement.concept || "",
+      total: String(movement.amount ?? ""),
+      paymentMethod: movement.paymentMethod === "expense" ? "cash" : movement.paymentMethod || "cash",
+    });
+  };
+
+  const handleSaveMovementEdit = async () => {
+    if (!movementToEdit) {
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      if (movementToEdit.type === "income") {
+        await updateSaleHistoryEntry(movementToEdit.raw.id, {
+          concept: movementEditForm.concept,
+          total: Number(movementEditForm.total),
+          paymentMethod: movementEditForm.paymentMethod,
+        });
+      } else {
+        await updatePurchaseMovement(movementToEdit.raw.id, {
+          concept: movementEditForm.concept,
+          total: Number(movementEditForm.total),
+        });
+      }
+
+      setMovementToEdit(null);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   return (
     <>
       <section className="space-y-6">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Resultado del dia
+            </p>
+            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(todayBalance)}</p>
+            <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 ${todayBalanceStatus.classes}`}>
+              {todayBalanceStatus.label}
+            </span>
+          </article>
+          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Ventas del dia
+            </p>
+            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(todaySummary.income)}</p>
+            <p className="mt-2 text-sm text-slate-500">Ingreso registrado en la jornada actual.</p>
+          </article>
+          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Gastos del dia
+            </p>
+            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(todaySummary.expense)}</p>
+            <p className="mt-2 text-sm text-slate-500">Compras y egresos cargados hoy.</p>
+          </article>
+          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Cartera pendiente
+            </p>
+            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(totalReceivable)}</p>
+            <p className="mt-2 text-sm text-slate-500">Saldo por recuperar de clientes.</p>
+          </article>
+        </section>
+
+        <section className="rounded-[28px] bg-[linear-gradient(135deg,rgba(15,23,42,0.98)_0%,rgba(30,41,59,0.96)_52%,rgba(17,24,39,0.96)_100%)] p-6 text-white shadow-[0_22px_70px_rgba(15,23,42,0.18)] ring-1 ring-slate-900/10">
+          <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
+                Lectura ejecutiva
+              </p>
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em]">
+                Lo que esta pasando en el negocio hoy
+              </h2>
+            </div>
+            <p className="max-w-2xl text-sm text-slate-300">
+              Esta capa resume rentabilidad, cartera y forma de cobro para que la caja no sea solo registro, sino decision.
+            </p>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            {executiveInsights.map((insight) => {
+              const Icon = insight.icon;
+              return (
+                <article
+                  key={insight.title}
+                  className={`rounded-[24px] px-5 py-5 ring-1 transition-transform duration-200 hover:-translate-y-0.5 ${insight.accent}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70 text-current ring-1 ring-black/5">
+                      <Icon size={18} />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold">{insight.title}</h3>
+                      <p className="mt-2 text-sm leading-6 opacity-90">{insight.body}</p>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
+          <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                Siguiente paso
+              </p>
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-slate-950">
+                Acciones sugeridas para la jornada
+              </h2>
+            </div>
+            <p className="max-w-2xl text-sm text-slate-500">
+              Esta capa traduce la caja en decisiones concretas para abrir, sostener o cerrar mejor el turno.
+            </p>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            {cashActionItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <article
+                  key={item.title}
+                  className={`rounded-[24px] p-5 ring-1 transition-transform duration-200 hover:-translate-y-0.5 ${item.tone}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70 text-current ring-1 ring-black/5">
+                      <Icon size={18} />
+                    </span>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-70">
+                        {item.eyebrow}
+                      </p>
+                      <h3 className="mt-2 text-base font-semibold">{item.title}</h3>
+                      <p className="mt-2 text-sm leading-6 opacity-90">{item.body}</p>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
@@ -581,6 +954,14 @@ export default function AdminDashboard({ businessId }) {
                   Abrir caja
                 </button>
               )}
+              <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Variacion del periodo
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {balanceVariation.label}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -818,9 +1199,14 @@ export default function AdminDashboard({ businessId }) {
                             <Eye size={12} />
                             Ver detalle
                           </button>
-                          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                            Editar requiere PIN admin
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => openMovementEditor(movement)}
+                            className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                          >
+                            <Pencil size={12} />
+                            Editar con PIN
+                          </button>
                         </div>
                       </div>
                     </td>
@@ -1042,12 +1428,92 @@ export default function AdminDashboard({ businessId }) {
       </ModalWrapper>
 
       <ModalWrapper
+        open={Boolean(movementToEdit)}
+        onClose={() => setMovementToEdit(null)}
+        maxWidthClass="max-w-2xl"
+        icon={{ main: <Pencil size={20} />, close: "X" }}
+        title="Editar movimiento"
+        description="Aplica un ajuste administrativo sin salir del dashboard financiero."
+      >
+        <div className="grid gap-6">
+          <div className="grid gap-4">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Concepto</span>
+              <input
+                value={movementEditForm.concept}
+                onChange={(event) =>
+                  setMovementEditForm((current) => ({ ...current, concept: event.target.value }))
+                }
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Valor</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={movementEditForm.total}
+                onChange={(event) =>
+                  setMovementEditForm((current) => ({ ...current, total: event.target.value }))
+                }
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </label>
+
+            {movementToEdit?.type === "income" ? (
+              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                <span>Metodo de pago</span>
+                <select
+                  value={movementEditForm.paymentMethod}
+                  onChange={(event) =>
+                    setMovementEditForm((current) => ({
+                      ...current,
+                      paymentMethod: event.target.value,
+                    }))
+                  }
+                  className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+                >
+                  {["cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map(
+                    (method) => (
+                      <option key={method} value={method}>
+                        {PAYMENT_METHOD_LABELS[method]}
+                      </option>
+                    )
+                  )}
+                </select>
+              </label>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setMovementToEdit(null)}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveMovementEdit}
+              disabled={isBusy}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+            >
+              {isBusy ? "Guardando..." : "Guardar ajuste"}
+            </button>
+          </div>
+        </div>
+      </ModalWrapper>
+
+      <ModalWrapper
         open={isCloseModalOpen}
         onClose={() => setIsCloseModalOpen(false)}
         maxWidthClass="max-w-4xl"
         icon={{ main: <ReceiptText size={20} />, close: "X" }}
         title="Cierre de caja"
-        description="Sigue el wizard de 3 pasos para cerrar el turno y generar el reporte."
+        description="Revisa el conteo, confirma el resumen y cierra la jornada con su reporte."
       >
         <div className="grid gap-6">
           <div className="grid gap-4 md:grid-cols-3">

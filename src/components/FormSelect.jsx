@@ -14,11 +14,11 @@ export default function FormSelect({
   const selectId = id || generatedId;
 
   return (
-    <div className={`grid gap-2 text-sm font-medium text-slate-700 ${className}`}>
-      <label htmlFor={selectId}>{label}</label>
+    <label className={`grid gap-2 text-sm text-slate-700 ${className}`} htmlFor={selectId}>
+      <span className="font-medium text-slate-700">{label}</span>
       <select
         id={selectId}
-        className={`w-full rounded-2xl bg-white px-4 py-3 text-sm text-slate-900 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-500 ${selectClassName}`}
+        className={`w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5 ${selectClassName}`}
         {...props}
       >
         {children ||
@@ -28,7 +28,7 @@ export default function FormSelect({
             </option>
           ))}
       </select>
-      {hint ? <span className="text-xs text-slate-400">{hint}</span> : null}
-    </div>
+      {hint ? <span className="text-xs leading-5 text-slate-500">{hint}</span> : null}
+    </label>
   );
 }

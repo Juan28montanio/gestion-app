@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Building2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Building2, Pencil, Plus, Settings2, Trash2, X } from "lucide-react";
 import {
   createSupplier,
   deleteSupplier,
@@ -11,15 +11,6 @@ import FormSelect from "./FormSelect";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 
-const SUPPLIER_CATEGORIES = [
-  { value: "", label: "Seleccionar categoria" },
-  { value: "Lacteos", label: "Lacteos" },
-  { value: "Carnicos", label: "Carnicos" },
-  { value: "Bebidas", label: "Bebidas" },
-  { value: "Panaderia", label: "Panaderia" },
-  { value: "Abarrotes", label: "Abarrotes" },
-];
-
 const PAYMENT_TERMS = [
   { value: "Contado", label: "Contado" },
   { value: "Credito", label: "Credito" },
@@ -29,8 +20,11 @@ const EMPTY_SUPPLIER_FORM = {
   name: "",
   nit: "",
   category: "",
-  contact: "",
+  contactName: "",
   phone: "",
+  mobile: "",
+  email: "",
+  address: "",
   paymentTerms: "Contado",
 };
 
@@ -43,13 +37,22 @@ function buildSupplierForm(supplier) {
     name: supplier.name || "",
     nit: supplier.nit || "",
     category: supplier.category || "",
-    contact: supplier.contact || "",
+    contactName: supplier.contact_name || supplier.contact || "",
     phone: supplier.phone || "",
+    mobile: supplier.mobile || "",
+    email: supplier.email || "",
+    address: supplier.address || "",
     paymentTerms: supplier.payment_terms || supplier.paymentTerms || "Contado",
   };
 }
 
-export default function SupplierManager({ businessId, suppliers, purchases }) {
+export default function SupplierManager({
+  businessId,
+  suppliers,
+  purchases,
+  categoryOptions,
+  onManageCategories,
+}) {
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(EMPTY_SUPPLIER_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -57,29 +60,42 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [isSaving, setIsSaving] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState(null);
+  const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
+  const safePurchases = Array.isArray(purchases) ? purchases : [];
+  const safeCategoryOptions = Array.isArray(categoryOptions) ? categoryOptions : [];
 
   const supplierSpend = useMemo(() => {
-    return purchases.reduce((acc, purchase) => {
+    return safePurchases.reduce((acc, purchase) => {
       const supplierId = purchase.supplier_id;
       acc[supplierId] = (acc[supplierId] || 0) + Number(purchase.total || 0);
       return acc;
     }, {});
-  }, [purchases]);
+  }, [safePurchases]);
 
   const filteredSuppliers = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) {
-      return suppliers;
+      return safeSuppliers;
     }
 
-    return suppliers.filter((supplier) =>
-      [supplier.name, supplier.nit, supplier.category, supplier.contact]
+    return safeSuppliers.filter((supplier) =>
+      [
+        supplier.name,
+        supplier.nit,
+        supplier.category,
+        supplier.contact_name,
+        supplier.contact,
+        supplier.phone,
+        supplier.mobile,
+        supplier.email,
+        supplier.address,
+      ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(term)
     );
-  }, [search, suppliers]);
+  }, [safeSuppliers, search]);
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -94,10 +110,15 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
     setFeedback({ type: "", message: "" });
 
     try {
+      const payload = {
+        ...form,
+        contactName: form.contactName,
+      };
+
       if (editingId) {
-        await updateSupplier(editingId, businessId, form);
+        await updateSupplier(editingId, businessId, payload);
       } else {
-        await createSupplier(businessId, form);
+        await createSupplier(businessId, payload);
       }
 
       closeModal();
@@ -130,17 +151,25 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Proveedores</h2>
           <p className="text-sm text-slate-500">
-            Registra a quien le compras y sigue el volumen historico por aliado.
+            Registra a quien le compras y mantén datos de contacto útiles para operación y cartera.
           </p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar proveedor..."
             className="rounded-2xl bg-white px-4 py-2.5 text-sm outline-none ring-1 ring-slate-200"
           />
+          <button
+            type="button"
+            onClick={onManageCategories}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Settings2 size={16} />
+            Categorias
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -163,7 +192,8 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
               <th className="py-3 pr-4">Proveedor</th>
               <th className="py-3 pr-4">Categoria</th>
               <th className="py-3 pr-4">Contacto</th>
-              <th className="py-3 pr-4">Terminos</th>
+              <th className="py-3 pr-4">Ubicacion</th>
+              <th className="py-3 pr-4">Plazo</th>
               <th className="py-3 pr-4 text-right">Volumen historico</th>
               <th className="py-3 text-right">Acciones</th>
             </tr>
@@ -182,16 +212,20 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
                 </td>
                 <td className="py-3 pr-4">{supplier.category || "General"}</td>
                 <td className="py-3 pr-4">
-                  <div>
-                    <p>{supplier.contact || "Sin contacto"}</p>
-                    <p className="text-xs text-slate-500">{supplier.phone || "Sin telefono"}</p>
+                  <div className="space-y-1">
+                    <p>{supplier.contact_name || supplier.contact || "Sin responsable"}</p>
+                    <p className="text-xs text-slate-500">
+                      {[supplier.mobile, supplier.phone].filter(Boolean).join(" / ") || "Sin telefonos"}
+                    </p>
+                    <p className="text-xs text-slate-500">{supplier.email || "Sin correo"}</p>
                   </div>
+                </td>
+                <td className="py-3 pr-4 text-sm text-slate-500">
+                  {supplier.address || "Sin direccion"}
                 </td>
                 <td className="py-3 pr-4">{supplier.payment_terms || "Contado"}</td>
                 <td className="py-3 pr-4 text-right font-mono font-semibold text-slate-900">
-                  {formatCOP(
-                    Number(supplier.total_purchases_value || supplierSpend[supplier.id] || 0)
-                  )}
+                  {formatCOP(Number(supplierSpend[supplier.id] || supplier.total_purchases_value || 0))}
                 </td>
                 <td className="py-3 text-right">
                   <div className="flex justify-end gap-2 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
@@ -224,22 +258,22 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
       <ModalWrapper
         open={isModalOpen}
         onClose={closeModal}
-        maxWidthClass="max-w-3xl"
+        maxWidthClass="max-w-4xl"
         icon={{ main: <Building2 size={20} />, close: <X size={18} /> }}
         title={editingId ? "Editar proveedor" : "Nuevo proveedor"}
-        description="Organiza el directorio estrategico con datos basicos y condiciones comerciales."
+        description="Organiza el directorio de proveedores con categorias y datos de contacto completos."
       >
         <form onSubmit={handleSubmit} className="grid gap-6">
           <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
             <div>
               <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Datos Basicos
+                Datos basicos
               </h4>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <FormInput
-                label="Nombre / Razon social"
+                label="Nombre o razon social"
                 required
                 value={form.name}
                 onChange={(event) =>
@@ -255,46 +289,79 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
               />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-[1fr_auto]">
               <FormSelect
                 label="Categoria"
                 value={form.category}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, category: event.target.value }))
                 }
-                options={SUPPLIER_CATEGORIES}
+                options={safeCategoryOptions}
               />
-              <FormSelect
-                label="Plazo de pago"
-                value={form.paymentTerms}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, paymentTerms: event.target.value }))
-                }
-                options={PAYMENT_TERMS}
-              />
+              <div className="grid content-end">
+                <button
+                  type="button"
+                  onClick={onManageCategories}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Gestionar categorias
+                </button>
+              </div>
             </div>
+
+            <FormSelect
+              label="Plazo de pago"
+              value={form.paymentTerms}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, paymentTerms: event.target.value }))
+              }
+              options={PAYMENT_TERMS}
+            />
           </section>
 
           <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
             <div>
               <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Datos de Contacto
+                Datos de contacto
               </h4>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <FormInput
-                label="Contacto"
-                value={form.contact}
+                label="Contacto principal"
+                value={form.contactName}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, contact: event.target.value }))
+                  setForm((current) => ({ ...current, contactName: event.target.value }))
                 }
               />
               <FormInput
-                label="Telefono"
+                label="Celular"
+                value={form.mobile}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, mobile: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Telefono fijo"
                 value={form.phone}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, phone: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Correo"
+                type="email"
+                value={form.email}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, email: event.target.value }))
+                }
+              />
+              <FormInput
+                className="md:col-span-2"
+                label="Direccion"
+                value={form.address}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, address: event.target.value }))
                 }
               />
             </div>
@@ -328,11 +395,7 @@ export default function SupplierManager({ businessId, suppliers, purchases }) {
       <ConfirmModal
         open={Boolean(supplierToDelete)}
         title="Eliminar proveedor"
-        description={
-          supplierToDelete
-            ? `Se eliminara ${supplierToDelete.name} del directorio.`
-            : ""
-        }
+        description={supplierToDelete ? `Se eliminara ${supplierToDelete.name} del directorio.` : ""}
         confirmLabel="Eliminar"
         onConfirm={confirmDelete}
         onCancel={() => setSupplierToDelete(null)}

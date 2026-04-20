@@ -77,7 +77,7 @@ export default function TableView({
         </span>
       </div>
 
-      <div className="h-135 overflow-y-auto pr-1">
+      <div className="h-[540px] overflow-y-auto pr-1 md:h-[620px]">
         <div className="grid auto-rows-[128px] grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           {tables.map((table) => {
             const isSelected = selectedTableId === table.id;

@@ -27,6 +27,10 @@ import {
 } from "../services/supplyService";
 import { subscribeToSuppliers } from "../services/supplierService";
 import {
+  seedDefaultTaxonomies,
+  subscribeToTaxonomies,
+} from "../services/taxonomyService";
+import {
   createRecipeBook,
   subscribeToRecipeBooks,
   updateRecipeBook,
@@ -40,6 +44,8 @@ import SupplierManager from "./SupplierManager";
 import PurchaseManager from "./PurchaseManager";
 import RecipeBookManager from "./RecipeBookManager";
 import { formatCOP } from "../utils/formatters";
+import TaxonomyManagerModal from "./TaxonomyManagerModal";
+import { buildSelectOptions, SUPPLY_UNITS } from "../utils/resourceOptions";
 
 const PRODUCT_FORM = {
   name: "",
@@ -61,14 +67,6 @@ const SUPPLY_FORM = {
   averageCost: "",
 };
 
-const ONBOARDING_STEPS = [
-  { id: "suppliers", title: "Proveedores", description: "Registra a quien le compras.", icon: Factory },
-  { id: "ingredients", title: "Insumos", description: "Define materias primas y unidades base.", icon: Boxes },
-  { id: "purchases", title: "Compras", description: "Carga facturas para valorizar inventario.", icon: ClipboardList },
-  { id: "recipes", title: "Fichas Tecnicas", description: "Mide costo, merma y rentabilidad.", icon: Sparkles },
-  { id: "products", title: "Catalogo de Productos", description: "Conecta lo que vendes con tu costeo.", icon: Package },
-];
-
 const TABS = [
   { id: "suppliers", label: "Proveedores", icon: Factory },
   { id: "ingredients", label: "Insumos", icon: Boxes },
@@ -77,7 +75,6 @@ const TABS = [
   { id: "products", label: "Catalogo", icon: Package },
 ];
 
-const UNITS = ["g", "kg", "ml", "l", "oz", "und"];
 const RESOURCE_TABS = ["suppliers", "ingredients", "purchases", "recipes", "products"];
 
 function buildProductForm(product) {
@@ -108,23 +105,30 @@ function buildSupplyForm(supply) {
     unit: supply.unit || "g",
     stock: String(supply.stock ?? ""),
     stockMinAlert: String(supply.stock_min_alert ?? supply.stockMinAlert ?? ""),
-    averageCost: String(supply.average_cost ?? supply.cost_per_unit ?? ""),
+    averageCost: String(
+      supply.last_purchase_cost ?? supply.average_cost ?? supply.cost_per_unit ?? ""
+    ),
   };
 }
 
 function getSupplyHealth(supply) {
   const stock = Number(supply.stock || 0);
   const min = Number(supply.stock_min_alert || 0);
+  const ratio = min > 0 ? stock / min : Number.POSITIVE_INFINITY;
 
   if (stock <= 0) {
     return { label: "Agotado", classes: "bg-rose-100 text-rose-700 ring-rose-200" };
   }
 
-  if (stock <= min || stock <= min * 1.15) {
-    return { label: "Alerta", classes: "bg-amber-100 text-amber-700 ring-amber-200" };
+  if (stock <= min) {
+    return { label: "Critico", classes: "bg-rose-100 text-rose-700 ring-rose-200" };
   }
 
-  return { label: "Sano", classes: "bg-emerald-100 text-emerald-700 ring-emerald-200" };
+  if (ratio <= 1.35) {
+    return { label: "Atencion", classes: "bg-amber-100 text-amber-700 ring-amber-200" };
+  }
+
+  return { label: "Saludable", classes: "bg-emerald-100 text-emerald-700 ring-emerald-200" };
 }
 
 export default function ProductManager({ businessId, mode = "resources" }) {
@@ -133,11 +137,14 @@ export default function ProductManager({ businessId, mode = "resources" }) {
   const [suppliers, setSuppliers] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [recipeBooks, setRecipeBooks] = useState([]);
+  const [supplierCategories, setSupplierCategories] = useState([]);
+  const [ingredientCategories, setIngredientCategories] = useState([]);
   const [activeTab, setActiveTab] = useState(mode === "catalog" ? "products" : "suppliers");
   const [productForm, setProductForm] = useState(PRODUCT_FORM);
   const [supplyForm, setSupplyForm] = useState(SUPPLY_FORM);
   const [editingProductId, setEditingProductId] = useState(null);
   const [editingSupplyId, setEditingSupplyId] = useState(null);
+  const [focusedRecipeProductId, setFocusedRecipeProductId] = useState("");
   const [productView, setProductView] = useState("grid");
   const [ingredientView, setIngredientView] = useState("grid");
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -145,6 +152,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [taxonomyModalScope, setTaxonomyModalScope] = useState("");
   const isCatalogMode = mode === "catalog";
   const currentProductRecipe = useMemo(
     () => recipeBooks.find((recipeBook) => recipeBook.product_id === editingProductId) || null,
@@ -168,6 +176,27 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       unsubscribeSuppliers();
       unsubscribePurchases();
       unsubscribeRecipeBooks();
+    };
+  }, [businessId]);
+
+  useEffect(() => {
+    seedDefaultTaxonomies(businessId, "supplier_categories").catch(() => {});
+    seedDefaultTaxonomies(businessId, "ingredient_categories").catch(() => {});
+
+    const unsubscribeSupplierCategories = subscribeToTaxonomies(
+      businessId,
+      "supplier_categories",
+      setSupplierCategories
+    );
+    const unsubscribeIngredientCategories = subscribeToTaxonomies(
+      businessId,
+      "ingredient_categories",
+      setIngredientCategories
+    );
+
+    return () => {
+      unsubscribeSupplierCategories();
+      unsubscribeIngredientCategories();
     };
   }, [businessId]);
 
@@ -219,6 +248,42 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     () => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(),
     [products]
   );
+  const supplierCategoryOptions = useMemo(
+    () =>
+      buildSelectOptions(
+        supplierCategories.map((category) => category.label),
+        "Seleccionar categoria"
+      ),
+    [supplierCategories]
+  );
+  const ingredientCategoryOptions = useMemo(
+    () =>
+      buildSelectOptions(
+        ingredientCategories.map((category) => category.label),
+        "Seleccionar categoria"
+      ),
+    [ingredientCategories]
+  );
+  const latestSupplyReferenceByName = useMemo(() => {
+    const map = new Map();
+
+    purchases.forEach((purchase) => {
+      (purchase.items || []).forEach((item) => {
+        const searchName = String(item.ingredient_name || "").trim().toLocaleLowerCase("es");
+        if (!searchName || map.has(searchName)) {
+          return;
+        }
+
+        map.set(searchName, {
+          category: item.category || "",
+          unit: item.unit || "und",
+          averageCost: String(item.landed_unit_cost ?? item.unit_price ?? ""),
+        });
+      });
+    });
+
+    return map;
+  }, [purchases]);
   const resourceStats = useMemo(() => {
     const lowStockCount = supplies.filter((supply) => {
       const stock = Number(supply.stock || 0);
@@ -258,6 +323,24 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       },
     ];
   }, [purchases, recipeBooks, supplies]);
+  const supplySummary = useMemo(() => {
+    return supplies.reduce(
+      (summary, supply) => {
+        const status = getSupplyHealth(supply).label;
+        if (status === "Agotado") {
+          summary.depleted += 1;
+        } else if (status === "Critico") {
+          summary.critical += 1;
+        } else if (status === "Atencion") {
+          summary.attention += 1;
+        } else {
+          summary.healthy += 1;
+        }
+        return summary;
+      },
+      { healthy: 0, attention: 0, critical: 0, depleted: 0 }
+    );
+  }, [supplies]);
 
   const productModalMetrics = useMemo(() => {
     if (!currentProductRecipe) {
@@ -278,6 +361,34 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         : 0,
     };
   }, [currentProductRecipe, productForm.price]);
+  const productSummary = useMemo(() => {
+    return products.reduce(
+      (summary, product) => {
+        const recipeBook = productRecipeMap[product.id];
+
+        if (recipeBook) {
+          summary.connected += 1;
+        } else {
+          summary.withoutRecipe += 1;
+        }
+
+        if (recipeBook?.profitability_status === "healthy") {
+          summary.healthy += 1;
+        }
+
+        if (recipeBook?.profitability_status === "critical") {
+          summary.atRisk += 1;
+        }
+
+        if (String(product.product_type || "").toLowerCase() === "ticket_wallet") {
+          summary.ticketPlans += 1;
+        }
+
+        return summary;
+      },
+      { connected: 0, withoutRecipe: 0, healthy: 0, atRisk: 0, ticketPlans: 0 }
+    );
+  }, [productRecipeMap, products]);
 
   const closeProductModal = () => {
     setIsProductModalOpen(false);
@@ -292,6 +403,42 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     setSupplyForm(SUPPLY_FORM);
     setFeedback({ type: "", message: "" });
   };
+
+  const openRecipeContext = (productId = "") => {
+    setFocusedRecipeProductId(productId);
+    setActiveTab("recipes");
+  };
+
+  useEffect(() => {
+    if (!isSupplyModalOpen || editingSupplyId) {
+      return;
+    }
+
+    const searchName = String(supplyForm.name || "").trim().toLocaleLowerCase("es");
+    if (!searchName) {
+      return;
+    }
+
+    const latestReference = latestSupplyReferenceByName.get(searchName);
+    if (!latestReference) {
+      return;
+    }
+
+    setSupplyForm((current) => ({
+      ...current,
+      category: current.category || latestReference.category,
+      unit:
+        current.unit && current.unit !== SUPPLY_FORM.unit
+          ? current.unit
+          : latestReference.unit || current.unit || "und",
+      averageCost: current.averageCost || latestReference.averageCost,
+    }));
+  }, [
+    editingSupplyId,
+    isSupplyModalOpen,
+    latestSupplyReferenceByName,
+    supplyForm.name,
+  ]);
 
   const handleProductSubmit = async (event) => {
     event.preventDefault();
@@ -458,7 +605,13 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       ) : null}
 
       {activeTab === "suppliers" && !isCatalogMode ? (
-        <SupplierManager businessId={businessId} suppliers={suppliers} purchases={purchases} />
+        <SupplierManager
+          businessId={businessId}
+          suppliers={suppliers}
+          purchases={purchases}
+          categoryOptions={supplierCategoryOptions}
+          onManageCategories={() => setTaxonomyModalScope("supplier_categories")}
+        />
       ) : null}
 
       {activeTab === "purchases" && !isCatalogMode ? (
@@ -467,6 +620,9 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           suppliers={suppliers}
           supplies={supplies}
           purchases={purchases}
+          recipeBooks={recipeBooks}
+          categoryOptions={ingredientCategoryOptions}
+          onManageCategories={() => setTaxonomyModalScope("ingredient_categories")}
         />
       ) : null}
 
@@ -476,6 +632,8 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           products={products}
           supplies={supplies}
           recipeBooks={recipeBooks}
+          focusedProductId={focusedRecipeProductId}
+          onFocusHandled={() => setFocusedRecipeProductId("")}
         />
       ) : null}
 
@@ -486,7 +644,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">Inventario de insumos</h2>
                 <p className="text-sm text-slate-500">
-                  Controla stock, costo promedio ponderado y alertas minimas.
+                  Alterna entre lectura visual, tabla operativa y alertas para controlar stock y costo.
                 </p>
               </div>
 
@@ -506,6 +664,13 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   >
                     <List size={16} />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIngredientView("alerts")}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold ${ingredientView === "alerts" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+                  >
+                    <ClipboardList size={16} />
+                  </button>
                 </div>
                 <button
                   type="button"
@@ -520,6 +685,25 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   Nuevo insumo
                 </button>
               </div>
+            </div>
+
+            <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <article className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Saludables</p>
+                <p className="mt-2 text-2xl font-black text-slate-950">{supplySummary.healthy}</p>
+              </article>
+              <article className="rounded-[24px] bg-amber-50 p-4 ring-1 ring-amber-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Atencion</p>
+                <p className="mt-2 text-2xl font-black text-amber-900">{supplySummary.attention}</p>
+              </article>
+              <article className="rounded-[24px] bg-rose-50 p-4 ring-1 ring-rose-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">Criticos</p>
+                <p className="mt-2 text-2xl font-black text-rose-900">{supplySummary.critical}</p>
+              </article>
+              <article className="rounded-[24px] bg-slate-950 p-4 text-white ring-1 ring-slate-900">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Agotados</p>
+                <p className="mt-2 text-2xl font-black">{supplySummary.depleted}</p>
+              </article>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
@@ -539,9 +723,62 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     <p className="mt-1 text-sm">Define materias primas para costeo y compras.</p>
                   </button>
                 ) : null}
-                {supplies.map((supply) => {
+                {ingredientView === "alerts" ? (
+                  supplies
+                    .filter((supply) => getSupplyHealth(supply).label !== "Saludable")
+                    .map((supply) => {
+                      const status = getSupplyHealth(supply);
+                      const stock = Number(supply.stock || 0);
+                      const min = Number(supply.stock_min_alert || 0);
+                      const missing = Math.max(min - stock, 0);
+                      const latestPurchase = (priceHistoryBySupply[supply.id] || [])[0];
+
+                      return (
+                        <article
+                          key={supply.id}
+                          className="rounded-[24px] bg-white p-5 shadow-lg ring-1 ring-slate-200"
+                        >
+                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                {supply.category || "Sin categoria"}
+                              </p>
+                              <h3 className="mt-2 text-lg font-semibold text-slate-900">{supply.name}</h3>
+                              <p className="mt-2 text-sm text-slate-500">
+                                {missing > 0
+                                  ? `Faltan ${missing} ${supply.unit} para volver al minimo.`
+                                  : "Revisa el nivel actual para evitar quiebres de stock."}
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${status.classes}`}>
+                              {status.label}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-3 md:grid-cols-3">
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                              <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Stock actual</p>
+                              <p className="mt-2 font-semibold text-slate-900">{stock} {supply.unit}</p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                              <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Minimo</p>
+                              <p className="mt-2 font-semibold text-slate-900">{min} {supply.unit}</p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                              <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Ultima compra</p>
+                              <p className="mt-2 font-semibold text-slate-900">
+                                {latestPurchase ? formatCOP(latestPurchase.unitCost) : "Sin registro"}
+                              </p>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })
+                ) : supplies.map((supply) => {
                   const status = getSupplyHealth(supply);
                   const history = priceHistoryBySupply[supply.id] || [];
+                  const stock = Number(supply.stock || 0);
+                  const min = Number(supply.stock_min_alert || 0);
+                  const missing = Math.max(min - stock, 0);
 
                   return (
                     <article
@@ -566,7 +803,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                         <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Stock</p>
                           <p className="mt-2 font-semibold text-slate-900">
-                            {supply.stock} {supply.unit}
+                            {stock} {supply.unit}
                           </p>
                         </div>
                         <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
@@ -584,10 +821,14 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                       </div>
 
                       <div className="mt-5 rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                          Historial de precios
-                        </p>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Lectura operativa</p>
                         <div className="mt-3 space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500">Estado del minimo</span>
+                            <span className="font-semibold text-slate-900">
+                              {missing > 0 ? `Faltan ${missing} ${supply.unit}` : "Cobertura estable"}
+                            </span>
+                          </div>
                           {history.slice(0, 3).map((entry, index) => (
                             <div key={`${supply.id}-history-${index}`} className="flex items-center justify-between text-sm">
                               <span className="text-slate-500">{entry.date}</span>
@@ -754,6 +995,11 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                         {product.category}
                       </p>
                       <h3 className="mt-2 text-lg font-semibold text-slate-900">{product.name}</h3>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {recipeBook
+                          ? "Este producto ya conecta precio, costo real y rentabilidad."
+                          : "Aun no tiene ficha tecnica conectada para leer utilidad real."}
+                      </p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${semaforoClasses}`}>
                       {recipeBook ? `${margin.toFixed(1)}% margen` : "Sin ficha"}
@@ -762,13 +1008,13 @@ export default function ProductManager({ businessId, mode = "resources" }) {
 
                   <div className="mt-5 grid gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Precio</p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Tu precio actual</p>
                       <p className="mt-2 text-right font-mono text-lg font-black text-slate-950">
                         {formatCOP(product.price)}
                       </p>
                     </div>
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo real</p>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo conectado</p>
                       <p className="mt-2 text-right font-mono font-semibold text-slate-900">
                         {formatCOP(recipeBook?.real_cost || 0)}
                       </p>
@@ -776,7 +1022,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-[#d4a72c]/20">
                       <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#946200]">
                         <Sparkles size={14} />
-                        Sugerido
+                        Precio recomendado
                       </p>
                       <p className="mt-2 text-right font-mono font-semibold text-slate-900">
                         {formatCOP(recipeBook?.suggested_price || product.price)}
@@ -802,7 +1048,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     {!isCatalogMode ? (
                       <button
                         type="button"
-                        onClick={() => setActiveTab("recipes")}
+                        onClick={() => openRecipeContext(product.id)}
                         className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
                       >
                         <Sparkles size={16} />
@@ -835,6 +1081,20 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       >
         <form onSubmit={handleProductSubmit} className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <div className="grid gap-6">
+            <div className="grid gap-3 rounded-[24px] bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] p-5 text-white ring-1 ring-slate-950/10">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+                Alta de producto
+              </p>
+              <h3 className="text-lg font-semibold">
+                Define primero lo que vendes y deja que el sistema te ayude a defender el precio.
+              </h3>
+              <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                <span className="rounded-full bg-white/10 px-3 py-1 text-slate-200">Editable: nombre, categoria, precio y stock</span>
+                <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-emerald-200">Calculado: costo conectado</span>
+                <span className="rounded-full bg-amber-400/10 px-3 py-1 text-amber-200">Recomendado: precio sugerido</span>
+              </div>
+            </div>
+
             <div className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
               <div className="grid gap-4 md:grid-cols-2">
                 <FormInput
@@ -865,7 +1125,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <FormInput
-                  label="Precio de venta"
+                  label="Tu precio actual"
                   type="number"
                   min="0"
                   step="1"
@@ -875,7 +1135,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   }
                 />
                 <FormInput
-                  label="Precio sugerido"
+                  label="Precio recomendado"
                   value={formatCOP(productModalMetrics.suggestedPrice || 0)}
                   readOnly
                   hint="Se calcula desde la ficha tecnica y el margen objetivo."
@@ -1007,19 +1267,19 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {currentProductRecipe
                   ? "Este panel se alimenta automaticamente desde la receta estandar y el costo vigente de insumos."
-                  : "Conecta este producto con una ficha tecnica para medir costo real, margen y precio sugerido."}
+                  : "Conecta este producto con una ficha tecnica para medir costo real, margen y precio recomendado."}
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo real</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo conectado</p>
                 <p className="mt-2 text-lg font-bold text-slate-950">
                   {formatCOP(productModalMetrics.realCost)}
                 </p>
               </div>
               <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Margen actual</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Margen estimado</p>
                 <p className="mt-2 text-lg font-bold text-slate-950">
                   {productModalMetrics.currentMarginPct.toFixed(1)}%
                 </p>
@@ -1040,7 +1300,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                       type="button"
                       onClick={() => {
                         closeProductModal();
-                        setActiveTab("recipes");
+                        openRecipeContext(editingProductId);
                       }}
                       className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
@@ -1055,7 +1315,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     onClick={() => {
                       if (!isCatalogMode) {
                         closeProductModal();
-                        setActiveTab("recipes");
+                        openRecipeContext(editingProductId || form.productId);
                       }
                     }}
                     disabled={isCatalogMode}
@@ -1084,7 +1344,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         maxWidthClass="max-w-3xl"
         icon={{ main: <Boxes size={20} />, close: <X size={18} /> }}
         title={editingSupplyId ? "Editar insumo" : "Nuevo insumo"}
-        description="Registra materias primas con una grilla estable y scroll interno, sin que ningun campo se salga del viewport."
+        description="Registra materias primas con campos claros y una edicion comoda en cualquier tamano de pantalla."
       >
         <form onSubmit={handleSupplySubmit} className="grid gap-6">
           <div className="grid gap-4 md:grid-cols-2">
@@ -1094,13 +1354,48 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               value={supplyForm.name}
               onChange={(event) => setSupplyForm((current) => ({ ...current, name: event.target.value }))}
             />
-            <FormInput
-              label="Categoria"
-              value={supplyForm.category}
-              onChange={(event) =>
-                setSupplyForm((current) => ({ ...current, category: event.target.value }))
-              }
-            />
+            <div className="grid gap-2">
+              <FormSelect
+                label="Categoria"
+                value={supplyForm.category}
+                onChange={(event) =>
+                  setSupplyForm((current) => ({ ...current, category: event.target.value }))
+                }
+                options={ingredientCategoryOptions}
+              />
+              <button
+                type="button"
+                onClick={() => setTaxonomyModalScope("ingredient_categories")}
+                className="justify-self-start rounded-2xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Gestionar categorias
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Con costeo conectado</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{productSummary.connected}</p>
+              <p className="mt-1 text-sm text-slate-500">Productos que ya responden con costo real.</p>
+            </article>
+            <article className="rounded-[24px] bg-emerald-50 p-4 ring-1 ring-emerald-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Margen saludable</p>
+              <p className="mt-2 text-2xl font-black text-emerald-900">{productSummary.healthy}</p>
+              <p className="mt-1 text-sm text-emerald-800/80">Productos con lectura positiva de rentabilidad.</p>
+            </article>
+            <article className="rounded-[24px] bg-rose-50 p-4 ring-1 ring-rose-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">Margen en riesgo</p>
+              <p className="mt-2 text-2xl font-black text-rose-900">{productSummary.atRisk}</p>
+              <p className="mt-1 text-sm text-rose-800/80">Productos que conviene revisar cuanto antes.</p>
+            </article>
+            <article className="rounded-[24px] bg-[#fff7df] p-4 ring-1 ring-[#d4a72c]/25">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#946200]">Sin ficha o prepago</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">
+                {productSummary.withoutRecipe + productSummary.ticketPlans}
+              </p>
+              <p className="mt-1 text-sm text-slate-600">Productos pendientes de costeo o planes especiales.</p>
+            </article>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1109,9 +1404,9 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               value={supplyForm.unit}
               onChange={(event) => setSupplyForm((current) => ({ ...current, unit: event.target.value }))}
               selectClassName="bg-[#fff7df] font-semibold text-[#946200] ring-[#d4a72c]/30"
-              hint="Base del costeo por unidad."
+              hint="Usa la misma unidad base que luego emplearas en compras y recetas."
             >
-              {UNITS.map((unit) => (
+              {SUPPLY_UNITS.map((unit) => (
                 <option key={unit} value={unit}>
                   {unit}
                 </option>
@@ -1144,6 +1439,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               onChange={(event) =>
                 setSupplyForm((current) => ({ ...current, averageCost: event.target.value }))
               }
+              hint="Si ya hubo compras, este valor se alinea con el ultimo costo registrado."
             />
           </div>
 
@@ -1179,6 +1475,23 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         confirmLabel="Eliminar"
         onConfirm={confirmDelete}
         onCancel={() => setItemToDelete(null)}
+      />
+
+      <TaxonomyManagerModal
+        open={Boolean(taxonomyModalScope)}
+        onClose={() => setTaxonomyModalScope("")}
+        businessId={businessId}
+        scope={taxonomyModalScope}
+        title={
+          taxonomyModalScope === "supplier_categories"
+            ? "Categorias de proveedores"
+            : "Categorias de insumos"
+        }
+        description={
+          taxonomyModalScope === "supplier_categories"
+            ? "Gestiona una sola lista para proveedores y directorio estrategico."
+            : "Gestiona las categorias compartidas por insumos, compras y costeo."
+        }
       />
     </section>
   );

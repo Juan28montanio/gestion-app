@@ -34,6 +34,42 @@ const STATUS_META = {
   critical: "bg-rose-100 text-rose-700 ring-rose-200",
 };
 
+const STATUS_LABELS = {
+  healthy: "Rentable",
+  warning: "Ajustar precio",
+  critical: "Margen critico",
+};
+
+function getRecipeAction(recipeBook) {
+  const profitabilityStatus = recipeBook?.profitability_status || "warning";
+
+  if (profitabilityStatus === "healthy") {
+    return "Mantener el precio actual y vigilar cambios de insumo.";
+  }
+
+  if (profitabilityStatus === "critical") {
+    return "Subir precio o revisar cantidades y merma cuanto antes.";
+  }
+
+  return "Revisar margen objetivo y validar el costo real antes de seguir vendiendo.";
+}
+
+function getSuggestedDeltaLabel(currentPrice, suggestedPrice) {
+  const current = Number(currentPrice || 0);
+  const suggested = Number(suggestedPrice || 0);
+  const delta = suggested - current;
+
+  if (!current || Math.abs(delta) < 1) {
+    return "El precio actual ya esta alineado.";
+  }
+
+  if (delta > 0) {
+    return `Conviene subir ${formatCOP(delta)} para llegar al precio recomendado.`;
+  }
+
+  return `Hay espacio para bajar ${formatCOP(Math.abs(delta))} si quieres ganar competitividad.`;
+}
+
 function buildRecipeForm(recipeBook) {
   if (!recipeBook) {
     return EMPTY_RECIPE_FORM;
@@ -62,6 +98,8 @@ export default function RecipeBookManager({
   products,
   supplies,
   recipeBooks,
+  focusedProductId,
+  onFocusHandled,
 }) {
   const [form, setForm] = useState(EMPTY_RECIPE_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -78,23 +116,39 @@ export default function RecipeBookManager({
     profitabilityStatus: "warning",
   });
   const [recipeToDelete, setRecipeToDelete] = useState(null);
+  const [highlightedRecipeId, setHighlightedRecipeId] = useState("");
+  const [focusContextProductId, setFocusContextProductId] = useState("");
+  const safeProducts = Array.isArray(products) ? products : [];
+  const safeSupplies = Array.isArray(supplies) ? supplies : [];
+  const safeRecipeBooks = Array.isArray(recipeBooks) ? recipeBooks : [];
 
   const availableProducts = useMemo(
     () =>
-      products.filter(
+      safeProducts.filter(
         (product) =>
-          !recipeBooks.some((recipeBook) => recipeBook.product_id === product.id) ||
-          recipeBooks.some(
+          !safeRecipeBooks.some((recipeBook) => recipeBook.product_id === product.id) ||
+          safeRecipeBooks.some(
             (recipeBook) => recipeBook.product_id === product.id && recipeBook.id === editingId
           )
       ),
-    [editingId, products, recipeBooks]
+    [editingId, safeProducts, safeRecipeBooks]
   );
 
   const selectedProduct = useMemo(
-    () => products.find((product) => product.id === form.productId),
-    [form.productId, products]
+    () => safeProducts.find((product) => product.id === form.productId),
+    [form.productId, safeProducts]
   );
+
+  const recipeSummary = useMemo(() => {
+    const healthy = safeRecipeBooks.filter((recipeBook) => recipeBook.profitability_status === "healthy").length;
+    const warning = safeRecipeBooks.filter((recipeBook) => recipeBook.profitability_status === "warning").length;
+    const critical = safeRecipeBooks.filter((recipeBook) => recipeBook.profitability_status === "critical").length;
+    const incomplete = safeRecipeBooks.filter(
+      (recipeBook) => !Array.isArray(recipeBook.ingredients) || recipeBook.ingredients.length === 0
+    ).length;
+
+    return { healthy, warning, critical, incomplete };
+  }, [safeRecipeBooks]);
 
   useEffect(() => {
     const metrics = calculateRecipeMetricsPreview({
@@ -102,14 +156,41 @@ export default function RecipeBookManager({
         ingredient_id: ingredient.ingredientId,
         quantity: Number(ingredient.quantity),
       })),
-      inventory: supplies,
+      inventory: safeSupplies,
       wastePct: Number(form.wastePct),
       salePrice: Number(selectedProduct?.price || 0),
       targetMarginPct: Number(form.targetMarginPct),
     });
 
     setPreviewMetrics(metrics);
-  }, [form.ingredients, form.targetMarginPct, form.wastePct, selectedProduct, supplies]);
+  }, [form.ingredients, form.targetMarginPct, form.wastePct, safeSupplies, selectedProduct]);
+
+  useEffect(() => {
+    if (!focusedProductId) {
+      return;
+    }
+
+    const matchingRecipe = safeRecipeBooks.find((recipeBook) => recipeBook.product_id === focusedProductId);
+    if (matchingRecipe) {
+      setFocusContextProductId(focusedProductId);
+      setHighlightedRecipeId(matchingRecipe.id);
+      onFocusHandled?.();
+      const timer = window.setTimeout(() => {
+        setHighlightedRecipeId("");
+        setFocusContextProductId("");
+      }, 2400);
+      return () => window.clearTimeout(timer);
+    }
+
+    setFocusContextProductId(focusedProductId);
+    setEditingId(null);
+    setActiveModalTab("costing");
+    setForm({ ...EMPTY_RECIPE_FORM, productId: focusedProductId });
+    setIsModalOpen(true);
+    onFocusHandled?.();
+    const timer = window.setTimeout(() => setFocusContextProductId(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [focusedProductId, onFocusHandled, safeRecipeBooks]);
 
   const addIngredientRow = () => {
     setForm((current) => ({
@@ -232,7 +313,7 @@ export default function RecipeBookManager({
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Fichas tecnicas</h2>
           <p className="text-sm text-slate-500">
-            Controla costo real, merma, tiempos y semaforo de rentabilidad por plato.
+            Controla costo real, merma, tiempos y rentabilidad por plato.
           </p>
         </div>
 
@@ -249,11 +330,67 @@ export default function RecipeBookManager({
         </button>
       </div>
 
+      <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            Rentables
+          </p>
+          <p className="mt-2 text-2xl font-black text-slate-950">{recipeSummary.healthy}</p>
+          <p className="mt-1 text-sm text-slate-500">Platos cumpliendo su margen objetivo.</p>
+        </article>
+        <article className="rounded-[24px] bg-amber-50 p-4 ring-1 ring-amber-200">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+            Ajustar precio
+          </p>
+          <p className="mt-2 text-2xl font-black text-slate-950">{recipeSummary.warning}</p>
+          <p className="mt-1 text-sm text-slate-600">Platos que piden revisar precio o merma.</p>
+        </article>
+        <article className="rounded-[24px] bg-rose-50 p-4 ring-1 ring-rose-200">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">
+            Criticos
+          </p>
+          <p className="mt-2 text-2xl font-black text-slate-950">{recipeSummary.critical}</p>
+          <p className="mt-1 text-sm text-slate-600">Platos por debajo del margen esperado.</p>
+        </article>
+        <article className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+            Incompletas
+          </p>
+          <p className="mt-2 text-2xl font-black text-slate-950">{recipeSummary.incomplete}</p>
+          <p className="mt-1 text-sm text-slate-500">Fichas sin insumos cargados.</p>
+        </article>
+      </div>
+
+      <section className="mb-6 rounded-[28px] bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] p-5 text-white ring-1 ring-slate-950/10">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">
+          Lectura de rentabilidad
+        </p>
+        <h3 className="mt-2 text-xl font-semibold">Cada ficha debe responder si este plato se puede defender hoy.</h3>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+          Revisa precio actual, costo conectado, margen y precio recomendado para decidir si conviene mantener, ajustar o corregir la receta.
+        </p>
+      </section>
+
+      {focusContextProductId ? (
+        <div className="mb-6 rounded-[24px] bg-[#fff7df] px-4 py-4 ring-1 ring-[#d4a72c]/20">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#946200]">
+            Contexto desde productos
+          </p>
+          <p className="mt-2 text-sm font-semibold text-slate-900">
+            Estas revisando la ficha tecnica del producto que acabas de abrir desde el catalogo.
+          </p>
+        </div>
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-2">
-        {recipeBooks.map((recipeBook) => (
+        {safeRecipeBooks.map((recipeBook) => (
           <article
             key={recipeBook.id}
-            className="rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200"
+            className={`rounded-[28px] bg-slate-50 p-5 shadow-lg transition-all ${
+              highlightedRecipeId === recipeBook.id
+                ? "ring-2 ring-emerald-500 shadow-[0_18px_50px_rgba(16,185,129,0.18)]"
+                : "ring-1 ring-slate-200"
+            }`}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -267,12 +404,42 @@ export default function RecipeBookManager({
                   STATUS_META[recipeBook.profitability_status] || STATUS_META.warning
                 }`}
               >
-                {recipeBook.profitability_status === "healthy"
-                  ? "Margen saludable"
-                  : recipeBook.profitability_status === "critical"
-                    ? "Margen critico"
-                    : "Margen ajustado"}
+                {STATUS_LABELS[recipeBook.profitability_status] || STATUS_LABELS.warning}
               </span>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Precio actual</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {formatCOP(recipeBook.sale_price || 0)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Accion recomendada</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">
+                    {getRecipeAction(recipeBook)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-[#fff7df] px-4 py-4 ring-1 ring-[#d4a72c]/20">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-[#946200]">Precio actual vs recomendado</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">
+                    {getSuggestedDeltaLabel(recipeBook.sale_price, recipeBook.suggested_price)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-[#946200]">Margen objetivo</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">
+                    {(Number(recipeBook.target_margin_pct || 0)).toFixed(1)}% objetivo
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -281,13 +448,13 @@ export default function RecipeBookManager({
                 <p className="mt-2 font-semibold text-slate-900">{formatCOP(recipeBook.base_cost)}</p>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo real</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo conectado</p>
                 <p className="mt-2 font-semibold text-slate-900">{formatCOP(recipeBook.real_cost)}</p>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-[#d4a72c]/20">
                 <p className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#946200]">
                   <Sparkles size={14} />
-                  Sugerido
+                  Precio recomendado
                 </p>
                 <p className="mt-2 font-semibold text-slate-900">{formatCOP(recipeBook.suggested_price)}</p>
               </div>
@@ -332,7 +499,7 @@ export default function RecipeBookManager({
         maxWidthClass="max-w-6xl"
         icon={{ main: <BookOpenText size={20} />, close: <X size={18} /> }}
         title={editingId ? "Editar ficha tecnica" : "Nueva ficha tecnica"}
-        description="Usa una estructura por pestañas para costear, documentar la operacion y mantener toda la informacion visible."
+        description="Costea el plato, revisa su rentabilidad y documenta la operacion desde una sola ficha."
       >
         <form onSubmit={handleSubmit} className="grid gap-6">
           <div className="flex flex-wrap gap-2">
@@ -356,6 +523,15 @@ export default function RecipeBookManager({
             <>
               <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200 xl:grid-cols-[1.15fr_0.85fr]">
                 <div className="grid gap-4">
+                  <div className="rounded-[20px] bg-slate-950 px-4 py-4 text-white ring-1 ring-slate-900/10">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Decision guiada
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-200">
+                      Ajusta merma y margen objetivo para ver si el precio actual resiste o si conviene corregirlo.
+                    </p>
+                  </div>
+
                   <FormSelect
                     label="Producto"
                     value={form.productId}
@@ -396,27 +572,68 @@ export default function RecipeBookManager({
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
+                  <FormInput label="Costo base" value={formatCOP(previewMetrics.baseCost)} readOnly />
+                  <FormInput label="Costo conectado" value={formatCOP(previewMetrics.realCost)} readOnly />
                   <FormInput
-                    label="Costo base"
-                    value={formatCOP(previewMetrics.baseCost)}
-                    readOnly
-                  />
-                  <FormInput
-                    label="Costo real"
-                    value={formatCOP(previewMetrics.realCost)}
-                    readOnly
-                  />
-                  <FormInput
-                    label="Margen actual"
+                    label="Margen estimado"
                     value={`${previewMetrics.currentMarginPct.toFixed(1)}%`}
                     readOnly
                   />
                   <FormInput
-                    label="Precio sugerido"
+                    label="Precio recomendado"
                     value={formatCOP(previewMetrics.suggestedPrice)}
                     readOnly
                   />
                 </div>
+              </section>
+
+              <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Tu precio actual</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {formatCOP(Number(selectedProduct?.price || 0))}
+                  </p>
+                </article>
+                <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Costo conectado</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {formatCOP(previewMetrics.realCost)}
+                  </p>
+                </article>
+                <article className="rounded-[24px] bg-[#fff7df] p-4 ring-1 ring-[#d4a72c]/20">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[#946200]">
+                    Precio recomendado
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {formatCOP(previewMetrics.suggestedPrice)}
+                  </p>
+                </article>
+                <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Estado del margen</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {STATUS_LABELS[previewMetrics.profitabilityStatus] || STATUS_LABELS.warning}
+                  </p>
+                </article>
+              </section>
+
+              <section className="grid gap-4 md:grid-cols-2">
+                <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Recomendacion inmediata</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">
+                    {getRecipeAction({
+                      profitability_status: previewMetrics.profitabilityStatus,
+                    })}
+                  </p>
+                </article>
+                <article className="rounded-[24px] bg-[#fff7df] p-4 ring-1 ring-[#d4a72c]/20">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-[#946200]">Impacto en precio</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">
+                    {getSuggestedDeltaLabel(
+                      Number(selectedProduct?.price || 0),
+                      previewMetrics.suggestedPrice
+                    )}
+                  </p>
+                </article>
               </section>
 
               <section className="space-y-4 rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
@@ -451,7 +668,7 @@ export default function RecipeBookManager({
                         }
                       >
                         <option value="">Seleccionar insumo</option>
-                        {supplies.map((supply) => (
+                        {safeSupplies.map((supply) => (
                           <option key={supply.id} value={supply.id}>
                             {supply.name} ({supply.unit})
                           </option>

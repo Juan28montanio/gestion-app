@@ -28,6 +28,7 @@ import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 import { QUICK_SALE_TABLE } from "../utils/posConstants";
 import { PAYMENT_METHOD_LABELS } from "../utils/payments";
+import { buildCashTenderSuggestions, calculateCashChange } from "../utils/cashPayment";
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "Efectivo" },
@@ -60,6 +61,117 @@ function createSplitPaymentLine(method = "cash", amount = "") {
   };
 }
 
+function getPosOperationStatus({ selectedTable, activeOrder, cartItems }) {
+  if (!selectedTable) {
+    return {
+      label: "Pendiente por iniciar",
+      detail: "Selecciona una mesa o usa venta rapida para empezar a cobrar.",
+    };
+  }
+
+  if (selectedTable.isQuickSale) {
+    return {
+      label: "Modo caja rapida",
+      detail: "Puedes cobrar de inmediato sin comandar la orden.",
+    };
+  }
+
+  if (activeOrder?.id) {
+    return {
+      label: "Orden en curso",
+      detail: "La comanda ya existe y esta lista para seguimiento o cobro.",
+    };
+  }
+
+  if (cartItems.length > 0) {
+    return {
+      label: "Borrador listo",
+      detail: "La mesa ya tiene productos cargados y puede pasar a comanda.",
+    };
+  }
+
+  return {
+    label: "Mesa lista",
+    detail: "Agrega productos para comenzar la venta.",
+  };
+}
+
+function getOrderedItemsLabel(order) {
+  const names = (order?.items || [])
+    .map((item) => String(item.name || "").trim())
+    .filter(Boolean);
+
+  if (!names.length) {
+    return "";
+  }
+
+  return names.slice(0, 3).join(", ");
+}
+
+function getPaymentReadiness({
+  selectedTable,
+  cartItems,
+  activeOrder,
+  paymentMethod,
+  chargedTotal,
+  cashShortage,
+  cashLockInfo,
+}) {
+  if (cashLockInfo?.blocked) {
+    return {
+      label: "Caja bloqueada",
+      detail: "Debes resolver la caja antes de registrar nuevos cobros.",
+      tone: "text-rose-200",
+    };
+  }
+
+  if (!selectedTable) {
+    return {
+      label: "Falta asignar la venta",
+      detail: "Selecciona una mesa o venta rapida para continuar.",
+      tone: "text-slate-300",
+    };
+  }
+
+  if (!activeOrder?.id && cartItems.length === 0) {
+    return {
+      label: "Sin productos en el pedido",
+      detail: "Agrega productos antes de intentar cobrar.",
+      tone: "text-slate-300",
+    };
+  }
+
+  if (chargedTotal <= 0) {
+    return {
+      label: "Valor pendiente por definir",
+      detail: "Indica el valor final cobrado para continuar.",
+      tone: "text-amber-200",
+    };
+  }
+
+  if (paymentMethod === "cash" && cashShortage > 0) {
+    return {
+      label: "Falta efectivo por recibir",
+      detail: `Aun faltan ${formatCOP(cashShortage)} para cerrar este cobro en efectivo.`,
+      tone: "text-amber-200",
+    };
+  }
+
+  if (paymentMethod === "cash" && cashShortage === 0) {
+    return {
+      label: "Listo para cobrar en efectivo",
+      detail: "El pago recibido cubre el total y el cambio ya esta calculado.",
+      tone: "text-emerald-200",
+    };
+  }
+
+  return {
+    label: "Listo para registrar el cobro",
+    detail: "Puedes confirmar el pago o dividirlo desde el modal.",
+    tone: "text-emerald-200",
+  };
+}
+
 function SearchSelector({
   label,
   placeholder,
@@ -87,15 +199,15 @@ function SearchSelector({
   }, [getDescription, getLabel, items, search]);
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 text-left ring-1 ring-slate-200 transition hover:ring-emerald-300 md:min-w-[280px]"
+        className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 text-left ring-1 ring-slate-200 transition hover:ring-emerald-300"
       >
-        <div>
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
+          <p className="mt-1 truncate text-sm font-semibold text-slate-900">
             {selectedItem ? getLabel(selectedItem) : placeholder}
           </p>
         </div>
@@ -167,6 +279,12 @@ function CartPanel({
   payableSubtotal,
   chargedTotalInput,
   setChargedTotalInput,
+  chargedTotal,
+  cashReceivedInput,
+  setCashReceivedInput,
+  cashChange,
+  cashShortage,
+  cashSuggestions,
   adjustmentAmount,
   adjustmentPct,
   debtAmount,
@@ -187,8 +305,25 @@ function CartPanel({
   mobile = false,
 }) {
   const chargedTotalId = useId();
+  const cashReceivedId = useId();
+  const itemCount = cartItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const ticketUnits = cartItems.reduce(
+    (sum, item) => sum + (item.useTicket ? Number(item.quantity || 0) : 0),
+    0
+  );
   const adjustmentLabel =
     adjustmentAmount < 0 ? "Descuento aplicado" : adjustmentAmount > 0 ? "Aumento aplicado" : "Sin ajuste";
+  const isCashPayment = paymentMethod === "cash";
+  const operationStatus = getPosOperationStatus({ selectedTable, activeOrder, cartItems });
+  const paymentReadiness = getPaymentReadiness({
+    selectedTable,
+    cartItems,
+    activeOrder,
+    paymentMethod,
+    chargedTotal,
+    cashShortage,
+    cashLockInfo,
+  });
 
   return (
     <div
@@ -235,6 +370,37 @@ function CartPanel({
           }
           icon={UserRound}
         />
+      </div>
+
+      <div className="mb-5 grid gap-3 sm:grid-cols-2">
+        <article className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Estado operativo
+          </p>
+          <p className="mt-2 text-sm font-semibold text-white">{operationStatus.label}</p>
+          <p className="mt-1 text-xs text-slate-300">{operationStatus.detail}</p>
+        </article>
+        <article className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Venta actual
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-center">
+            <div className="rounded-2xl bg-slate-950/60 px-2 py-2">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Items</p>
+              <p className="mt-1 text-base font-semibold text-white">{itemCount}</p>
+            </div>
+            <div className="rounded-2xl bg-slate-950/60 px-2 py-2">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Tickets</p>
+              <p className="mt-1 text-base font-semibold text-white">{ticketUnits}</p>
+            </div>
+            <div className="col-span-2 rounded-2xl bg-slate-950/60 px-3 py-2 text-left">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Cliente</p>
+              <p className="mt-1 truncate text-sm font-semibold text-white">
+                {selectedCustomer ? "Asignado" : "Ocasional"}
+              </p>
+            </div>
+          </div>
+        </article>
       </div>
 
       <div className="space-y-3">
@@ -337,6 +503,27 @@ function CartPanel({
           </div>
         ) : null}
 
+        <div className="mb-4 rounded-[24px] border border-emerald-400/15 bg-gradient-to-r from-emerald-500/15 via-emerald-400/8 to-white/5 px-4 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
+                Centro de cobro
+              </p>
+              <p className="mt-2 text-2xl font-black text-white">{formatCOP(chargedTotal)}</p>
+              <p className={`mt-2 text-sm font-medium ${paymentReadiness.tone}`}>
+                {paymentReadiness.label}
+              </p>
+              <p className="mt-1 text-xs text-slate-300">{paymentReadiness.detail}</p>
+            </div>
+            <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-right">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Metodo actual</p>
+              <p className="mt-2 text-sm font-semibold text-white">
+                {PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
           <div className="flex items-center justify-between text-sm text-slate-300">
             <span>Total real de productos</span>
@@ -366,6 +553,55 @@ function CartPanel({
               className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none"
             />
           </div>
+          {isCashPayment && chargedTotal > 0 ? (
+            <div className="grid gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+              <div className="grid gap-2">
+                <label
+                  htmlFor={cashReceivedId}
+                  className="text-xs uppercase tracking-[0.18em] text-emerald-200"
+                >
+                  Pago recibido del cliente
+                </label>
+                <input
+                  id={cashReceivedId}
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={cashReceivedInput}
+                  onChange={(event) => setCashReceivedInput(event.target.value)}
+                  className="rounded-2xl border border-emerald-400/20 bg-slate-900 px-4 py-3 text-sm text-white outline-none"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {cashSuggestions.map((amount) => (
+                  <button
+                    key={`cash-suggestion-${amount}`}
+                    type="button"
+                    onClick={() => setCashReceivedInput(String(amount))}
+                    className="rounded-full border border-emerald-400/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-white/15"
+                  >
+                    {amount === chargedTotal ? "Exacto" : formatCOP(amount)}
+                  </button>
+                ))}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-2xl bg-slate-950/60 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Cambio</p>
+                  <p className="mt-1 text-lg font-semibold text-emerald-200">
+                    {formatCOP(cashChange)}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-950/60 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                    Falta por recibir
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-amber-200">
+                    {formatCOP(cashShortage)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between text-sm">
             <span className="text-slate-300">{adjustmentLabel}</span>
             <span
@@ -434,9 +670,9 @@ function CartPanel({
           </button>
 
           <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
-            <button
-              type="button"
-              onClick={handlePay}
+          <button
+            type="button"
+            onClick={handlePay}
               disabled={
                 loading ||
                 !selectedTable ||
@@ -445,7 +681,7 @@ function CartPanel({
               }
               className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-400 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Pagar o dividir
+              Cobrar ahora
             </button>
             <button
               type="button"
@@ -478,6 +714,7 @@ export default function POSOrder({
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [chargedTotalInput, setChargedTotalInput] = useState("");
+  const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false);
@@ -611,15 +848,42 @@ export default function POSOrder({
     );
     return { units, coveredAmount };
   }, [cartItems]);
+  const itemCount = useMemo(
+    () => cartItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+    [cartItems]
+  );
   const payableSubtotal = Math.max(total - ticketConsumption.coveredAmount, 0);
   useEffect(() => {
     setChargedTotalInput(payableSubtotal ? String(Math.round(payableSubtotal)) : "");
   }, [activeOrder?.id, payableSubtotal]);
+  useEffect(() => {
+    if (paymentMethod !== "cash") {
+      setCashReceivedInput("");
+      return;
+    }
+
+    setCashReceivedInput((current) => {
+      const parsed = Number(current);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return current;
+      }
+
+      return payableSubtotal ? String(Math.round(payableSubtotal)) : "";
+    });
+  }, [payableSubtotal, paymentMethod]);
 
   const chargedTotal = useMemo(() => {
     const parsed = Number(chargedTotalInput);
     return Number.isFinite(parsed) ? parsed : payableSubtotal;
   }, [chargedTotalInput, payableSubtotal]);
+  const cashChangeState = useMemo(
+    () => calculateCashChange(chargedTotal, cashReceivedInput),
+    [cashReceivedInput, chargedTotal]
+  );
+  const cashSuggestions = useMemo(
+    () => buildCashTenderSuggestions(chargedTotal),
+    [chargedTotal]
+  );
   const adjustmentAmount = chargedTotal - payableSubtotal;
   const adjustmentPct = payableSubtotal > 0 ? (adjustmentAmount / payableSubtotal) * 100 : 0;
   const debtAmount =
@@ -696,6 +960,11 @@ export default function POSOrder({
 
     setPaymentMode("total");
     setSplitPayments([createSplitPaymentLine(paymentMethod, chargedTotal ? String(Math.round(chargedTotal)) : "")]);
+    if (paymentMethod === "cash") {
+      setCashReceivedInput((current) =>
+        current || (chargedTotal ? String(Math.round(chargedTotal)) : "")
+      );
+    }
     setIsPaymentModalOpen(true);
   };
 
@@ -703,6 +972,7 @@ export default function POSOrder({
     paymentMethodOverride = paymentMethod,
     chargedTotalOverride = chargedTotal,
     splitPaymentsOverride = [],
+    cashReceivedOverride = cashChangeState.received,
   } = {}) => {
     if (!selectedTable?.id) {
       return;
@@ -711,6 +981,14 @@ export default function POSOrder({
     if (cashLock.blocked) {
       setCartNotice(cashLock.message);
       return;
+    }
+
+    if (paymentMethodOverride === "cash") {
+      const cashState = calculateCashChange(chargedTotalOverride, cashReceivedOverride);
+      if (cashState.shortage > 0) {
+        setCartNotice("El pago en efectivo no cubre el valor final cobrado.");
+        return;
+      }
     }
 
     setLoading(true);
@@ -738,6 +1016,7 @@ export default function POSOrder({
         orderId: resolvedOrderId,
         paymentMethod: paymentMethodOverride,
         chargedTotal: chargedTotalOverride,
+        cashReceived: paymentMethodOverride === "cash" ? cashReceivedOverride : 0,
         subtotal: payableSubtotal,
         ticketConsumption,
         splitPayments: splitPaymentsOverride,
@@ -746,6 +1025,7 @@ export default function POSOrder({
       onPaymentSuccess?.(paymentMethodOverride);
       clearCart();
       setSelectedCustomer(null);
+      setCashReceivedInput("");
       setIsCartDrawerOpen(false);
       setIsPaymentModalOpen(false);
       setCartNotice("");
@@ -895,9 +1175,22 @@ export default function POSOrder({
 
   return (
     <>
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-          <div className="mb-5 grid gap-4 xl:grid-cols-[auto_1fr] xl:items-end">
+      <section className="grid gap-5 xl:gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(430px,0.9fr)]">
+        <div className="rounded-[28px] bg-white/85 p-5 shadow-lg ring-1 ring-white/70 backdrop-blur xl:p-6">
+          <div className="mb-5">
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold text-slate-900">Punto de venta</h2>
+              <p className="mt-1 max-w-2xl break-words text-sm leading-6 text-slate-500">
+                {selectedTable
+                  ? selectedTable.isQuickSale
+                    ? "Modo venta rapida activo."
+                    : `Mesa activa: ${selectedTable.name || `Mesa ${selectedTable.number}`}`
+                  : "Selecciona una mesa para empezar o asignala desde aqui."}
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-5 grid gap-4 xl:grid-cols-[minmax(250px,320px)_minmax(0,1fr)] xl:items-start">
             <SearchSelector
               label="Seleccionar mesa"
               placeholder="Elegir mesa"
@@ -912,43 +1205,51 @@ export default function POSOrder({
               }
             />
 
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-slate-900">Punto de venta</h2>
-                <p className="text-sm text-slate-500">
-                  {selectedTable
-                    ? selectedTable.isQuickSale
-                      ? "Modo venta rapida activo."
-                      : `Mesa activa: ${selectedTable.name || `Mesa ${selectedTable.number}`}`
-                    : "Selecciona una mesa para empezar o asignala desde aqui."}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 px-3 py-2.5">
                   <Search size={16} className="text-slate-400" />
                   <input
                     type="search"
                     placeholder="Buscar producto..."
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    className="w-full bg-transparent text-sm outline-none md:w-56"
+                    className="w-full min-w-0 bg-transparent text-sm outline-none"
                   />
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setIsCartDrawerOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white xl:hidden"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white md:min-w-[196px] 2xl:hidden"
                 >
                   <ShoppingCart size={16} />
-                  Ver carrito
+                  <span>Ver carrito</span>
+                  <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium text-slate-200">
+                    {itemCount} · {formatCOP(chargedTotal)}
+                  </span>
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="mb-4 flex flex-wrap gap-2">
+          <div className="mb-4 rounded-[24px] bg-slate-50/85 p-3 ring-1 ring-slate-200/80">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Navegacion rapida
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Filtra la carta y agrega productos sin perder el contexto del cobro.
+                </p>
+              </div>
+              <div className="hidden items-center gap-2 rounded-2xl bg-white px-3 py-2 text-xs font-medium text-slate-500 ring-1 ring-slate-200 lg:inline-flex 2xl:hidden">
+                <ShoppingCart size={14} className="text-slate-400" />
+                {itemCount} item(s) en el carrito
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
             {categories.map((category) => (
               <button
                 key={category}
@@ -963,50 +1264,64 @@ export default function POSOrder({
                 {category === "all" ? "Todas" : category}
               </button>
             ))}
+            </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-            {filteredProducts.map((product) => (
-              <button
-                key={product.id}
-                type="button"
-                onClick={() => handleAddProduct(product)}
-                className="group rounded-[28px] bg-white text-left shadow-lg ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-xl"
-              >
-                <div
-                  className={`rounded-t-[28px] bg-gradient-to-br p-5 ${getCategoryStyle(product.category)}`}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
+            {filteredProducts.length ? (
+              filteredProducts.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => handleAddProduct(product)}
+                  className="group rounded-[28px] bg-white text-left shadow-lg ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-xl"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em]">
-                      {product.category}
-                    </span>
-                    <div className="rounded-2xl bg-white/70 p-3">
-                      <ShoppingBag size={18} />
+                  <div
+                    className={`rounded-t-[28px] bg-gradient-to-br p-5 ${getCategoryStyle(product.category)}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em]">
+                        {product.category}
+                      </span>
+                      <div className="rounded-2xl bg-white/70 p-3">
+                        <ShoppingBag size={18} />
+                      </div>
+                    </div>
+                    <h3 className="mt-8 line-clamp-2 text-lg font-semibold">{product.name}</h3>
+                  </div>
+
+                  <div className="p-5">
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                          Precio
+                        </p>
+                        <p className="mt-2 text-lg font-semibold text-slate-900">
+                          {formatCOP(product.price)}
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                        Stock {product.stock}
+                      </span>
                     </div>
                   </div>
-                  <h3 className="mt-8 text-lg font-semibold">{product.name}</h3>
-                </div>
-
-                <div className="p-5">
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Precio</p>
-                      <p className="mt-2 text-lg font-semibold text-slate-900">
-                        {formatCOP(product.price)}
-                      </p>
-                    </div>
-
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-                      Stock {product.stock}
-                    </span>
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            ) : (
+              <div className="col-span-full rounded-[28px] border border-dashed border-slate-200 bg-white px-5 py-10 text-center">
+                <p className="text-sm font-semibold text-slate-900">
+                  No encontramos productos con ese filtro.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Prueba otra categoria o cambia el texto de busqueda para continuar la venta.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="hidden xl:block">
+        <div className="hidden 2xl:block">
           <CartPanel
             selectedTable={selectedTable}
             selectedCustomer={selectedCustomer}
@@ -1019,6 +1334,12 @@ export default function POSOrder({
             payableSubtotal={payableSubtotal}
             chargedTotalInput={chargedTotalInput}
             setChargedTotalInput={setChargedTotalInput}
+            chargedTotal={chargedTotal}
+            cashReceivedInput={cashReceivedInput}
+            setCashReceivedInput={setCashReceivedInput}
+            cashChange={cashChangeState.changeDue}
+            cashShortage={cashChangeState.shortage}
+            cashSuggestions={cashSuggestions}
             adjustmentAmount={adjustmentAmount}
             adjustmentPct={adjustmentPct}
             debtAmount={debtAmount}
@@ -1040,7 +1361,7 @@ export default function POSOrder({
       </section>
 
       {isCartDrawerOpen ? (
-        <div className="fixed inset-0 z-50 xl:hidden">
+        <div className="fixed inset-0 z-50 2xl:hidden">
           <div
             className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
             onClick={() => setIsCartDrawerOpen(false)}
@@ -1058,6 +1379,12 @@ export default function POSOrder({
               payableSubtotal={payableSubtotal}
               chargedTotalInput={chargedTotalInput}
               setChargedTotalInput={setChargedTotalInput}
+              chargedTotal={chargedTotal}
+              cashReceivedInput={cashReceivedInput}
+              setCashReceivedInput={setCashReceivedInput}
+              cashChange={cashChangeState.changeDue}
+              cashShortage={cashChangeState.shortage}
+              cashSuggestions={cashSuggestions}
               adjustmentAmount={adjustmentAmount}
               adjustmentPct={adjustmentPct}
               debtAmount={debtAmount}
@@ -1131,6 +1458,34 @@ export default function POSOrder({
                   <p className="mt-2 text-2xl font-black text-slate-950">{formatCOP(chargedTotal)}</p>
                 </div>
               </div>
+              {paymentMethod === "cash" ? (
+                <div className="mt-5 grid gap-4 md:grid-cols-3">
+                  <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Pago recibido
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {formatCOP(cashChangeState.received)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Cambio
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-emerald-700">
+                      {formatCOP(cashChangeState.changeDue)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Falta por recibir
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-amber-700">
+                      {formatCOP(cashChangeState.shortage)}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="grid gap-4">
@@ -1245,6 +1600,7 @@ export default function POSOrder({
               disabled={
                 loading ||
                 (paymentMode === "split" && Math.abs(splitPaymentsDifference) > 1) ||
+                (paymentMode === "total" && paymentMethod === "cash" && cashChangeState.shortage > 0) ||
                 chargedTotal < 0
               }
               className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"

@@ -196,6 +196,7 @@ export async function openCashSession(businessId, options = {}) {
 
   const openingAmount = Number(options.openingAmount || 0);
   const cashierName = String(options.cashierName || "Operador SmartProfit").trim();
+  const cashierEmail = String(options.cashierEmail || "").trim().toLowerCase();
   const now = new Date();
   const openedDateKey = getLocalDateKey(now);
   const previousSessionsSnapshot = await getDocs(
@@ -211,6 +212,7 @@ export async function openCashSession(businessId, options = {}) {
     status: "open",
     opening_amount: openingAmount,
     cashier_name: cashierName,
+    cashier_email: cashierEmail,
     opened_at: serverTimestamp(),
     opened_date_key: openedDateKey,
     daily_sequence: dailySequence,
@@ -222,7 +224,7 @@ export async function openCashSession(businessId, options = {}) {
   return createdRef.id;
 }
 
-export async function closeCashSession({ businessId, closingId, cashCounted }) {
+export async function closeCashSession({ businessId, closingId, cashCounted, context = {} }) {
   const normalizedBusinessId = String(businessId || "").trim();
   const normalizedClosingId = String(closingId || "").trim();
 
@@ -321,6 +323,38 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
   const cashierName = String(
     closingData.cashier_name || closingData.opened_by_name || "Operador SmartProfit"
   ).trim();
+  const cashierEmail = String(
+    context.cashierEmail || closingData.cashier_email || ""
+  ).trim();
+  const operatorName = String(context.operatorName || cashierName).trim();
+  const businessName = String(context.businessName || "").trim();
+  const movementEntries = [
+    ...relevantSales.map((sale) => ({
+      type: "Ingreso",
+      concept:
+        sale.concept ||
+        (sale.customer_name
+          ? `${sale.table_name || sale.table_id || "Mesa"} - ${sale.customer_name}`
+          : sale.table_name || sale.table_id || "Venta POS"),
+      detail:
+        (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ") ||
+        "Sin detalle",
+      paymentMethod: sale.payment_method || "cash",
+      amount: Number(sale.total || 0),
+      at: normalizeDate(sale.closed_at || sale.createdAt),
+    })),
+    ...relevantPurchases.map((purchase) => ({
+      type: "Egreso",
+      concept: purchase.concept || purchase.supplier_name || purchase.invoice_number || "Compra",
+      detail:
+        (purchase.items || [])
+          .map((item) => `${item.quantity}x ${item.ingredient_name || item.manual_name || "Insumo"}`)
+          .join(", ") || "Sin detalle",
+      paymentMethod: "expense",
+      amount: Number(purchase.total || 0),
+      at: normalizeDate(purchase.purchase_date),
+    })),
+  ].sort((left, right) => (right.at?.getTime?.() || 0) - (left.at?.getTime?.() || 0));
 
   const batch = writeBatch(db);
 
@@ -360,6 +394,9 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
     closedAt: now,
     closingCode,
     cashierName,
+    cashierEmail,
+    operatorName,
+    businessName,
     openingAmount: Number(closingData.opening_amount || 0),
     salesTotal: totalSales,
     expensesTotal: totalExpenses,
@@ -372,6 +409,7 @@ export async function closeCashSession({ businessId, closingId, cashCounted }) {
     cashDifference,
     totalSalesCount: relevantSales.length,
     auditEntries,
+    movementEntries,
   };
 }
 
@@ -464,6 +502,12 @@ export function buildCashClosingReportHtml(report) {
         `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.type}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.tableName}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.detail}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${entry.at ? entry.at.toLocaleString("es-CO") : "-"}</td></tr>`
     )
     .join("");
+  const movementRows = (report.movementEntries || [])
+    .map(
+      (entry) =>
+        `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.type}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.concept}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.detail}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${PAYMENT_METHOD_LABELS[entry.paymentMethod] || entry.paymentMethod || "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${entry.at ? entry.at.toLocaleString("es-CO") : "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">${formatCOP(entry.amount)}</td></tr>`
+    )
+    .join("");
 
   return `<!doctype html>
   <html lang="es">
@@ -471,11 +515,11 @@ export function buildCashClosingReportHtml(report) {
       <meta charset="utf-8" />
       <title>Reporte de cierre SmartProfit</title>
       <style>
-        body { font-family: Inter, Arial, sans-serif; padding: 32px; color: #0f172a; background: #f8fafc; }
-        .sheet { max-width: 980px; margin: 0 auto; background: white; border-radius: 28px; padding: 32px; box-shadow: 0 20px 60px rgba(15,23,42,.12); }
+        body { font-family: "Segoe UI", Arial, sans-serif; padding: 32px; color: #0f172a; background: #f3f4f6; }
+        .sheet { max-width: 1120px; margin: 0 auto; background: white; border-radius: 24px; padding: 36px; box-shadow: 0 20px 60px rgba(15,23,42,.12); }
         .topbar { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:24px; }
         .brand { display:flex; flex-direction:column; gap:6px; }
-        .pill { display:inline-flex; align-items:center; border-radius:999px; padding:8px 14px; font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; background:#fff7df; color:#946200; }
+        .pill { display:inline-flex; align-items:center; border-radius:999px; padding:8px 14px; font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; background:#f8fafc; color:#334155; border:1px solid #cbd5e1; }
         .grid { display:grid; gap:16px; }
         .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
         .card { border:1px solid #e2e8f0; border-radius:24px; padding:20px; background:#fff; }
@@ -491,13 +535,14 @@ export function buildCashClosingReportHtml(report) {
       <div class="sheet">
         <div class="topbar">
           <div class="brand">
-            <h1 style="margin:0;font-size:22px;">SmartProfit</h1>
-            <p style="margin:0;color:#64748b;">El control que tu rentabilidad merece</p>
+            <h1 style="margin:0;font-size:22px;">${report.businessName || "SmartProfit"}</h1>
+            <p style="margin:0;color:#64748b;">Reporte operativo y financiero de cierre</p>
             <h2 style="margin:18px 0 0;font-size:32px;">Reporte de cierre de caja</h2>
           </div>
           <div style="text-align:right;">
             <span class="pill">${report.closingCode || buildClosingCode(report.closedAt, 1)}</span>
-            <p style="margin:16px 0 0;"><strong>Cajero:</strong> ${report.cashierName || "Operador SmartProfit"}</p>
+            <p style="margin:16px 0 0;"><strong>Operador:</strong> ${report.operatorName || report.cashierName || "Operador SmartProfit"}</p>
+            <p style="margin:6px 0 0;"><strong>Cuenta:</strong> ${report.cashierEmail || "Sin correo"}</p>
             <p style="margin:6px 0 0;"><strong>Apertura:</strong> ${report.openedAt.toLocaleString("es-CO")}</p>
             <p style="margin:6px 0 0;"><strong>Cierre:</strong> ${report.closedAt.toLocaleString("es-CO")}</p>
           </div>
@@ -564,6 +609,25 @@ export function buildCashClosingReportHtml(report) {
           </thead>
           <tbody>${byMethodRows}</tbody>
         </table>
+
+        <div class="section-title">Detalle resumido de movimientos</div>
+        ${
+          movementRows
+            ? `<table>
+                <thead>
+                  <tr>
+                    <th>Tipo</th>
+                    <th>Concepto</th>
+                    <th>Detalle</th>
+                    <th>Canal</th>
+                    <th style="text-align:right;">Hora</th>
+                    <th style="text-align:right;">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>${movementRows}</tbody>
+              </table>`
+            : `<div class="card" style="background:#f8fafc;">No se registraron movimientos dentro del periodo de cierre.</div>`
+        }
 
         <div class="section-title">Auditoria del turno</div>
         ${

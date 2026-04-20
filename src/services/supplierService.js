@@ -18,8 +18,13 @@ function normalizeSupplierPayload(supplier, businessId) {
   const name = String(supplier?.name || "").trim();
   const nit = String(supplier?.nit || "").trim();
   const category = String(supplier?.category || "").trim();
-  const contact = String(supplier?.contact || "").trim();
+  const contactName = String(
+    supplier?.contact_name || supplier?.contactName || supplier?.contact || ""
+  ).trim();
   const phone = String(supplier?.phone || "").trim();
+  const mobile = String(supplier?.mobile || "").trim();
+  const email = String(supplier?.email || "").trim();
+  const address = String(supplier?.address || "").trim();
   const paymentTerms = String(supplier?.payment_terms || supplier?.paymentTerms || "").trim();
   const normalizedBusinessId = String(supplier?.business_id || businessId || "").trim();
 
@@ -35,8 +40,12 @@ function normalizeSupplierPayload(supplier, businessId) {
     name,
     nit,
     category,
-    contact,
+    contact_name: contactName,
+    contact: contactName,
     phone,
+    mobile,
+    email,
+    address,
     payment_terms: paymentTerms || "Contado",
     business_id: normalizedBusinessId,
   };

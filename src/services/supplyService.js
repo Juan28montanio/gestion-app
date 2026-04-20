@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -13,6 +14,10 @@ import {
 import { db } from "../firebase/firebaseConfig";
 
 const ingredientsCollection = collection(db, "ingredients");
+
+export function buildSupplySearchKey(name) {
+  return String(name || "").trim().toLocaleLowerCase("es");
+}
 
 function normalizeSupplyPayload(supply, businessId) {
   const name = String(supply?.name || "").trim();
@@ -56,6 +61,7 @@ function normalizeSupplyPayload(supply, businessId) {
 
   return {
     name,
+    search_name: buildSupplySearchKey(name),
     unit,
     base_unit: unit,
     stock,
@@ -116,4 +122,20 @@ export async function deleteSupply(supplyId) {
   }
 
   await deleteDoc(doc(db, "ingredients", supplyId));
+}
+
+export async function listSupplies(businessId) {
+  const normalizedBusinessId = String(businessId || "").trim();
+
+  if (!normalizedBusinessId) {
+    return [];
+  }
+
+  const ingredientsQuery = query(
+    ingredientsCollection,
+    where("business_id", "==", normalizedBusinessId),
+    orderBy("name", "asc")
+  );
+  const snapshot = await getDocs(ingredientsQuery);
+  return snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
 }

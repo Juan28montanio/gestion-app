@@ -28,30 +28,30 @@ export default function ModalWrapper({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] bg-slate-950/45 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[100] bg-slate-950/50 backdrop-blur-sm">
       <div className="flex min-h-screen items-center justify-center px-4 py-6 sm:px-6 sm:py-8">
-        <div
-          className="absolute inset-0"
-          onClick={onClose}
-          aria-hidden="true"
-        />
+        <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
 
         <div
-          className={`relative z-[1] flex max-h-[85vh] w-full flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200 ${maxWidthClass}`}
+          className={`relative z-[1] flex max-h-[88vh] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_120px_rgba(15,23,42,0.18)] ${maxWidthClass}`}
         >
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-5 top-5 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200"
+            className="absolute right-5 top-5 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
           >
             {icon?.close || "X"}
           </button>
 
-          <div className="border-b border-slate-100 bg-white px-6 pb-5 pt-6 sm:px-8">
-            <div className="inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-100 text-slate-600">
-              {icon?.main || null}
-            </div>
-            <h3 className="mt-5 text-xl font-semibold text-slate-900 sm:text-2xl">{title}</h3>
+          <div className="border-b border-slate-200 bg-slate-50/80 px-6 pb-5 pt-6 sm:px-8">
+            {icon?.main ? (
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700">
+                {icon.main}
+              </div>
+            ) : null}
+            <h3 className="mt-4 text-xl font-semibold tracking-[-0.02em] text-slate-950 sm:text-2xl">
+              {title}
+            </h3>
             {description ? (
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{description}</p>
             ) : null}
