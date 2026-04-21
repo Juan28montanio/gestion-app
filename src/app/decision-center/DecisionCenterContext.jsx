@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 const DecisionCenterContext = createContext(null);
 
@@ -6,35 +6,50 @@ export function DecisionCenterProvider({ children }) {
   const [entriesBySection, setEntriesBySection] = useState({});
   const [isOpen, setIsOpen] = useState(false);
 
+  const openDecisionCenter = useCallback(() => {
+    setIsOpen(true);
+  }, []);
+
+  const closeDecisionCenter = useCallback(() => {
+    setIsOpen(false);
+  }, []);
+
+  const publishSectionInsights = useCallback((sectionId, payload) => {
+    setEntriesBySection((current) => ({
+      ...current,
+      [sectionId]: payload,
+    }));
+  }, []);
+
+  const clearSectionInsights = useCallback((sectionId) => {
+    setEntriesBySection((current) => {
+      if (!current[sectionId]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[sectionId];
+      return next;
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       entriesBySection,
       isOpen,
-      openDecisionCenter() {
-        setIsOpen(true);
-      },
-      closeDecisionCenter() {
-        setIsOpen(false);
-      },
-      publishSectionInsights(sectionId, payload) {
-        setEntriesBySection((current) => ({
-          ...current,
-          [sectionId]: payload,
-        }));
-      },
-      clearSectionInsights(sectionId) {
-        setEntriesBySection((current) => {
-          if (!current[sectionId]) {
-            return current;
-          }
-
-          const next = { ...current };
-          delete next[sectionId];
-          return next;
-        });
-      },
+      openDecisionCenter,
+      closeDecisionCenter,
+      publishSectionInsights,
+      clearSectionInsights,
     }),
-    [entriesBySection, isOpen]
+    [
+      clearSectionInsights,
+      closeDecisionCenter,
+      entriesBySection,
+      isOpen,
+      openDecisionCenter,
+      publishSectionInsights,
+    ]
   );
 
   return <DecisionCenterContext.Provider value={value}>{children}</DecisionCenterContext.Provider>;

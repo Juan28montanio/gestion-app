@@ -13,12 +13,12 @@ export default function DesktopSidebar({
 }) {
   return (
     <aside
-      className={`sticky top-0 hidden h-screen shrink-0 overflow-hidden border-r border-slate-200 bg-[#f8fafc] transition-all xl:flex xl:flex-col ${
+      className={`sticky top-0 hidden h-screen shrink-0 border-r border-slate-200 bg-[#f8fafc] transition-all xl:flex xl:flex-col ${
         isCollapsed ? "w-24 px-3 py-4" : "w-[308px] px-4 py-4"
       }`}
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="shrink-0 rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <div className={`flex items-center ${isCollapsed ? "justify-center" : "gap-3"}`}>
             <BusinessAvatar business={business} />
             {!isCollapsed ? (
@@ -44,12 +44,12 @@ export default function DesktopSidebar({
         </div>
 
         <div
-          className={`mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-slate-200 bg-white/70 shadow-sm ${
+          className={`mt-4 flex min-h-0 flex-1 flex-col rounded-[26px] border border-slate-200 bg-white/70 shadow-sm ${
             isCollapsed ? "p-2" : "p-3"
           }`}
         >
           {!isCollapsed ? (
-            <div className="mb-3 flex items-center justify-between border-b border-slate-100 px-2 pb-3">
+            <div className="mb-3 flex shrink-0 items-center justify-between border-b border-slate-100 px-2 pb-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   Navegacion
@@ -61,7 +61,11 @@ export default function DesktopSidebar({
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div
+            className={`min-h-0 flex-1 ${
+              isCollapsed ? "overflow-hidden" : "sidebar-scroll overflow-x-hidden overflow-y-auto"
+            }`}
+          >
             <SidebarNav
               activeSection={activeSection}
               isCollapsed={isCollapsed}
@@ -71,7 +75,7 @@ export default function DesktopSidebar({
           </div>
         </div>
 
-        <div className="mt-4 border-t border-slate-200 pt-4">
+        <div className="mt-4 shrink-0 border-t border-slate-200 pt-4">
           <button
             type="button"
             onClick={onLogout}

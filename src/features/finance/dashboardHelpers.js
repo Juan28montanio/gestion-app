@@ -10,18 +10,33 @@ export const RANGE_OPTIONS = [
 ];
 
 export const QUICK_FILTERS = [
-  { label: "Hoy", range: "daily", getDate: (getLocalDateInputValue) => getLocalDateInputValue(new Date()) },
+  {
+    label: "Hoy",
+    range: "daily",
+    getDate: (getLocalDateInputValue, getLocalDateKey) =>
+      getLocalDateInputValue(getLocalDateKey, new Date()),
+  },
   {
     label: "Ayer",
     range: "custom",
-    getDate: (getLocalDateInputValue) => {
+    getDate: (getLocalDateInputValue, getLocalDateKey) => {
       const date = new Date();
       date.setDate(date.getDate() - 1);
-      return getLocalDateInputValue(date);
+      return getLocalDateInputValue(getLocalDateKey, date);
     },
   },
-  { label: "Esta semana", range: "weekly", getDate: (getLocalDateInputValue) => getLocalDateInputValue(new Date()) },
-  { label: "Mes", range: "monthly", getDate: (getLocalDateInputValue) => getLocalDateInputValue(new Date()) },
+  {
+    label: "Esta semana",
+    range: "weekly",
+    getDate: (getLocalDateInputValue, getLocalDateKey) =>
+      getLocalDateInputValue(getLocalDateKey, new Date()),
+  },
+  {
+    label: "Mes",
+    range: "monthly",
+    getDate: (getLocalDateInputValue, getLocalDateKey) =>
+      getLocalDateInputValue(getLocalDateKey, new Date()),
+  },
 ];
 
 export const OPERATING_EXPENSE_CATEGORIES = [

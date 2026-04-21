@@ -17,13 +17,13 @@ export default function MainHeader({
   const hasDecisions = decisionCount > 0;
 
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-200 bg-[#f4f6f8]/95 px-4 py-4 backdrop-blur md:px-6">
+    <header className="relative z-20 border-b border-slate-200 bg-[#f4f6f8] px-4 py-4 md:px-6 xl:sticky xl:top-0 xl:z-50 xl:bg-[#f4f6f8]/95 xl:backdrop-blur">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="flex items-start gap-3">
           <button
             type="button"
             onClick={onToggleNavigation}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
           >
             {isWideDesktop ? (
               isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />
@@ -36,7 +36,7 @@ export default function MainHeader({
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
               {business?.name || "SmartProfit"}
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-[-0.03em] text-slate-950">
+            <h1 className="mt-1 text-[2rem] font-bold tracking-[-0.03em] text-slate-950 sm:text-2xl">
               {currentSectionMeta.title}
             </h1>
             <p className="mt-1 max-w-2xl break-words text-sm leading-6 text-slate-500">

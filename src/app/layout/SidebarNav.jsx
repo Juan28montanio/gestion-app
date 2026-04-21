@@ -5,13 +5,7 @@ export default function SidebarNav({
   onSelect,
 }) {
   return (
-    <nav
-      className={`min-h-0 flex-1 overscroll-contain ${
-        isCollapsed
-          ? "overflow-hidden"
-          : "sidebar-scroll overflow-x-hidden overflow-y-auto pr-1"
-      }`}
-    >
+    <nav className={`min-h-0 ${isCollapsed ? "" : "pr-1"}`}>
       <div className="grid gap-6 pb-4">
         {Object.entries(navSections).map(([sectionLabel, items]) => (
           <div key={sectionLabel} className="grid gap-2">
