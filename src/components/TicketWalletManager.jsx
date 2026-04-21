@@ -14,6 +14,7 @@ import { subscribeToSalesHistory } from "../services/financeService";
 import FormInput from "./FormInput";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
+import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
 
 const EMPTY_PLAN_FORM = {
   name: "",
@@ -68,6 +69,7 @@ function buildPlanForm(plan) {
 }
 
 export default function TicketWalletManager({ businessId, requestAuditPin }) {
+  const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const assignmentCustomerId = useId();
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -79,6 +81,16 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCompactLayout, setIsCompactLayout] = useState(() => window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsCompactLayout(window.innerWidth < 1024);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     const unsubscribeCustomers = subscribeToCustomers(businessId, setCustomers);
@@ -132,6 +144,15 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
     () => salesThisMonth.filter((sale) => Number(sale.ticket_units_consumed || 0) > 0),
     [salesThisMonth]
   );
+  const ticketMovements = useMemo(
+    () =>
+      [...ticketPurchases, ...ticketRedemptions].sort((a, b) => {
+        const aTime = a.closed_at?.toDate?.()?.getTime?.() || 0;
+        const bTime = b.closed_at?.toDate?.()?.getTime?.() || 0;
+        return bTime - aTime;
+      }),
+    [ticketPurchases, ticketRedemptions]
+  );
   const walletSummary = useMemo(() => {
     const customersWithBalance = customers.filter(
       (customer) => getTicketWalletState(customer).balance > 0
@@ -166,6 +187,97 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
 
     return (walletSummary.redeemedUnits / walletSummary.grantedUnits) * 100;
   }, [walletSummary.grantedUnits, walletSummary.redeemedUnits]);
+
+  const ticketDecisionItems = useMemo(() => {
+    const expiringCustomers = customers.filter((customer) => {
+      const wallet = getTicketWalletState(customer);
+      if (!wallet.expiresAt || wallet.balance <= 0) {
+        return false;
+      }
+      const diffDays = Math.ceil((wallet.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 7;
+    });
+    const lowBalanceCustomers = customers.filter((customer) => {
+      const wallet = getTicketWalletState(customer);
+      return wallet.balance > 0 && wallet.lowBalance;
+    });
+    const topPlan = [...ticketPlans].sort((left, right) => Number(right.price || 0) - Number(left.price || 0))[0];
+
+    return [
+      {
+        title: "Renovaciones cercanas",
+        body: expiringCustomers.length
+          ? `${expiringCustomers.length} cliente(s) tienen saldo por vencer en los proximos 7 dias. Es el mejor momento para renovar sin perder continuidad.`
+          : "No hay saldos por vencer en la ventana inmediata. La base prepaga esta estable.",
+        tone: expiringCustomers.length
+          ? "bg-[#fff7df] text-[#7a5500] ring-[#d4a72c]/25"
+          : "bg-emerald-50 text-emerald-900 ring-emerald-200",
+        icon: "lightbulb",
+      },
+      {
+        title: "Uso real del mes",
+        body: walletSummary.grantedUnits
+          ? `Se han redimido ${walletSummary.redeemedUnits} de ${walletSummary.grantedUnits} tickets otorgados, con una tasa de uso del ${redemptionRate.toFixed(0)}%.`
+          : "Todavia no hay otorgamiento de tickets en el mes actual para medir comportamiento de uso.",
+        tone: "bg-white text-slate-900 ring-slate-200",
+        icon: "sparkles",
+      },
+      {
+        title: "Clientes listos para recompra",
+        body: lowBalanceCustomers.length
+          ? `${lowBalanceCustomers.length} cliente(s) ya van en saldo bajo. Este grupo es prioridad natural para venta recurrente.`
+          : "No hay clientes con saldo bajo por ahora, asi que la recompra inmediata no es la tension principal.",
+        tone: "bg-slate-50 text-slate-900 ring-slate-200",
+        icon: "lightbulb",
+      },
+      {
+        title: "Plan de mayor valor",
+        body: topPlan
+          ? `${topPlan.name} es el plan de mayor precio con ${formatCOP(topPlan.price || 0)} y ${topPlan.ticket_units || 0} ticket(s). Vale la pena medir si tambien es el mas facil de redimir y renovar.`
+          : "Aun no hay planes creados para comparar valor y facilidad de recompra.",
+        tone: "bg-white text-slate-900 ring-slate-200",
+        icon: "sparkles",
+      },
+    ];
+  }, [
+    customers,
+    redemptionRate,
+    ticketPlans,
+    walletSummary.grantedUnits,
+    walletSummary.redeemedUnits,
+  ]);
+
+  const ticketDecisionSummary = useMemo(() => {
+    if (walletSummary.expiringSoon > 0) {
+      return `${walletSummary.expiringSoon} ticketera(s) por vencer y ${walletSummary.customersWithBalance} cliente(s) con saldo activo ya merecen seguimiento comercial en un solo panel.`;
+    }
+
+    if (walletSummary.committedRevenue > 0) {
+      return `Las ticketeras ya aportan ${formatCOP(walletSummary.committedRevenue)} en venta recurrente del mes y el analisis queda mejor concentrado fuera de la vista operativa.`;
+    }
+
+    return "El modulo queda mas limpio para operar planes y el seguimiento de recompra vive en el centro de decisiones.";
+  }, [
+    walletSummary.committedRevenue,
+    walletSummary.customersWithBalance,
+    walletSummary.expiringSoon,
+  ]);
+
+  useEffect(() => {
+    publishSectionInsights("ticketing", {
+      eyebrow: "Ticketeras",
+      title: "Venta recurrente y renovacion",
+      summary: ticketDecisionSummary,
+      items: ticketDecisionItems,
+    });
+
+    return () => clearSectionInsights("ticketing");
+  }, [
+    clearSectionInsights,
+    publishSectionInsights,
+    ticketDecisionItems,
+    ticketDecisionSummary,
+  ]);
 
   const handleSavePlan = async (event) => {
     event.preventDefault();
@@ -238,14 +350,14 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
   return (
     <section className="space-y-6">
       <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-        <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Planes prepago</h2>
             <p className="text-sm text-slate-500">
               Controla planes activos, clientes con saldo, deuda pendiente y tickets por vencer.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[420px]">
             <button
               type="button"
               onClick={() => {
@@ -253,7 +365,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
                 setPlanForm(EMPTY_PLAN_FORM);
                 setIsPlanModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg"
             >
               <Plus size={16} />
               Nuevo plan
@@ -261,7 +373,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
             <button
               type="button"
               onClick={() => openAssignmentModal()}
-              className="inline-flex items-center gap-2 rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-2.5 text-sm font-semibold text-[#946200]"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200]"
             >
               <WalletCards size={16} />
               Ajustar saldo
@@ -269,7 +381,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <article className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Planes activos</p>
             <p className="mt-2 text-2xl font-black text-slate-950">{ticketPlans.length}</p>
@@ -292,7 +404,41 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
           </article>
         </div>
 
-        <div className="mt-5 grid gap-4 xl:grid-cols-3">
+        <div className="mt-5 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Centro de decisiones
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{ticketDecisionSummary}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className={`inline-flex items-center rounded-full px-3 py-2 text-xs font-semibold ${
+                  ticketDecisionItems.length > 0
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {ticketDecisionItems.length} lectura{ticketDecisionItems.length === 1 ? "" : "s"} activa{ticketDecisionItems.length === 1 ? "" : "s"}
+              </div>
+              <button
+                type="button"
+                onClick={openDecisionCenter}
+                disabled={ticketDecisionItems.length === 0}
+                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                  ticketDecisionItems.length > 0
+                    ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                }`}
+              >
+                Ver panel
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
           <article className="rounded-[24px] bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] p-5 text-white ring-1 ring-slate-900/10">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
               Venta recurrente del mes
@@ -311,23 +457,10 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
               {walletSummary.redeemedUnits} tickets usados de {walletSummary.grantedUnits} otorgados este mes.
             </p>
           </article>
-          <article className="rounded-[24px] bg-[#fff7df] p-5 ring-1 ring-[#d4a72c]/20">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#946200]">
-              Oportunidad inmediata
-            </p>
-            <p className="mt-2 text-lg font-bold text-slate-950">
-              {walletSummary.expiringSoon > 0
-                ? `${walletSummary.expiringSoon} cliente${walletSummary.expiringSoon === 1 ? "" : "s"} por renovar`
-                : "Sin renovaciones urgentes"}
-            </p>
-            <p className="mt-2 text-sm text-slate-600">
-              Prioriza clientes con saldo por vencer para proteger recompra y continuidad.
-            </p>
-          </article>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-6 2xl:grid-cols-[0.9fr_1.1fr]">
         <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-4 flex items-center justify-between">
             <div>
@@ -348,10 +481,10 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
 
             {ticketPlans.map((plan) => (
               <div key={plan.id} className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
                     <p className="font-semibold text-slate-900">{plan.name}</p>
-                    <p className="text-sm text-slate-500">
+                    <p className="break-words text-sm text-slate-500">
                       {plan.ticket_units || 0} tickets · {plan.ticket_validity_days || 30} dias
                     </p>
                   </div>
@@ -393,7 +526,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
         </article>
 
         <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Clientes con saldo</h3>
               <p className="text-sm text-slate-500">Consulta vigencia, deuda y saldo disponible por cliente.</p>
@@ -402,7 +535,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar cliente..."
-              className="rounded-2xl bg-white px-4 py-2.5 text-sm outline-none ring-1 ring-slate-200"
+              className="w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200 lg:w-[280px]"
             />
           </div>
 
@@ -412,10 +545,10 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
               const walletHealth = getWalletHealth(wallet);
               return (
                 <div key={customer.id} className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
                       <p className="font-semibold text-slate-900">{customer.name}</p>
-                      <p className="text-sm text-slate-500">
+                      <p className="break-words text-sm text-slate-500">
                         Saldo {wallet.balance} · Vence{" "}
                         {wallet.expiresAt ? wallet.expiresAt.toLocaleDateString("es-CO") : "sin fecha"}
                       </p>
@@ -425,7 +558,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-wrap gap-2 sm:max-w-[220px] sm:justify-end">
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${walletHealth.tone}`}>
                         {walletHealth.label}
                       </span>
@@ -441,7 +574,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
                   <button
                     type="button"
                     onClick={() => openAssignmentModal(customer)}
-                    className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
                     <ShieldCheck size={14} />
                     Ajustar saldo
@@ -466,9 +599,39 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
             <p className="text-sm text-slate-500">Revisa compras de planes y redenciones desde una sola tabla.</p>
           </div>
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
-            {ticketPurchases.length + ticketRedemptions.length} movimientos
+            {ticketMovements.length} movimientos
           </span>
         </div>
+        {isCompactLayout ? (
+          <div className="mt-4 space-y-3">
+            {ticketMovements.map((sale) => (
+              <article key={sale.id} className="rounded-[22px] bg-slate-50 p-4 ring-1 ring-slate-200">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900">{sale.customer_name || "Cliente"}</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {Number(sale.ticket_units_granted || 0) > 0 ? "Compra de plan" : "Redencion"}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold text-slate-900">
+                    {formatCOP(sale.total || 0)}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-slate-600">
+                  {(sale.items || []).map((item) => item.name).join(", ") || sale.concept}
+                </p>
+                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    Unidades: {Number(sale.ticket_units_granted || 0) || Number(sale.ticket_units_consumed || 0)}
+                  </span>
+                  <span>
+                    {sale.closed_at?.toDate?.()?.toLocaleDateString("es-CO") || "Sin fecha"}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -481,13 +644,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
               </tr>
             </thead>
             <tbody>
-              {[...ticketPurchases, ...ticketRedemptions]
-                .sort((a, b) => {
-                  const aTime = a.closed_at?.toDate?.()?.getTime?.() || 0;
-                  const bTime = b.closed_at?.toDate?.()?.getTime?.() || 0;
-                  return bTime - aTime;
-                })
-                .map((sale) => (
+              {ticketMovements.map((sale) => (
                   <tr key={sale.id} className="border-b border-slate-100 text-slate-700">
                     <td className="py-3 pr-4">{sale.customer_name || "Cliente"}</td>
                     <td className="py-3 pr-4">
@@ -505,6 +662,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
             </tbody>
           </table>
         </div>
+        )}
       </section>
 
       <ModalWrapper

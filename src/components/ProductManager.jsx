@@ -37,7 +37,7 @@ import {
 } from "../services/recipeBookService";
 import { subscribeToPurchases } from "../services/purchaseService";
 import ConfirmModal from "./ConfirmModal";
-import FormModal from "./FormModal";
+import ModalWrapper from "./ModalWrapper";
 import FormInput from "./FormInput";
 import FormSelect from "./FormSelect";
 import SupplierManager from "./SupplierManager";
@@ -46,6 +46,7 @@ import RecipeBookManager from "./RecipeBookManager";
 import { formatCOP } from "../utils/formatters";
 import TaxonomyManagerModal from "./TaxonomyManagerModal";
 import { buildSelectOptions, SUPPLY_UNITS } from "../utils/resourceOptions";
+import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
 
 const PRODUCT_FORM = {
   name: "",
@@ -132,6 +133,7 @@ function getSupplyHealth(supply) {
 }
 
 export default function ProductManager({ businessId, mode = "resources" }) {
+  const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const [products, setProducts] = useState([]);
   const [supplies, setSupplies] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -323,6 +325,157 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       },
     ];
   }, [purchases, recipeBooks, supplies]);
+  const resourceFlowInsights = useMemo(() => {
+    const recentPurchases = purchases.slice(0, 12);
+    const supplierIdsWithPurchases = new Set(
+      recentPurchases.map((purchase) => purchase.supplier_id).filter(Boolean)
+    );
+    const inactiveSuppliers = suppliers.filter(
+      (supplier) => supplier.id && !supplierIdsWithPurchases.has(supplier.id)
+    ).length;
+    const criticalSupplies = supplies.filter((supply) => {
+      const health = getSupplyHealth(supply).label;
+      return health === "Critico" || health === "Agotado";
+    });
+    const criticalSupplyIds = new Set(criticalSupplies.map((supply) => supply.id));
+    const recipesAtRisk = recipeBooks.filter((recipeBook) =>
+      (recipeBook.ingredients || []).some((ingredient) =>
+        criticalSupplyIds.has(ingredient.ingredient_id)
+      )
+    ).length;
+    const biggestSpendCategory = spendByCategory[0];
+
+    return [
+      {
+        title: "Abastecimiento a revisar",
+        body:
+          criticalSupplies.length > 0
+            ? `${criticalSupplies.length} insumo(s) critico(s) ya pueden afectar ${recipesAtRisk} ficha(s) tecnica(s). Conviene comprar antes de tocar precios o prometer disponibilidad.`
+            : "No hay insumos criticos en este momento. La operacion puede sostener ventas sin presion inmediata de reposicion.",
+      },
+      {
+        title: "Relacion con proveedores",
+        body:
+          inactiveSuppliers > 0
+            ? `${inactiveSuppliers} proveedor(es) aun no tienen compras recientes. Revisar continuidad ayuda a negociar mejor y reducir dependencia de ultimo minuto.`
+            : "Todos los proveedores registrados ya tienen movimiento reciente. La base de abastecimiento se ve activa y utilizable.",
+      },
+      {
+        title: "Impacto en margen",
+        body: biggestSpendCategory
+          ? `La categoria ${biggestSpendCategory.category} concentra ${biggestSpendCategory.sharePct.toFixed(0)}% del gasto cargado. Cruza esta categoria con fichas tecnicas y precios antes del siguiente cierre.`
+          : "Cuando registres compras, aqui veras que categoria esta drenando mas presupuesto y donde conviene revisar margen.",
+      },
+    ];
+  }, [purchases, recipeBooks, spendByCategory, suppliers, supplies]);
+  const resourceActionQueue = useMemo(() => {
+    const criticalSupplies = supplies.filter((supply) => {
+      const health = getSupplyHealth(supply).label;
+      return health === "Critico" || health === "Agotado";
+    });
+    const criticalSupplyIds = new Set(criticalSupplies.map((supply) => supply.id));
+    const recipesAtRisk = recipeBooks.filter((recipeBook) =>
+      (recipeBook.ingredients || []).some((ingredient) =>
+        criticalSupplyIds.has(ingredient.ingredient_id)
+      )
+    ).length;
+    const lowMarginProducts = recipeBooks.filter((recipeBook) => {
+      const margin = Number(recipeBook.current_margin_pct || 0);
+      return margin > 0 && margin < 30;
+    }).length;
+    const purchasesThisWeek = purchases.filter((purchase) => {
+      const purchaseDate = purchase.purchase_date
+        ? new Date(`${purchase.purchase_date}T00:00:00`)
+        : null;
+      if (!purchaseDate || Number.isNaN(purchaseDate.getTime())) {
+        return false;
+      }
+      const diffDays = (Date.now() - purchaseDate.getTime()) / 86400000;
+      return diffDays <= 7;
+    }).length;
+
+    return [
+      {
+        title: "Reponer hoy",
+        value: `${criticalSupplies.length} insumo(s)`,
+        hint:
+          criticalSupplies.length > 0
+            ? `${recipesAtRisk} ficha(s) ya podrian quedarse sin soporte de stock.`
+            : "No hay alertas de reposicion inmediata.",
+        tone:
+          criticalSupplies.length > 0
+            ? "bg-rose-50 text-rose-900 ring-rose-200"
+            : "bg-emerald-50 text-emerald-900 ring-emerald-200",
+      },
+      {
+        title: "Compras recientes",
+        value: `${purchasesThisWeek} esta semana`,
+        hint:
+          purchasesThisWeek > 0
+            ? "Valida que esas cargas ya se reflejen en costo y abastecimiento."
+            : "Todavia no hay compras recientes en el rango semanal.",
+        tone: "bg-slate-50 text-slate-900 ring-slate-200",
+      },
+      {
+        title: "Margen por revisar",
+        value: `${lowMarginProducts} producto(s)`,
+        hint:
+          lowMarginProducts > 0
+            ? "Estas fichas tecnicas ya piden ajuste de precio o receta."
+            : "No hay productos con margen bajo en las fichas conectadas.",
+        tone: "bg-[#fff7df] text-[#7a5500] ring-[#d4a72c]/25",
+      },
+    ];
+  }, [purchases, recipeBooks, supplies]);
+  const resourceDecisionItems = useMemo(
+    () => [
+      ...resourceFlowInsights.map((insight) => ({
+        title: insight.title,
+        body: insight.body,
+        tone: "bg-white text-slate-900 ring-slate-200",
+        icon: "sparkles",
+      })),
+      ...resourceActionQueue.map((item) => ({
+        title: `${item.title} · ${item.value}`,
+        body: item.hint,
+        tone: item.tone,
+        icon: "lightbulb",
+      })),
+    ],
+    [resourceActionQueue, resourceFlowInsights]
+  );
+  const resourceDecisionSummary = useMemo(() => {
+    const criticalCount = supplies.filter((supply) => {
+      const health = getSupplyHealth(supply).label;
+      return health === "Critico" || health === "Agotado";
+    }).length;
+
+    if (criticalCount > 0) {
+      return `${criticalCount} alerta(s) de reposicion y margen ya merecen seguimiento antes de la siguiente compra o cierre.`;
+    }
+
+    return "El modulo mantiene una lectura conectada de abastecimiento, margen y continuidad con proveedores.";
+  }, [supplies]);
+  useEffect(() => {
+    if (isCatalogMode) {
+      return undefined;
+    }
+
+    publishSectionInsights("resources", {
+      eyebrow: "Centro de recursos",
+      title: "Decisiones de abastecimiento y margen",
+      summary: resourceDecisionSummary,
+      items: resourceDecisionItems,
+    });
+
+    return () => clearSectionInsights("resources");
+  }, [
+    clearSectionInsights,
+    isCatalogMode,
+    publishSectionInsights,
+    resourceDecisionItems,
+    resourceDecisionSummary,
+  ]);
   const supplySummary = useMemo(() => {
     return supplies.reduce(
       (summary, supply) => {
@@ -576,6 +729,40 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   <p className="mt-1 text-sm text-slate-500">{stat.hint}</p>
                 </article>
               ))}
+            </div>
+
+            <div className="mt-5 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Centro de decisiones
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{resourceDecisionSummary}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    className={`inline-flex items-center rounded-full px-3 py-2 text-xs font-semibold ${
+                      resourceDecisionItems.length > 0
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    {resourceDecisionItems.length} lectura{resourceDecisionItems.length === 1 ? "" : "s"} activa{resourceDecisionItems.length === 1 ? "" : "s"}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openDecisionCenter}
+                    disabled={resourceDecisionItems.length === 0}
+                    className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                      resourceDecisionItems.length > 0
+                        ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                    }`}
+                  >
+                    Ver panel
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1071,7 +1258,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         </section>
       ) : null}
 
-      <FormModal
+      <ModalWrapper
         open={isProductModalOpen}
         onClose={closeProductModal}
         maxWidthClass="max-w-5xl"
@@ -1336,9 +1523,9 @@ export default function ProductManager({ businessId, mode = "resources" }) {
             </div>
           </aside>
         </form>
-      </FormModal>
+      </ModalWrapper>
 
-      <FormModal
+      <ModalWrapper
         open={isSupplyModalOpen}
         onClose={closeSupplyModal}
         maxWidthClass="max-w-3xl"
@@ -1466,7 +1653,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
             </button>
           </div>
         </form>
-      </FormModal>
+      </ModalWrapper>
 
       <ConfirmModal
         open={Boolean(itemToDelete)}

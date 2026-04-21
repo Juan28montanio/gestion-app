@@ -80,6 +80,8 @@ textarea::placeholder {
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.75) transparent;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .sidebar-scroll::-webkit-scrollbar {

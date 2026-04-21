@@ -17,6 +17,11 @@ import {
 import { subscribeToSalesHistory, updateSaleHistoryEntry } from "../services/financeService";
 import { subscribeToPurchases, updatePurchaseMovement } from "../services/purchaseService";
 import {
+  createOperatingExpense,
+  subscribeToOperatingExpenses,
+  updateOperatingExpense,
+} from "../services/operatingExpenseService";
+import {
   buildCashClosingReportHtml,
   closeCashSession,
   getCashSessionLockInfo,
@@ -35,6 +40,7 @@ import {
   PAYMENT_METHOD_LABELS,
   paymentBreakdownIncludesMethod,
 } from "../utils/payments";
+import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
 
 const RANGE_OPTIONS = [
   { value: "daily", label: "Diario" },
@@ -58,6 +64,29 @@ const QUICK_FILTERS = [
   { label: "Esta semana", range: "weekly", getDate: () => getLocalDateInputValue(new Date()) },
   { label: "Mes", range: "monthly", getDate: () => getLocalDateInputValue(new Date()) },
 ];
+
+const OPERATING_EXPENSE_CATEGORIES = [
+  "Energia",
+  "Agua",
+  "Arriendo",
+  "Internet",
+  "Nomina",
+  "Mantenimiento",
+  "Impuestos",
+  "Aseo",
+  "Transporte",
+  "Otros",
+];
+
+const EMPTY_OPERATING_EXPENSE_FORM = {
+  concept: "",
+  category: "Energia",
+  amount: "",
+  expenseDate: getLocalDateInputValue(new Date()),
+  paymentMethod: "cash",
+  vendorName: "",
+  notes: "",
+};
 
 const PAYMENT_METHOD_STYLES = {
   all: "from-slate-900 to-slate-700 text-white ring-slate-900/10",
@@ -228,6 +257,15 @@ function getBalanceStatus(balance) {
 }
 
 function getMovementVisual(movement) {
+  if (movement.type === "expense" && movement.source === "operating_expense") {
+    return {
+      icon: ReceiptText,
+      badge: "Gasto operativo",
+      accent: "bg-amber-50 text-amber-700 ring-amber-200",
+      iconWrap: "bg-amber-50 text-amber-600",
+    };
+  }
+
   if (movement.type === "expense") {
     return {
       icon: Truck,
@@ -398,6 +436,90 @@ function buildCashActionItems({
   return items.slice(0, 3);
 }
 
+function buildSupplyChainInsights(purchases, filteredSummary) {
+  const purchaseCount = purchases.length;
+  const totalPurchases = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
+  const topSupplierMap = purchases.reduce((accumulator, purchase) => {
+    const key = purchase.supplier_name || "Sin proveedor";
+    accumulator[key] = (accumulator[key] || 0) + Number(purchase.total || 0);
+    return accumulator;
+  }, {});
+  const topSupplierEntry = Object.entries(topSupplierMap).sort((a, b) => b[1] - a[1])[0];
+  const spendShare =
+    filteredSummary.income > 0 ? (totalPurchases / filteredSummary.income) * 100 : null;
+
+  return [
+    {
+      title: "Presion de compras en caja",
+      body:
+        purchaseCount > 0
+          ? spendShare !== null
+            ? `Las compras del rango suman ${formatCOP(totalPurchases)} y equivalen al ${spendShare.toFixed(0)}% del ingreso filtrado.`
+            : `Hay ${purchaseCount} compra(s) registradas por ${formatCOP(totalPurchases)} en este rango, aun sin ingresos suficientes para compararlas.`
+          : "No hay compras registradas en este rango. Si el negocio opero, revisa si falta cargar abastecimiento.",
+      tone: "bg-white text-slate-900 ring-slate-200",
+    },
+    {
+      title: "Proveedor dominante del periodo",
+      body: topSupplierEntry
+        ? `${topSupplierEntry[0]} concentra ${formatCOP(topSupplierEntry[1])} en compras dentro del rango. Conviene revisar dependencia y negociar mejor ese frente.`
+        : "Todavia no hay un proveedor dominante en este rango porque no hay compras filtradas.",
+      tone: "bg-slate-50 text-slate-900 ring-slate-200",
+    },
+    {
+      title: "Lectura cruzada operacion-finanzas",
+      body:
+        purchaseCount > 0
+          ? "Cruza estas compras con insumos criticos y fichas tecnicas para validar si el gasto ya se reflejo en costo real y margen."
+          : "Cuando registres compras, esta capa te dira si el abastecimiento ya esta impactando caja y rentabilidad.",
+      tone: "bg-[#fff7df] text-slate-900 ring-[#d4a72c]/20",
+    },
+  ];
+}
+
+function buildCashPressureQueue({ purchases, receivableTotal, receivableCount, lockInfo }) {
+  const purchaseCount = purchases.length;
+  const purchaseTotal = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
+  const creditPurchases = purchases.filter((purchase) => {
+    const paymentTerms = String(
+      purchase.supplier_payment_terms || purchase.raw?.supplier_payment_terms || "Contado"
+    )
+      .trim()
+      .toLowerCase();
+    return paymentTerms === "credito";
+  }).length;
+
+  return [
+    {
+      title: "Gasto que ya explica caja",
+      body:
+        purchaseCount > 0
+          ? `${purchaseCount} compra(s) del rango ya representan ${formatCOP(purchaseTotal)} en salida o compromiso operativo.`
+          : "Todavia no hay compras filtradas en este periodo para explicar presion sobre caja.",
+      tone: "bg-white text-slate-900 ring-slate-200",
+    },
+    {
+      title: "Compromisos por cobrar",
+      body:
+        receivableTotal > 0
+          ? `${receivableCount} cuenta(s) pendiente(s) suman ${formatCOP(receivableTotal)}. Recuperarlas reduce necesidad de caja nueva.`
+          : "No hay cartera pendiente en clientes dentro de la lectura actual.",
+      tone: "bg-sky-50 text-sky-900 ring-sky-200",
+    },
+    {
+      title: "Disciplina del cierre",
+      body: lockInfo.blocked
+        ? "Hay una accion de cierre pendiente. Resolverla evita que la lectura financiera del siguiente turno nazca desalineada."
+        : creditPurchases > 0
+          ? `${creditPurchases} compra(s) del rango operan a credito. Aunque no salgan en efectivo hoy, conviene dejarlas visibles en el analisis del cierre.`
+          : "La trazabilidad de caja esta al dia para este rango y no hay compras a credito dominando la lectura.",
+      tone: lockInfo.blocked
+        ? "bg-[#fff7df] text-[#7a5500] ring-[#d4a72c]/25"
+        : "bg-slate-50 text-slate-900 ring-slate-200",
+    },
+  ];
+}
+
 function openPrintableReport(report) {
   const html = buildCashClosingReportHtml(report);
   const reportWindow = window.open("", "_blank", "width=960,height=720");
@@ -420,8 +542,10 @@ export default function AdminDashboard({
   currentUser,
   requestAuditPin,
 }) {
+  const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const [sales, setSales] = useState([]);
   const [purchases, setPurchases] = useState([]);
+  const [operatingExpenses, setOperatingExpenses] = useState([]);
   const [cashClosings, setCashClosings] = useState([]);
   const [openSession, setOpenSession] = useState(null);
   const [selectedRange, setSelectedRange] = useState("daily");
@@ -433,6 +557,8 @@ export default function AdminDashboard({
   const [saleToSettle, setSaleToSettle] = useState(null);
   const [selectedMovement, setSelectedMovement] = useState(null);
   const [movementToEdit, setMovementToEdit] = useState(null);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [operatingExpenseForm, setOperatingExpenseForm] = useState(EMPTY_OPERATING_EXPENSE_FORM);
   const [movementEditForm, setMovementEditForm] = useState({
     concept: "",
     total: "",
@@ -445,12 +571,14 @@ export default function AdminDashboard({
   useEffect(() => {
     const unsubscribeSales = subscribeToSalesHistory(businessId, setSales);
     const unsubscribePurchases = subscribeToPurchases(businessId, setPurchases);
+    const unsubscribeOperatingExpenses = subscribeToOperatingExpenses(businessId, setOperatingExpenses);
     const unsubscribeClosings = subscribeToCashClosings(businessId, setCashClosings);
     const unsubscribeOpenSession = subscribeToOpenCashSession(businessId, setOpenSession);
 
     return () => {
       unsubscribeSales();
       unsubscribePurchases();
+      unsubscribeOperatingExpenses();
       unsubscribeClosings();
       unsubscribeOpenSession();
     };
@@ -498,6 +626,7 @@ export default function AdminDashboard({
         Number(sale.total || 0)
       ),
       raw: sale,
+      source: "sale",
     }));
 
     const purchaseMovements = purchases.map((purchase) => ({
@@ -510,12 +639,26 @@ export default function AdminDashboard({
       amount: Number(purchase.total || 0),
       paymentMethod: "expense",
       raw: purchase,
+      source: "purchase",
     }));
 
-    return [...saleMovements, ...purchaseMovements].sort(
+    const operatingExpenseMovements = operatingExpenses.map((expense) => ({
+      id: `expense-${expense.id}`,
+      type: "expense",
+      date: normalizeDate(expense.expense_date),
+      concept: expense.concept || "Gasto operativo",
+      category: expense.category || "Gasto general",
+      details: expense.notes || expense.vendor_name || "Sin detalle adicional.",
+      amount: Number(expense.total || expense.amount || 0),
+      paymentMethod: expense.payment_method || "cash",
+      raw: expense,
+      source: "operating_expense",
+    }));
+
+    return [...saleMovements, ...purchaseMovements, ...operatingExpenseMovements].sort(
       (a, b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0)
     );
-  }, [purchases, sales]);
+  }, [operatingExpenses, purchases, sales]);
 
   const filteredMovements = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -615,6 +758,24 @@ export default function AdminDashboard({
       ),
     };
   }, [cashCounted, openSession, paymentMethodTotals.cash, todayMovements]);
+  const closingPurchaseSummary = useMemo(() => {
+    const todayPurchases = todayMovements.filter((movement) => movement.type === "expense");
+    const total = todayPurchases.reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+    const supplierTotals = todayPurchases.reduce((accumulator, movement) => {
+      const key = String(movement.raw?.supplier_name || movement.concept || "Sin proveedor").trim();
+      accumulator[key] = (accumulator[key] || 0) + Number(movement.amount || 0);
+      return accumulator;
+    }, {});
+    const topSupplier = Object.entries(supplierTotals).sort((a, b) => b[1] - a[1])[0];
+
+    return {
+      count: todayPurchases.length,
+      total,
+      sharePct: todaySummary.income > 0 ? (total / todaySummary.income) * 100 : null,
+      topSupplierName: topSupplier?.[0] || "",
+      topSupplierTotal: Number(topSupplier?.[1] || 0),
+    };
+  }, [todayMovements, todaySummary.income]);
 
   const boxOpenDuration = useMemo(() => {
     const openedAt = normalizeDate(openSession?.opened_at || openSession?.createdAt);
@@ -680,6 +841,83 @@ export default function AdminDashboard({
       }),
     [accountsReceivable.length, boxOpenDuration, closingPreview, lockInfo, openSession, totalReceivable]
   );
+  const filteredPurchases = useMemo(
+    () =>
+      purchases.filter((purchase) =>
+        isInRange(normalizeDate(purchase.purchase_date), selectedRange, selectedDate)
+      ),
+    [purchases, selectedDate, selectedRange]
+  );
+  const supplyChainInsights = useMemo(
+    () => buildSupplyChainInsights(filteredPurchases, filteredSummary),
+    [filteredPurchases, filteredSummary]
+  );
+  const cashPressureQueue = useMemo(
+    () =>
+      buildCashPressureQueue({
+        purchases: filteredPurchases,
+        receivableTotal: totalReceivable,
+        receivableCount: accountsReceivable.length,
+        lockInfo,
+      }),
+    [accountsReceivable.length, filteredPurchases, lockInfo, totalReceivable]
+  );
+  const financeDecisionItems = useMemo(
+    () => [
+      ...executiveInsights.map((item) => ({
+        title: item.title,
+        body: item.body,
+        tone: item.accent,
+        icon: "sparkles",
+      })),
+      ...cashActionItems.map((item) => ({
+        title: item.title,
+        body: item.body,
+        tone: item.tone,
+        icon: "lightbulb",
+      })),
+      ...supplyChainInsights.map((item) => ({
+        title: item.title,
+        body: item.body,
+        tone: item.tone,
+        icon: "sparkles",
+      })),
+      ...cashPressureQueue.map((item) => ({
+        title: item.title,
+        body: item.body,
+        tone: item.tone,
+        icon: "lightbulb",
+      })),
+    ],
+    [cashActionItems, cashPressureQueue, executiveInsights, supplyChainInsights]
+  );
+  const financeDecisionSummary = useMemo(() => {
+    if (lockInfo.blocked) {
+      return "La caja necesita atencion inmediata y el centro de decisiones concentra la lectura del turno para no saturar la pantalla principal.";
+    }
+
+    if (totalReceivable > 0) {
+      return `Hay ${accountsReceivable.length} cuenta(s) pendiente(s) y una lectura cruzada de caja, compras y rentabilidad lista para revisar en un solo panel.`;
+    }
+
+    return "La pantalla principal queda enfocada en operar y el analisis ejecutivo se concentra en el centro de decisiones.";
+  }, [accountsReceivable.length, lockInfo.blocked, totalReceivable]);
+
+  useEffect(() => {
+    publishSectionInsights("finance", {
+      eyebrow: "Caja y finanzas",
+      title: "Lectura ejecutiva del turno",
+      summary: financeDecisionSummary,
+      items: financeDecisionItems,
+    });
+
+    return () => clearSectionInsights("finance");
+  }, [
+    clearSectionInsights,
+    financeDecisionItems,
+    financeDecisionSummary,
+    publishSectionInsights,
+  ]);
 
   const applyQuickFilter = (range, dateValue) => {
     setSelectedRange(range);
@@ -740,6 +978,30 @@ export default function AdminDashboard({
     }
   };
 
+  const closeOperatingExpenseModal = () => {
+    setIsExpenseModalOpen(false);
+    setOperatingExpenseForm(EMPTY_OPERATING_EXPENSE_FORM);
+  };
+
+  const handleSaveOperatingExpense = async () => {
+    setIsBusy(true);
+    try {
+      await createOperatingExpense({
+        business_id: businessId,
+        concept: operatingExpenseForm.concept,
+        category: operatingExpenseForm.category,
+        amount: Number(operatingExpenseForm.amount),
+        expense_date: operatingExpenseForm.expenseDate,
+        payment_method: operatingExpenseForm.paymentMethod,
+        vendor_name: operatingExpenseForm.vendorName,
+        notes: operatingExpenseForm.notes,
+      });
+      closeOperatingExpenseModal();
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const openMovementEditor = async (movement) => {
     const isAuthorized = await requestAuditPin?.({
       title: "Validar PIN de auditoria",
@@ -754,7 +1016,12 @@ export default function AdminDashboard({
     setMovementEditForm({
       concept: movement.concept || "",
       total: String(movement.amount ?? ""),
-      paymentMethod: movement.paymentMethod === "expense" ? "cash" : movement.paymentMethod || "cash",
+      paymentMethod:
+        movement.type === "income"
+          ? movement.paymentMethod || "cash"
+          : movement.source === "operating_expense"
+            ? movement.paymentMethod || "cash"
+            : "cash",
     });
   };
 
@@ -769,6 +1036,12 @@ export default function AdminDashboard({
         await updateSaleHistoryEntry(movementToEdit.raw.id, {
           concept: movementEditForm.concept,
           total: Number(movementEditForm.total),
+          paymentMethod: movementEditForm.paymentMethod,
+        });
+      } else if (movementToEdit.source === "operating_expense") {
+        await updateOperatingExpense(movementToEdit.raw.id, {
+          concept: movementEditForm.concept,
+          amount: Number(movementEditForm.total),
           paymentMethod: movementEditForm.paymentMethod,
         });
       } else {
@@ -820,82 +1093,39 @@ export default function AdminDashboard({
           </article>
         </section>
 
-        <section className="rounded-[28px] bg-[linear-gradient(135deg,rgba(15,23,42,0.98)_0%,rgba(30,41,59,0.96)_52%,rgba(17,24,39,0.96)_100%)] p-6 text-white shadow-[0_22px_70px_rgba(15,23,42,0.18)] ring-1 ring-slate-900/10">
-          <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+        <section className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
-                Lectura ejecutiva
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Centro de decisiones
               </p>
-              <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em]">
-                Lo que esta pasando en el negocio hoy
-              </h2>
-            </div>
-            <p className="max-w-2xl text-sm text-slate-300">
-              Esta capa resume rentabilidad, cartera y forma de cobro para que la caja no sea solo registro, sino decision.
-            </p>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-3">
-            {executiveInsights.map((insight) => {
-              const Icon = insight.icon;
-              return (
-                <article
-                  key={insight.title}
-                  className={`rounded-[24px] px-5 py-5 ring-1 transition-transform duration-200 hover:-translate-y-0.5 ${insight.accent}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70 text-current ring-1 ring-black/5">
-                      <Icon size={18} />
-                    </span>
-                    <div>
-                      <h3 className="text-base font-semibold">{insight.title}</h3>
-                      <p className="mt-2 text-sm leading-6 opacity-90">{insight.body}</p>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-          <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                Siguiente paso
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                {financeDecisionSummary}
               </p>
-              <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-slate-950">
-                Acciones sugeridas para la jornada
-              </h2>
             </div>
-            <p className="max-w-2xl text-sm text-slate-500">
-              Esta capa traduce la caja en decisiones concretas para abrir, sostener o cerrar mejor el turno.
-            </p>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-3">
-            {cashActionItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <article
-                  key={item.title}
-                  className={`rounded-[24px] p-5 ring-1 transition-transform duration-200 hover:-translate-y-0.5 ${item.tone}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/70 text-current ring-1 ring-black/5">
-                      <Icon size={18} />
-                    </span>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-70">
-                        {item.eyebrow}
-                      </p>
-                      <h3 className="mt-2 text-base font-semibold">{item.title}</h3>
-                      <p className="mt-2 text-sm leading-6 opacity-90">{item.body}</p>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className={`inline-flex items-center rounded-full px-3 py-2 text-xs font-semibold ${
+                  financeDecisionItems.length > 0
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {financeDecisionItems.length} lectura{financeDecisionItems.length === 1 ? "" : "s"} activa{financeDecisionItems.length === 1 ? "" : "s"}
+              </div>
+              <button
+                type="button"
+                onClick={openDecisionCenter}
+                disabled={financeDecisionItems.length === 0}
+                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                  financeDecisionItems.length > 0
+                    ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                }`}
+              >
+                Ver panel
+              </button>
+            </div>
           </div>
         </section>
 
@@ -909,6 +1139,14 @@ export default function AdminDashboard({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsExpenseModalOpen(true)}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                <ReceiptText size={16} />
+                Registrar gasto
+              </button>
               {openSession && boxOpenDuration ? (
                 <div
                   className={`inline-flex items-center gap-3 rounded-2xl px-4 py-2.5 ring-1 ${
@@ -1361,6 +1599,162 @@ export default function AdminDashboard({
       </section>
 
       <ModalWrapper
+        open={isExpenseModalOpen}
+        onClose={closeOperatingExpenseModal}
+        maxWidthClass="max-w-3xl"
+        icon={{ main: <ReceiptText size={20} />, close: "X" }}
+        title="Registrar gasto operativo"
+        description="Registra servicios, arriendo, nomina u otros egresos sin mezclarlo con compras de insumos."
+      >
+        <div className="grid gap-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Concepto</span>
+              <input
+                value={operatingExpenseForm.concept}
+                onChange={(event) =>
+                  setOperatingExpenseForm((current) => ({
+                    ...current,
+                    concept: event.target.value,
+                  }))
+                }
+                placeholder="Ej. Factura de energia abril"
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Categoria</span>
+              <select
+                value={operatingExpenseForm.category}
+                onChange={(event) =>
+                  setOperatingExpenseForm((current) => ({
+                    ...current,
+                    category: event.target.value,
+                  }))
+                }
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              >
+                {OPERATING_EXPENSE_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Valor</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={operatingExpenseForm.amount}
+                onChange={(event) =>
+                  setOperatingExpenseForm((current) => ({
+                    ...current,
+                    amount: event.target.value,
+                  }))
+                }
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Fecha</span>
+              <input
+                type="date"
+                value={operatingExpenseForm.expenseDate}
+                onChange={(event) =>
+                  setOperatingExpenseForm((current) => ({
+                    ...current,
+                    expenseDate: event.target.value,
+                  }))
+                }
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Metodo de pago</span>
+              <select
+                value={operatingExpenseForm.paymentMethod}
+                onChange={(event) =>
+                  setOperatingExpenseForm((current) => ({
+                    ...current,
+                    paymentMethod: event.target.value,
+                  }))
+                }
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              >
+                {["cash", "card", "transfer", "nequi", "daviplata"].map((method) => (
+                  <option key={method} value={method}>
+                    {PAYMENT_METHOD_LABELS[method]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Pagado a</span>
+              <input
+                value={operatingExpenseForm.vendorName}
+                onChange={(event) =>
+                  setOperatingExpenseForm((current) => ({
+                    ...current,
+                    vendorName: event.target.value,
+                  }))
+                }
+                placeholder="Empresa o responsable"
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              <span>Notas</span>
+              <input
+                value={operatingExpenseForm.notes}
+                onChange={(event) =>
+                  setOperatingExpenseForm((current) => ({
+                    ...current,
+                    notes: event.target.value,
+                  }))
+                }
+                placeholder="Detalle breve del gasto"
+                className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </label>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-4 text-sm leading-6 text-slate-600">
+            Este gasto se vera en finanzas como egreso operativo y, si fue pagado en efectivo, afectara el arqueo esperado del cierre de caja.
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={closeOperatingExpenseModal}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveOperatingExpense}
+              disabled={isBusy}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+            >
+              {isBusy ? "Guardando..." : "Registrar gasto"}
+            </button>
+          </div>
+        </div>
+      </ModalWrapper>
+
+      <ModalWrapper
         open={Boolean(selectedMovement)}
         onClose={() => setSelectedMovement(null)}
         maxWidthClass="max-w-3xl"
@@ -1462,7 +1856,7 @@ export default function AdminDashboard({
               />
             </label>
 
-            {movementToEdit?.type === "income" ? (
+            {movementToEdit?.type === "income" || movementToEdit?.source === "operating_expense" ? (
               <label className="grid gap-2 text-sm font-semibold text-slate-700">
                 <span>Metodo de pago</span>
                 <select
@@ -1516,6 +1910,25 @@ export default function AdminDashboard({
         description="Revisa el conteo, confirma el resumen y cierra la jornada con su reporte."
       >
         <div className="grid gap-6">
+          <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Contexto del turno
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {closingPurchaseSummary.count
+                ? `Durante esta jornada se registraron ${closingPurchaseSummary.count} compra(s) por ${formatCOP(closingPurchaseSummary.total)}. ${
+                    closingPurchaseSummary.sharePct !== null
+                      ? `Eso representa el ${closingPurchaseSummary.sharePct.toFixed(0)}% del ingreso del dia. `
+                      : ""
+                  }${
+                    closingPurchaseSummary.topSupplierName
+                      ? `El proveedor de mayor peso fue ${closingPurchaseSummary.topSupplierName} con ${formatCOP(closingPurchaseSummary.topSupplierTotal)}.`
+                      : ""
+                  }`
+                : "No hay compras registradas en la jornada. El cierre se concentrara en ventas, recaudo y arqueo de caja."}
+            </p>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Paso 1</p>

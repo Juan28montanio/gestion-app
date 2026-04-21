@@ -21,6 +21,7 @@ import {
 const cashClosingsCollection = collection(db, "cash_closings");
 const salesHistoryCollection = collection(db, "sales_history");
 const purchasesCollection = collection(db, "purchases");
+const operatingExpensesCollection = collection(db, "operating_expenses");
 const ordersCollection = collection(db, "orders");
 
 export function getLocalDateKey(date = new Date()) {
@@ -67,6 +68,55 @@ function buildClosingCode(closedAt = new Date(), sequence = 1) {
   const day = `${closedAt.getDate()}`.padStart(2, "0");
   const year = `${closedAt.getFullYear()}`.slice(-2);
   return `CIERRE-${month}${day}${year}-${String(sequence || 1).padStart(3, "0")}`;
+}
+
+function buildPurchaseSummary(purchases, salesTotal) {
+  const total = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
+  const supplierTotals = purchases.reduce((accumulator, purchase) => {
+    const key = String(purchase.supplier_name || "Sin proveedor").trim();
+    accumulator[key] = (accumulator[key] || 0) + Number(purchase.total || 0);
+    return accumulator;
+  }, {});
+  const categoryTotals = purchases.reduce((accumulator, purchase) => {
+    (purchase.items || []).forEach((item) => {
+      const key = String(item.category || "Sin categoria").trim();
+      accumulator[key] = (accumulator[key] || 0) + Number(item.total_cost || item.line_total || 0);
+    });
+    return accumulator;
+  }, {});
+
+  const topSupplier = Object.entries(supplierTotals).sort((a, b) => b[1] - a[1])[0];
+  const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0];
+  const topSuppliers = Object.entries(supplierTotals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, supplierTotal]) => ({
+      name,
+      total: Number(supplierTotal || 0),
+    }));
+  const highlightedPurchases = purchases
+    .slice()
+    .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
+    .slice(0, 3)
+    .map((purchase) => ({
+      supplierName: String(purchase.supplier_name || "Sin proveedor").trim(),
+      invoiceNumber: String(purchase.invoice_number || "Sin consecutivo").trim(),
+      total: Number(purchase.total || 0),
+      date: purchase.purchase_date || "",
+      itemsCount: Array.isArray(purchase.items) ? purchase.items.length : 0,
+    }));
+
+  return {
+    count: purchases.length,
+    total,
+    shareOfSalesPct: salesTotal > 0 ? (total / salesTotal) * 100 : null,
+    topSupplierName: topSupplier?.[0] || "",
+    topSupplierTotal: Number(topSupplier?.[1] || 0),
+    topCategoryName: topCategory?.[0] || "",
+    topCategoryTotal: Number(topCategory?.[1] || 0),
+    topSuppliers,
+    highlightedPurchases,
+  };
 }
 
 export function getCashSessionLockInfo(session) {
@@ -243,9 +293,10 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
   const openedAt = normalizeDate(closingData.opened_at || closingData.createdAt) || new Date();
   const now = new Date();
 
-  const [salesSnapshot, purchasesSnapshot, ordersSnapshot] = await Promise.all([
+  const [salesSnapshot, purchasesSnapshot, operatingExpensesSnapshot, ordersSnapshot] = await Promise.all([
     getDocs(query(salesHistoryCollection, where("business_id", "==", normalizedBusinessId))),
     getDocs(query(purchasesCollection, where("business_id", "==", normalizedBusinessId))),
+    getDocs(query(operatingExpensesCollection, where("business_id", "==", normalizedBusinessId))),
     getDocs(query(ordersCollection, where("business_id", "==", normalizedBusinessId))),
   ]);
 
@@ -267,6 +318,13 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     .filter((purchase) => {
       const purchaseDate = normalizeDate(purchase.purchase_date);
       return purchaseDate && purchaseDate >= openedAt && purchaseDate <= now;
+    });
+
+  const relevantOperatingExpenses = operatingExpensesSnapshot.docs
+    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+    .filter((expense) => {
+      const expenseDate = normalizeDate(expense.expense_date);
+      return expenseDate && expenseDate >= openedAt && expenseDate <= now;
     });
 
   const relevantOrders = ordersSnapshot.docs
@@ -293,11 +351,23 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
   );
 
   const totalSales = relevantSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
-  const totalExpenses = relevantPurchases.reduce(
+  const purchaseExpensesTotal = relevantPurchases.reduce(
     (sum, purchase) => sum + Number(purchase.total || 0),
     0
   );
-  const expectedCash = Number(closingData.opening_amount || 0) + Number(byMethod.cash || 0);
+  const operatingExpensesTotal = relevantOperatingExpenses.reduce(
+    (sum, expense) => sum + Number(expense.total || expense.amount || 0),
+    0
+  );
+  const totalExpenses = purchaseExpensesTotal + operatingExpensesTotal;
+  const purchaseSummary = buildPurchaseSummary(relevantPurchases, totalSales);
+  const cashOperatingExpenses = relevantOperatingExpenses.reduce((sum, expense) => {
+    return String(expense.payment_method || "cash").trim() === "cash"
+      ? sum + Number(expense.total || expense.amount || 0)
+      : sum;
+  }, 0);
+  const expectedCash =
+    Number(closingData.opening_amount || 0) + Number(byMethod.cash || 0) - cashOperatingExpenses;
   const countedCash = Number(cashCounted || 0);
   const cashDifference = countedCash - expectedCash;
   const totalCollected = Object.values(byMethod).reduce(
@@ -354,6 +424,14 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
       amount: Number(purchase.total || 0),
       at: normalizeDate(purchase.purchase_date),
     })),
+    ...relevantOperatingExpenses.map((expense) => ({
+      type: "Egreso",
+      concept: expense.concept || "Gasto operativo",
+      detail: expense.notes || expense.vendor_name || expense.category || "Sin detalle",
+      paymentMethod: expense.payment_method || "cash",
+      amount: Number(expense.total || expense.amount || 0),
+      at: normalizeDate(expense.expense_date),
+    })),
   ].sort((left, right) => (right.at?.getTime?.() || 0) - (left.at?.getTime?.() || 0));
 
   const batch = writeBatch(db);
@@ -381,6 +459,8 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     cash_expected: expectedCash,
     cash_counted: countedCash,
     cash_difference: cashDifference,
+    operating_expenses_total: operatingExpensesTotal,
+    purchase_expenses_total: purchaseExpensesTotal,
     total_sales_count: relevantSales.length,
     audit_count: auditEntries.length,
     updatedAt: serverTimestamp(),
@@ -407,9 +487,12 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     cashExpected: expectedCash,
     cashCounted: countedCash,
     cashDifference,
+    operatingExpensesTotal,
+    purchaseExpensesTotal,
     totalSalesCount: relevantSales.length,
     auditEntries,
     movementEntries,
+    purchaseSummary,
   };
 }
 
@@ -508,6 +591,37 @@ export function buildCashClosingReportHtml(report) {
         `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.type}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.concept}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.detail}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${PAYMENT_METHOD_LABELS[entry.paymentMethod] || entry.paymentMethod || "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${entry.at ? entry.at.toLocaleString("es-CO") : "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">${formatCOP(entry.amount)}</td></tr>`
     )
     .join("");
+  const purchaseSummary = report.purchaseSummary || {};
+  const purchaseNarrative = purchaseSummary.count
+    ? `Se registraron ${purchaseSummary.count} compra(s) por ${formatCOP(purchaseSummary.total || 0)} dentro del periodo del cierre.`
+    : "No se registraron compras dentro del periodo del cierre.";
+  const purchaseContext = purchaseSummary.count
+    ? [
+        purchaseSummary.shareOfSalesPct !== null
+          ? `Estas compras equivalen al ${purchaseSummary.shareOfSalesPct.toFixed(0)}% de las ventas del turno.`
+          : "",
+        purchaseSummary.topSupplierName
+          ? `Proveedor de mayor peso: ${purchaseSummary.topSupplierName} con ${formatCOP(purchaseSummary.topSupplierTotal || 0)}.`
+          : "",
+        purchaseSummary.topCategoryName
+          ? `Categoria de mayor gasto: ${purchaseSummary.topCategoryName} con ${formatCOP(purchaseSummary.topCategoryTotal || 0)}.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "El documento resume principalmente recaudo, arqueo y movimientos del turno.";
+  const topSupplierRows = (purchaseSummary.topSuppliers || [])
+    .map(
+      (entry) =>
+        `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.name}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">${formatCOP(entry.total)}</td></tr>`
+    )
+    .join("");
+  const highlightedPurchaseRows = (purchaseSummary.highlightedPurchases || [])
+    .map(
+      (entry) =>
+        `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.supplierName}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.invoiceNumber}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.date || "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${entry.itemsCount}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">${formatCOP(entry.total)}</td></tr>`
+    )
+    .join("");
 
   return `<!doctype html>
   <html lang="es">
@@ -526,6 +640,9 @@ export function buildCashClosingReportHtml(report) {
         .card.dark { background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%); color:#fff; border:none; }
         .eyebrow { font-size:12px; letter-spacing:.18em; text-transform:uppercase; font-weight:700; color:#94a3b8; }
         .value { font-size:28px; font-weight:800; margin-top:10px; }
+        .band { margin:28px 0; border:1px solid #e2e8f0; border-radius:24px; padding:20px; background:linear-gradient(135deg,#ffffff 0%,#f8fafc 100%); }
+        .band-title { font-size:12px; letter-spacing:.18em; text-transform:uppercase; font-weight:700; color:#64748b; }
+        .band-body { margin-top:10px; font-size:14px; line-height:1.7; color:#334155; }
         table { width:100%; border-collapse: collapse; }
         th { text-align:left; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#64748b; padding:10px 12px; border-bottom:1px solid #cbd5e1; }
         .section-title { font-size:18px; font-weight:700; margin:28px 0 14px; }
@@ -556,10 +673,19 @@ export function buildCashClosingReportHtml(report) {
           <div class="card">
             <div class="eyebrow">Gastos del turno</div>
             <div class="value">${formatCOP(report.expensesTotal)}</div>
+            <p style="margin:10px 0 0;color:#64748b;">Compras: ${formatCOP(report.purchaseExpensesTotal || 0)} · Operativos: ${formatCOP(report.operatingExpensesTotal || 0)}</p>
           </div>
           <div class="card dark">
             <div class="eyebrow" style="color:#cbd5e1;">Balance neto</div>
             <div class="value">${formatCOP(report.netBalance)}</div>
+          </div>
+        </div>
+
+        <div class="band">
+          <div class="band-title">Lectura ejecutiva del cierre</div>
+          <div class="band-body">
+            ${purchaseNarrative}
+            ${purchaseContext}
           </div>
         </div>
 
@@ -609,6 +735,66 @@ export function buildCashClosingReportHtml(report) {
           </thead>
           <tbody>${byMethodRows}</tbody>
         </table>
+
+        <div class="section-title">Proveedores y compras destacadas</div>
+        ${
+          purchaseSummary.count
+            ? `<div class="grid grid-3">
+                <div class="card">
+                  <div class="eyebrow">Proveedor principal</div>
+                  <div class="value" style="font-size:22px;">${purchaseSummary.topSupplierName || "Sin dato"}</div>
+                  <p style="margin:10px 0 0;color:#64748b;">${formatCOP(purchaseSummary.topSupplierTotal || 0)}</p>
+                </div>
+                <div class="card">
+                  <div class="eyebrow">Categoria dominante</div>
+                  <div class="value" style="font-size:22px;">${purchaseSummary.topCategoryName || "Sin categoria"}</div>
+                  <p style="margin:10px 0 0;color:#64748b;">${formatCOP(purchaseSummary.topCategoryTotal || 0)}</p>
+                </div>
+                <div class="card">
+                  <div class="eyebrow">Compras registradas</div>
+                  <div class="value">${purchaseSummary.count || 0}</div>
+                  <p style="margin:10px 0 0;color:#64748b;">${formatCOP(purchaseSummary.total || 0)} en total</p>
+                </div>
+              </div>
+              <div style="display:grid;gap:16px;grid-template-columns:1fr 1.2fr;margin-top:16px;">
+                <div class="card">
+                  <div class="eyebrow">Top proveedores del periodo</div>
+                  ${
+                    topSupplierRows
+                      ? `<table style="margin-top:14px;">
+                          <thead>
+                            <tr>
+                              <th>Proveedor</th>
+                              <th style="text-align:right;">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>${topSupplierRows}</tbody>
+                        </table>`
+                      : `<p style="margin-top:14px;color:#64748b;">No hay proveedores destacados para este cierre.</p>`
+                  }
+                </div>
+                <div class="card">
+                  <div class="eyebrow">Compras mas relevantes</div>
+                  ${
+                    highlightedPurchaseRows
+                      ? `<table style="margin-top:14px;">
+                          <thead>
+                            <tr>
+                              <th>Proveedor</th>
+                              <th>Factura</th>
+                              <th>Fecha</th>
+                              <th style="text-align:right;">Items</th>
+                              <th style="text-align:right;">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>${highlightedPurchaseRows}</tbody>
+                        </table>`
+                      : `<p style="margin-top:14px;color:#64748b;">No hay compras relevantes para detallar en este cierre.</p>`
+                  }
+                </div>
+              </div>`
+            : `<div class="card" style="background:#f8fafc;">No hubo compras en el periodo, por lo que no hay proveedores ni facturas destacadas para este cierre.</div>`
+        }
 
         <div class="section-title">Detalle resumido de movimientos</div>
         ${

@@ -12,6 +12,7 @@ import ConfirmModal from "./ConfirmModal";
 import FormInput from "./FormInput";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
+import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
 
 const EMPTY_CUSTOMER_FORM = {
   name: "",
@@ -53,30 +54,6 @@ function getCustomerSegment(customer) {
   };
 }
 
-function getCustomerNextAction(customer) {
-  if (customer.debtBalance > 0) {
-    return "Conviene recuperar saldo antes de ofrecer mas credito.";
-  }
-
-  if (customer.ticketWallet.balance > 0 && customer.ticketWallet.lowBalance) {
-    return "Buen momento para ofrecer renovacion de ticketera.";
-  }
-
-  if (customer.daysWithoutPurchase === null) {
-    return "Hace falta la primera venta para activar este perfil.";
-  }
-
-  if (customer.daysWithoutPurchase > 30) {
-    return "Cliente por reactivar con seguimiento o promocion.";
-  }
-
-  if (customer.orderCount >= 5) {
-    return "Listo para fidelizacion o propuesta prepaga.";
-  }
-
-  return "Mantener seguimiento y registrar nuevas compras.";
-}
-
 function buildCustomerForm(customer) {
   if (!customer) {
     return EMPTY_CUSTOMER_FORM;
@@ -95,6 +72,7 @@ function buildCustomerForm(customer) {
 }
 
 export default function CustomerManager({ businessId }) {
+  const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const [customers, setCustomers] = useState([]);
   const [sales, setSales] = useState([]);
   const [search, setSearch] = useState("");
@@ -106,6 +84,22 @@ export default function CustomerManager({ businessId }) {
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [isSaving, setIsSaving] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
+  const [isCompactLayout, setIsCompactLayout] = useState(() => window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsCompactLayout(window.innerWidth < 1024);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isCompactLayout && viewMode === "table") {
+      setViewMode("cards");
+    }
+  }, [isCompactLayout, viewMode]);
 
   useEffect(() => {
     const unsubscribeCustomers = subscribeToCustomers(businessId, setCustomers);
@@ -152,7 +146,6 @@ export default function CustomerManager({ businessId }) {
     }).map((customer) => ({
       ...customer,
       segment: getCustomerSegment(customer),
-      nextAction: getCustomerNextAction(customer),
     }));
   }, [customers, sales]);
 
@@ -166,6 +159,82 @@ export default function CustomerManager({ businessId }) {
       topCount: customerInsights.filter((customer) => customer.orderCount >= 5).length,
     };
   }, [customerInsights]);
+
+  const customerDecisionItems = useMemo(() => {
+    const debtors = customerInsights.filter((customer) => customer.debtBalance > 0);
+    const walletsLowBalance = customerInsights.filter(
+      (customer) => customer.ticketWallet.balance > 0 && customer.ticketWallet.lowBalance
+    );
+    const inactiveCustomers = customerInsights.filter(
+      (customer) => customer.daysWithoutPurchase === null || customer.daysWithoutPurchase > 30
+    );
+    const topCustomer = [...customerInsights].sort((left, right) => right.totalSpent - left.totalSpent)[0];
+
+    return [
+      {
+        title: "Cobros pendientes por priorizar",
+        body: debtors.length
+          ? `${debtors.length} cliente(s) mantienen deuda activa. Conviene recuperar ese saldo antes de seguir ampliando credito.`
+          : "No hay deuda pendiente en clientes. La base actual esta mas lista para fidelizacion que para recuperacion.",
+        tone: debtors.length
+          ? "bg-rose-50 text-rose-900 ring-rose-200"
+          : "bg-emerald-50 text-emerald-900 ring-emerald-200",
+        icon: "lightbulb",
+      },
+      {
+        title: "Renovacion de ticketeras",
+        body: walletsLowBalance.length
+          ? `${walletsLowBalance.length} cliente(s) ya tienen saldo bajo en ticketera. Hay oportunidad directa de recompra sin esperar que se agoten.`
+          : "No hay clientes con ticketera en saldo bajo por ahora. El frente prepago esta estable.",
+        tone: "bg-[#fff7df] text-[#7a5500] ring-[#d4a72c]/25",
+        icon: "sparkles",
+      },
+      {
+        title: "Base por reactivar",
+        body: inactiveCustomers.length
+          ? `${inactiveCustomers.length} cliente(s) no compran hace tiempo o aun no registran pedidos. Este grupo merece seguimiento comercial ligero.`
+          : "La base actual no muestra clientes claramente inactivos en este momento.",
+        tone: "bg-slate-50 text-slate-900 ring-slate-200",
+        icon: "lightbulb",
+      },
+      {
+        title: "Cliente de mayor valor",
+        body: topCustomer
+          ? `${topCustomer.name} lidera la base con ${topCustomer.orderCount} pedido(s) y ${formatCOP(topCustomer.totalSpent)} acumulados. Conviene cuidarlo como referente de recurrencia.`
+          : "Aun no hay suficiente historial para detectar un cliente lider.",
+        tone: "bg-white text-slate-900 ring-slate-200",
+        icon: "sparkles",
+      },
+    ];
+  }, [customerInsights]);
+
+  const customerDecisionSummary = useMemo(() => {
+    if (customerSummary.debtors > 0) {
+      return `${customerSummary.debtors} cliente(s) con deuda y ${customerSummary.inactive} por reactivar ya requieren seguimiento comercial ordenado.`;
+    }
+
+    if (customerSummary.activeWallets > 0) {
+      return `${customerSummary.activeWallets} cliente(s) mantienen ticketera activa y la vista principal queda enfocada en operar sin saturarse de recomendaciones.`;
+    }
+
+    return "El modulo queda enfocado en historial, segmentacion y acciones comerciales visibles desde un solo panel secundario.";
+  }, [customerSummary.activeWallets, customerSummary.debtors, customerSummary.inactive]);
+
+  useEffect(() => {
+    publishSectionInsights("clients", {
+      eyebrow: "Clientes",
+      title: "Seguimiento comercial y recompra",
+      summary: customerDecisionSummary,
+      items: customerDecisionItems,
+    });
+
+    return () => clearSectionInsights("clients");
+  }, [
+    clearSectionInsights,
+    customerDecisionItems,
+    customerDecisionSummary,
+    publishSectionInsights,
+  ]);
 
   const filteredCustomers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -244,7 +313,7 @@ export default function CustomerManager({ businessId }) {
   return (
     <section className="space-y-6">
       <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-        <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Clientes</h2>
             <p className="text-sm text-slate-500">
@@ -252,14 +321,18 @@ export default function CustomerManager({ businessId }) {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] xl:min-w-[620px]">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar cliente..."
-              className="rounded-2xl bg-white px-4 py-2.5 text-sm outline-none ring-1 ring-slate-200"
+              className="min-w-0 rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
             />
-            <div className="inline-flex rounded-2xl bg-slate-100 p-1 ring-1 ring-slate-200">
+            <div
+              className={`inline-flex rounded-2xl bg-slate-100 p-1 ring-1 ring-slate-200 ${
+                isCompactLayout ? "hidden" : ""
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setViewMode("cards")}
@@ -282,7 +355,7 @@ export default function CustomerManager({ businessId }) {
                 setForm(EMPTY_CUSTOMER_FORM);
                 setIsModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
             >
               <Plus size={16} />
               Nuevo cliente
@@ -309,6 +382,40 @@ export default function CustomerManager({ businessId }) {
           </article>
         </div>
 
+        <div className="mb-5 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Centro de decisiones
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{customerDecisionSummary}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                className={`inline-flex items-center rounded-full px-3 py-2 text-xs font-semibold ${
+                  customerDecisionItems.length > 0
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {customerDecisionItems.length} lectura{customerDecisionItems.length === 1 ? "" : "s"} activa{customerDecisionItems.length === 1 ? "" : "s"}
+              </div>
+              <button
+                type="button"
+                onClick={openDecisionCenter}
+                disabled={customerDecisionItems.length === 0}
+                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                  customerDecisionItems.length > 0
+                    ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                }`}
+              >
+                Ver panel
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="mb-5 flex flex-wrap gap-2">
           {FILTERS.map((filter) => (
             <button
@@ -327,20 +434,20 @@ export default function CustomerManager({ businessId }) {
         </div>
 
         {viewMode === "cards" ? (
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-4 2xl:grid-cols-2">
             {filteredCustomers.map((customer) => (
               <article
                 key={customer.id}
                 className="rounded-[28px] bg-slate-50 p-5 shadow-lg ring-1 ring-slate-200"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
                     <h3 className="text-lg font-semibold text-slate-900">{customer.name}</h3>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 break-words text-sm text-slate-500">
                       {customer.phone || "Sin telefono"} {customer.email ? `· ${customer.email}` : ""}
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
+                  <div className="flex flex-wrap gap-2 md:max-w-[280px] md:justify-end">
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${customer.segment.tone}`}>
                       {customer.segment.label}
                     </span>
@@ -353,7 +460,7 @@ export default function CustomerManager({ businessId }) {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-4">
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                   <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Pedidos</p>
                     <p className="mt-2 font-semibold text-slate-900">{customer.orderCount}</p>
@@ -384,13 +491,6 @@ export default function CustomerManager({ businessId }) {
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-2xl bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4 ring-1 ring-slate-200">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Siguiente accion comercial
-                  </p>
-                  <p className="mt-2 text-sm font-medium text-slate-800">{customer.nextAction}</p>
-                </div>
-
                 <div className="mt-5 rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                     Historial reciente
@@ -398,12 +498,12 @@ export default function CustomerManager({ businessId }) {
                   <div className="mt-3 space-y-2">
                     {customer.history.length ? (
                       customer.history.map((sale) => (
-                        <div key={sale.id} className="flex items-center justify-between gap-3 text-sm">
-                          <div>
+                        <div key={sale.id} className="flex flex-col gap-2 border-b border-slate-100 pb-2 text-sm last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
                             <p className="font-medium text-slate-800">
                               {sale.table_name || sale.table_id || "Mesa"}
                             </p>
-                            <p className="text-xs text-slate-500">
+                            <p className="truncate text-xs text-slate-500">
                               {(sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ")}
                             </p>
                           </div>
@@ -453,7 +553,6 @@ export default function CustomerManager({ businessId }) {
                   <th className="py-3 pr-4">Ticketera</th>
                   <th className="py-3 pr-4">Deuda</th>
                   <th className="py-3 pr-4">Ultima compra</th>
-                  <th className="py-3 pr-4">Siguiente accion</th>
                   <th className="py-3 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -477,7 +576,6 @@ export default function CustomerManager({ businessId }) {
                         ? customer.lastPurchaseDate.toLocaleDateString("es-CO")
                         : "Sin compras"}
                     </td>
-                    <td className="py-3 pr-4 text-slate-600">{customer.nextAction}</td>
                     <td className="py-3 text-right">
                       <div className="flex justify-end gap-2">
                         <button

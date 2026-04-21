@@ -142,6 +142,89 @@ export default function PurchaseManager({
   };
 
   const selectedSupplier = safeSuppliers.find((item) => item.id === header.supplierId);
+  const supplierPurchaseHistory = useMemo(() => {
+    if (!header.supplierId) {
+      return {
+        purchasesCount: 0,
+        totalBought: 0,
+        lastPurchaseDate: "",
+      };
+    }
+
+    const linkedPurchases = safePurchases.filter(
+      (purchase) => purchase.supplier_id === header.supplierId
+    );
+
+    return {
+      purchasesCount: linkedPurchases.length,
+      totalBought: linkedPurchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0),
+      lastPurchaseDate: linkedPurchases[0]?.purchase_date || "",
+    };
+  }, [header.supplierId, safePurchases]);
+  const purchaseFlowInsights = useMemo(() => {
+    const paymentTerm = String(
+      selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado"
+    ).trim();
+
+    return [
+      {
+        title: "Impacto en abastecimiento",
+        body:
+          draftImpact.newSupplies > 0
+            ? `Esta compra crearia ${draftImpact.newSupplies} insumo(s) nuevo(s) y actualizaria stock inmediato para ${draftImpact.lineCount} linea(s).`
+            : `Esta compra reforzaria stock en ${draftImpact.lineCount} linea(s) ya conectadas al inventario.`,
+      },
+      {
+        title: "Impacto en costeo",
+        body:
+          draftImpact.affectedRecipeCount > 0
+            ? `${draftImpact.affectedRecipeCount} ficha(s) tecnica(s) quedarian expuestas a nuevo costo promedio despues del registro.`
+            : "No hay fichas tecnicas conectadas a estos insumos todavia. El siguiente paso deberia ser costear esa relacion.",
+      },
+      {
+        title: "Impacto en caja",
+        body:
+          paymentTerm.toLowerCase() === "credito"
+            ? "El proveedor opera a credito. Registra la compra con disciplina porque el gasto afecta analisis del periodo aunque no salga efectivo hoy."
+            : "El proveedor opera de contado. Esta compra presiona caja desde el momento del registro y conviene cruzarla con el cierre del turno.",
+      },
+    ];
+  }, [draftImpact, selectedSupplier]);
+  const purchaseRecommendations = useMemo(() => {
+    return safeSupplies
+      .map((supply) => {
+        const stock = Number(supply.stock || 0);
+        const min = Number(supply.stock_min_alert || 0);
+        const deficit = Math.max(min - stock, 0);
+        const linkedRecipes = safeRecipeBooks.filter((recipeBook) =>
+          (recipeBook.ingredients || []).some((ingredient) => ingredient.ingredient_id === supply.id)
+        ).length;
+        const urgency = stock <= 0 ? 3 : stock <= min ? 2 : stock <= min * 1.15 ? 1 : 0;
+
+        return {
+          id: supply.id,
+          name: supply.name || "Insumo sin nombre",
+          deficit,
+          unit: supply.unit || "und",
+          linkedRecipes,
+          urgency,
+          averageCost: Number(
+            supply.last_purchase_cost ?? supply.average_cost ?? supply.cost_per_unit ?? 0
+          ),
+        };
+      })
+      .filter((supply) => supply.urgency > 0)
+      .sort((a, b) => {
+        if (b.urgency !== a.urgency) {
+          return b.urgency - a.urgency;
+        }
+        if (b.linkedRecipes !== a.linkedRecipes) {
+          return b.linkedRecipes - a.linkedRecipes;
+        }
+        return b.deficit - a.deficit;
+      })
+      .slice(0, 4);
+  }, [safeRecipeBooks, safeSupplies]);
 
   const handleNextStep = () => {
     if (!header.supplierId) {
@@ -247,9 +330,62 @@ export default function PurchaseManager({
               </p>
             </div>
           </div>
+
+          <div className="mt-4 rounded-[22px] bg-white px-4 py-4 ring-1 ring-slate-200">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+              Prioridades de reposicion
+            </p>
+            <div className="mt-3 space-y-3">
+              {purchaseRecommendations.length ? (
+                purchaseRecommendations.map((supply) => (
+                  <article
+                    key={supply.id}
+                    className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{supply.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {supply.linkedRecipes > 0
+                            ? `${supply.linkedRecipes} ficha(s) tecnica(s) dependen de este insumo.`
+                            : "Aun no esta conectado a fichas tecnicas."}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
+                        Falta {supply.deficit > 0 ? `${supply.deficit} ${supply.unit}` : "stock"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Ultimo costo de referencia: {formatCOP(supply.averageCost)}
+                    </p>
+                  </article>
+                ))
+              ) : (
+                <p className="text-sm leading-6 text-slate-500">
+                  No hay alertas inmediatas de reposicion. Puedes usar este espacio para validar si la siguiente compra sera preventiva o reactiva.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="overflow-x-auto rounded-[28px] bg-slate-50 p-4 ring-1 ring-slate-200">
+        <div className="grid gap-4">
+          <div className="grid gap-4 xl:grid-cols-3">
+            {purchaseFlowInsights.map((insight) => (
+              <article
+                key={insight.title}
+                className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Flujo de compra
+                </p>
+                <h3 className="mt-2 text-base font-semibold text-slate-900">{insight.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{insight.body}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto rounded-[28px] bg-slate-50 p-4 ring-1 ring-slate-200">
           <table className="min-w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-slate-500">
               <tr>
@@ -276,6 +412,7 @@ export default function PurchaseManager({
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
 
@@ -327,6 +464,46 @@ export default function PurchaseManager({
                   setHeader((current) => ({ ...current, invoiceNumber: event.target.value }))
                 }
               />
+
+              {selectedSupplier ? (
+                <div className="md:col-span-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Proveedor seleccionado
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900">
+                        {selectedSupplier.name}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Plazo: {selectedSupplier.payment_terms || selectedSupplier.paymentTerms || "Contado"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Historial con este proveedor
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900">
+                        {supplierPurchaseHistory.purchasesCount} compra{supplierPurchaseHistory.purchasesCount === 1 ? "" : "s"}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Ultima: {supplierPurchaseHistory.lastPurchaseDate || "Sin historial"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Volumen historico
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900">
+                        {formatCOP(supplierPurchaseHistory.totalBought)}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Te ayuda a decidir si esta compra sostiene caja o credito.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : (
             <section className="grid gap-4">
@@ -337,6 +514,10 @@ export default function PurchaseManager({
                   </p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">
                     {selectedSupplier?.name || "Sin proveedor"}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado"} · Ultima compra{" "}
+                    {supplierPurchaseHistory.lastPurchaseDate || "sin historial"}
                   </p>
                 </div>
                 <button
