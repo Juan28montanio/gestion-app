@@ -63,6 +63,23 @@ export default function SupplierManager({
   const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
   const safePurchases = Array.isArray(purchases) ? purchases : [];
   const safeCategoryOptions = Array.isArray(categoryOptions) ? categoryOptions : [];
+  const supplierSummary = useMemo(() => {
+    const supplierIdsWithPurchases = new Set(
+      safePurchases.map((purchase) => purchase.supplier_id).filter(Boolean)
+    );
+
+    return {
+      total: safeSuppliers.length,
+      withRecentFlow: safeSuppliers.filter((supplier) => supplierIdsWithPurchases.has(supplier.id)).length,
+      creditTerms: safeSuppliers.filter(
+        (supplier) =>
+          String(supplier.payment_terms || supplier.paymentTerms || "Contado").toLowerCase() === "credito"
+      ).length,
+      withoutContact: safeSuppliers.filter(
+        (supplier) => !String(supplier.mobile || supplier.phone || supplier.email || "").trim()
+      ).length,
+    };
+  }, [safePurchases, safeSuppliers]);
 
   const supplierSpend = useMemo(() => {
     return safePurchases.reduce((acc, purchase) => {
@@ -151,7 +168,7 @@ export default function SupplierManager({
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Proveedores</h2>
           <p className="text-sm text-slate-500">
-            Registra a quien le compras y mantén datos de contacto útiles para operación y cartera.
+            Manten un directorio claro para comprar mejor, negociar plazos y no perder seguimiento.
           </p>
         </div>
 
@@ -261,9 +278,28 @@ export default function SupplierManager({
         maxWidthClass="max-w-4xl"
         icon={{ main: <Building2 size={20} />, close: <X size={18} /> }}
         title={editingId ? "Editar proveedor" : "Nuevo proveedor"}
-        description="Organiza el directorio de proveedores con categorias y datos de contacto completos."
+        description="Registra solo los datos que realmente ayudan a comprar, contactar y controlar plazos sin friccion."
       >
         <form onSubmit={handleSubmit} className="grid gap-6">
+          <section className="grid gap-3 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Flujo recomendado
+            </p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                <p className="text-sm font-semibold text-slate-900">1. Identifica al proveedor</p>
+                <p className="mt-1 text-sm text-slate-500">Nombre, categoria y plazo de pago.</p>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                <p className="text-sm font-semibold text-slate-900">2. Define el canal util</p>
+                <p className="mt-1 text-sm text-slate-500">Celular, correo o ambos para resolver rápido.</p>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                <p className="text-sm font-semibold text-slate-900">3. Guarda lo minimo valioso</p>
+                <p className="mt-1 text-sm text-slate-500">Evita llenar campos que luego nadie consulta.</p>
+              </div>
+            </div>
+          </section>
           <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
             <div>
               <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -274,6 +310,7 @@ export default function SupplierManager({
             <div className="grid gap-4 md:grid-cols-2">
               <FormInput
                 label="Nombre o razon social"
+                labelNote="Clave"
                 required
                 value={form.name}
                 onChange={(event) =>
@@ -282,6 +319,7 @@ export default function SupplierManager({
               />
               <FormInput
                 label="NIT"
+                labelNote="Opcional"
                 value={form.nit}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, nit: event.target.value }))
@@ -292,6 +330,7 @@ export default function SupplierManager({
             <div className="grid gap-4 md:grid-cols-[1fr_auto]">
               <FormSelect
                 label="Categoria"
+                labelNote="Clasifica"
                 value={form.category}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, category: event.target.value }))
@@ -311,6 +350,7 @@ export default function SupplierManager({
 
             <FormSelect
               label="Plazo de pago"
+              labelNote="Caja"
               value={form.paymentTerms}
               onChange={(event) =>
                 setForm((current) => ({ ...current, paymentTerms: event.target.value }))
@@ -329,6 +369,7 @@ export default function SupplierManager({
             <div className="grid gap-4 md:grid-cols-2">
               <FormInput
                 label="Contacto principal"
+                labelNote="Operacion"
                 value={form.contactName}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, contactName: event.target.value }))
@@ -336,6 +377,7 @@ export default function SupplierManager({
               />
               <FormInput
                 label="Celular"
+                labelNote="Rapido"
                 value={form.mobile}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, mobile: event.target.value }))
@@ -350,6 +392,7 @@ export default function SupplierManager({
               />
               <FormInput
                 label="Correo"
+                labelNote="Soporte"
                 type="email"
                 value={form.email}
                 onChange={(event) =>
@@ -359,6 +402,7 @@ export default function SupplierManager({
               <FormInput
                 className="md:col-span-2"
                 label="Direccion"
+                labelNote="Logistica"
                 value={form.address}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, address: event.target.value }))

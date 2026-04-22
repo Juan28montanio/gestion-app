@@ -49,6 +49,7 @@ import {
   buildProductForm,
   buildProductModalMetrics,
   buildResourceActionQueue,
+  buildResourceDecisionItems,
   buildResourceDecisionSummary,
   buildResourceFlowInsights,
   buildResourceStats,
@@ -158,6 +159,18 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       return acc;
     }, {});
   }, [recipeBooks]);
+  const recipeImpactBySupply = useMemo(() => {
+    return recipeBooks.reduce((acc, recipeBook) => {
+      (recipeBook.ingredients || []).forEach((ingredient) => {
+        if (!ingredient.ingredient_id) {
+          return;
+        }
+
+        acc[ingredient.ingredient_id] = (acc[ingredient.ingredient_id] || 0) + 1;
+      });
+      return acc;
+    }, {});
+  }, [recipeBooks]);
 
   const productCategories = useMemo(
     () => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(),
@@ -219,20 +232,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     [purchases, recipeBooks, supplies]
   );
   const resourceDecisionItems = useMemo(
-    () => [
-      ...resourceFlowInsights.map((insight) => ({
-        title: insight.title,
-        body: insight.body,
-        tone: "bg-white text-slate-900 ring-slate-200",
-        icon: "sparkles",
-      })),
-      ...resourceActionQueue.map((item) => ({
-        title: `${item.title} · ${item.value}`,
-        body: item.hint,
-        tone: item.tone,
-        icon: "lightbulb",
-      })),
-    ],
+    () => buildResourceDecisionItems(resourceFlowInsights, resourceActionQueue),
     [resourceActionQueue, resourceFlowInsights]
   );
   const resourceDecisionSummary = useMemo(() => buildResourceDecisionSummary(supplies), [supplies]);
@@ -432,7 +432,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">Centro de recursos</h2>
                 <p className="text-sm text-slate-500">
-                  Separa el catalogo comercial de los insumos, compras y fichas tecnicas.
+                  Organiza abastecimiento, compras y costeo sin mezclar el catalogo comercial.
                 </p>
               </div>
               <div className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -643,6 +643,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                       const min = Number(supply.stock_min_alert || 0);
                       const missing = Math.max(min - stock, 0);
                       const latestPurchase = (priceHistoryBySupply[supply.id] || [])[0];
+                      const linkedRecipes = recipeImpactBySupply[supply.id] || 0;
 
                       return (
                         <article
@@ -659,6 +660,11 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                                 {missing > 0
                                   ? `Faltan ${missing} ${supply.unit} para volver al minimo.`
                                   : "Revisa el nivel actual para evitar quiebres de stock."}
+                              </p>
+                              <p className="mt-2 text-sm text-slate-500">
+                                {linkedRecipes > 0
+                                  ? `${linkedRecipes} ficha(s) dependen de este insumo.`
+                                  : "Aun no impacta fichas tecnicas conectadas."}
                               </p>
                             </div>
                             <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${status.classes}`}>
@@ -690,6 +696,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   const stock = Number(supply.stock || 0);
                   const min = Number(supply.stock_min_alert || 0);
                   const missing = Math.max(min - stock, 0);
+                  const linkedRecipes = recipeImpactBySupply[supply.id] || 0;
 
                   return (
                     <article
@@ -727,6 +734,14 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Minimo</p>
                           <p className="mt-2 font-semibold text-slate-900">
                             {supply.stock_min_alert || 0} {supply.unit}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200 sm:col-span-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Uso en recetas</p>
+                          <p className="mt-2 font-semibold text-slate-900">
+                            {linkedRecipes > 0
+                              ? `${linkedRecipes} ficha(s) dependen de este insumo`
+                              : "Todavia no afecta fichas tecnicas conectadas"}
                           </p>
                         </div>
                       </div>
@@ -814,7 +829,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
 
                   {spendByCategory.length === 0 ? (
                     <p className="text-sm text-slate-500">
-                      Carga compras para ver la distribucion del presupuesto por categoria.
+                      Registra compras para ver la distribucion real del presupuesto por categoria.
                     </p>
                   ) : null}
                 </div>
@@ -882,7 +897,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               >
                 <PackagePlus size={24} />
                 <p className="mt-3 text-base font-semibold text-slate-700">Crea tu primer producto</p>
-                <p className="mt-1 text-sm">Empieza tu catálogo comercial con una ficha limpia.</p>
+                <p className="mt-1 text-sm">Empieza tu catalogo comercial con una ficha limpia.</p>
               </button>
             ) : null}
             {products.map((product) => {
@@ -1258,21 +1273,45 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         description="Registra materias primas con campos claros y una edicion comoda en cualquier tamano de pantalla."
       >
         <form onSubmit={handleSupplySubmit} className="grid gap-6">
+          <section className="grid gap-3 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Flujo recomendado
+            </p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                <p className="text-sm font-semibold text-slate-900">1. Nombra para encontrar rapido</p>
+                <p className="mt-1 text-sm text-slate-500">Usa el mismo nombre con que compras y costea el equipo.</p>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                <p className="text-sm font-semibold text-slate-900">2. Define una unidad unica</p>
+                <p className="mt-1 text-sm text-slate-500">Evita duplicados con gramos, kilos o unidades mezcladas.</p>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                <p className="text-sm font-semibold text-slate-900">3. Deja listo el control</p>
+                <p className="mt-1 text-sm text-slate-500">Minimo y costo base permiten leer riesgo antes del cierre.</p>
+              </div>
+            </div>
+          </section>
+
           <div className="grid gap-4 md:grid-cols-2">
             <FormInput
               label="Nombre"
+              labelNote="Clave"
               required
               value={supplyForm.name}
               onChange={(event) => setSupplyForm((current) => ({ ...current, name: event.target.value }))}
+              hint="Usa el nombre con el que luego lo buscaras en compras y fichas."
             />
             <div className="grid gap-2">
               <FormSelect
                 label="Categoria"
+                labelNote="Lectura"
                 value={supplyForm.category}
                 onChange={(event) =>
                   setSupplyForm((current) => ({ ...current, category: event.target.value }))
                 }
                 options={ingredientCategoryOptions}
+                hint="Ayuda a ordenar compras y presupuesto por tipo de abastecimiento."
               />
               <button
                 type="button"
@@ -1312,6 +1351,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <FormSelect
               label="Unidad"
+              labelNote="Base"
               value={supplyForm.unit}
               onChange={(event) => setSupplyForm((current) => ({ ...current, unit: event.target.value }))}
               selectClassName="bg-[#fff7df] font-semibold text-[#946200] ring-[#d4a72c]/30"
@@ -1325,6 +1365,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
             </FormSelect>
             <FormInput
               label="Stock"
+              labelNote="Actual"
               type="number"
               min="0"
               step="0.01"
@@ -1333,6 +1374,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
             />
             <FormInput
               label="Stock minimo"
+              labelNote="Alerta"
               type="number"
               min="0"
               step="0.01"
@@ -1343,6 +1385,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
             />
             <FormInput
               label="Costo unidad"
+              labelNote="Referencia"
               type="number"
               min="0"
               step="0.01"

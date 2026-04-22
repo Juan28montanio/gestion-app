@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { ClipboardList, Plus, Settings2, Trash2, X } from "lucide-react";
 import { createPurchase } from "../services/purchaseService";
 import FormInput from "./FormInput";
@@ -26,6 +26,41 @@ const EMPTY_ITEM = {
 
 function buildSupplyMap(supplies) {
   return new Map(supplies.map((supply) => [supply.id, supply]));
+}
+
+function getEstimatedUnitCost(item) {
+  const quantity = Number(item.quantity || 0);
+  const lineTotal = Number(item.lineTotal || 0);
+
+  if (!quantity || !lineTotal) {
+    return 0;
+  }
+
+  return lineTotal / quantity;
+}
+
+function getPurchaseItemHeading(item) {
+  if (item.ingredientId) {
+    return "Insumo vinculado al inventario";
+  }
+
+  if (item.manualName) {
+    return "Nuevo insumo por crear";
+  }
+
+  return "Define el insumo de esta linea";
+}
+
+function getPurchaseItemStatus(item) {
+  const hasIdentity = Boolean(item.ingredientId || String(item.manualName || "").trim());
+  const hasCoreData = Number(item.quantity || 0) > 0 && Number(item.lineTotal || 0) > 0;
+
+  return {
+    title: hasIdentity ? "Linea identificada" : "Falta definir insumo",
+    body: hasCoreData
+      ? "Ya tiene datos suficientes para impactar inventario y costo."
+      : "Completa cantidad y valor para dejar la linea lista.",
+  };
 }
 
 export default function PurchaseManager({
@@ -298,6 +333,21 @@ export default function PurchaseManager({
         </button>
       </div>
 
+      <div className="mb-6 grid gap-3 md:grid-cols-3">
+        <article className="rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
+          <p className="text-sm font-semibold text-slate-900">Primero proveedor, luego factura</p>
+          <p className="mt-1 text-sm text-slate-500">Esto evita cargar items sin contexto comercial ni plazo.</p>
+        </article>
+        <article className="rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
+          <p className="text-sm font-semibold text-slate-900">Usa insumo existente cuando ya exista</p>
+          <p className="mt-1 text-sm text-slate-500">Asi el stock y el costo promedio quedan conectados de inmediato.</p>
+        </article>
+        <article className="rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
+          <p className="text-sm font-semibold text-slate-900">Registra el valor final por item</p>
+          <p className="mt-1 text-sm text-slate-500">Es la base para presupuesto, costeo y cierres consistentes.</p>
+        </article>
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
         <div className="rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
@@ -434,10 +484,12 @@ export default function PurchaseManager({
               <FormSelect
                 className="md:col-span-2"
                 label="Proveedor"
+                labelNote="Obligatorio"
                 value={header.supplierId}
                 onChange={(event) =>
                   setHeader((current) => ({ ...current, supplierId: event.target.value }))
                 }
+                required
               >
                 <option value="">Seleccionar proveedor</option>
                 {safeSuppliers.map((supplier) => (
@@ -449,6 +501,7 @@ export default function PurchaseManager({
 
               <FormInput
                 label="Fecha"
+                labelNote="Periodo"
                 type="date"
                 value={header.purchaseDate}
                 onChange={(event) =>
@@ -459,10 +512,12 @@ export default function PurchaseManager({
               <FormInput
                 className="md:col-span-3"
                 label="No. factura"
+                labelNote="Control"
                 value={header.invoiceNumber}
                 onChange={(event) =>
                   setHeader((current) => ({ ...current, invoiceNumber: event.target.value }))
                 }
+                hint="Dejalo vacio solo si compras sin documento formal."
               />
 
               {selectedSupplier ? (
@@ -531,119 +586,231 @@ export default function PurchaseManager({
               </div>
 
               <div className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-                <div className="hidden gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 xl:grid xl:grid-cols-[1fr_1fr_0.65fr_0.45fr_0.7fr_0.75fr_auto]">
-                  <span>Insumo existente</span>
-                  <span>Nuevo insumo</span>
-                  <span>Cantidad</span>
-                  <span>Unidad</span>
-                  <span>Categoria</span>
-                  <span>Valor total</span>
-                  <span />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Items de la compra
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Carga cada linea como una decision completa: que entra, en que unidad y cuanto impacta.
+                    </p>
+                  </div>
+                  <div className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                    {items.length} item{items.length === 1 ? "" : "s"} en edicion
+                  </div>
                 </div>
 
-                <div className="mt-4 grid gap-3">
-                  {items.map((item, index) => (
-                    <div
+                <div className="mt-4 grid gap-4">
+                  {items.map((item, index) => {
+                    const itemStatus = getPurchaseItemStatus(item);
+
+                    return (
+                    <article
                       key={`purchase-item-${index}`}
-                      className="grid gap-3 rounded-[24px] bg-white p-4 ring-1 ring-slate-200 xl:grid-cols-[1fr_1fr_0.65fr_0.45fr_0.7fr_0.75fr_auto]"
+                      className="min-w-0 rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200"
                     >
-                      <FormSelect
-                        label="Insumo existente"
-                        value={item.ingredientId}
-                        onChange={(event) =>
-                          updateItemRow(index, { ingredientId: event.target.value })
-                        }
-                      >
-                        <option value="">Seleccionar insumo</option>
-                        {safeSupplies.map((supply) => (
-                          <option key={supply.id} value={supply.id}>
-                            {supply.name}
-                          </option>
-                        ))}
-                      </FormSelect>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            Item {index + 1}
+                          </p>
+                          <h4 className="mt-1 break-words text-base font-semibold text-slate-900">
+                            {getPurchaseItemHeading(item)}
+                          </h4>
+                          <p className="mt-1 text-sm text-slate-500">
+                            Primero identifica el insumo, luego completa unidad, categoria y valor de factura.
+                          </p>
+                        </div>
 
-                      <FormInput
-                        label="Nuevo insumo"
-                        value={item.manualName}
-                        onChange={(event) =>
-                          updateItemRow(index, {
-                            ingredientId: "",
-                            manualName: event.target.value,
-                          })
-                        }
-                        hint="Si no existe, se crea automaticamente."
-                      />
-
-                      <FormInput
-                        label="Cantidad"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.quantity}
-                        onChange={(event) => updateItemRow(index, { quantity: event.target.value })}
-                      />
-
-                      <FormSelect
-                        label="Unidad"
-                        value={item.unit}
-                        onChange={(event) => updateItemRow(index, { unit: event.target.value })}
-                      >
-                        {SUPPLY_UNITS.map((unit) => (
-                          <option key={unit} value={unit}>
-                            {unit}
-                          </option>
-                        ))}
-                      </FormSelect>
-
-                      <FormSelect
-                        label="Categoria"
-                        value={item.category}
-                        onChange={(event) => updateItemRow(index, { category: event.target.value })}
-                        options={safeCategoryOptions}
-                      />
-
-                      <div className="grid gap-3">
-                        <FormInput
-                          label="Valor total item"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={item.lineTotal}
-                          onChange={(event) => updateItemRow(index, { lineTotal: event.target.value })}
-                          hint="Usa el valor final que trae la factura."
-                        />
-
-                        <label className="flex items-center gap-2 text-sm text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={item.applyIva}
-                            onChange={(event) => updateItemRow(index, { applyIva: event.target.checked })}
-                            className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                          />
-                          IVA separado
-                        </label>
-
-                        {item.applyIva ? (
-                          <FormInput
-                            label="IVA %"
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={item.ivaPct}
-                            onChange={(event) => updateItemRow(index, { ivaPct: event.target.value })}
-                          />
-                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => removeItemRow(index)}
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => removeItemRow(index)}
-                        className="mt-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))}
+                      <div className="mt-5 grid gap-4 2xl:grid-cols-[1.1fr_0.9fr]">
+                        <section className="min-w-0 grid gap-4 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              Identificacion del insumo
+                            </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Usa un insumo existente cuando ya exista. Crea uno nuevo solo si realmente falta.
+                            </p>
+                          </div>
+
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <FormSelect
+                              label="Insumo existente"
+                              labelNote="Recomendado"
+                              className="min-w-0"
+                              value={item.ingredientId}
+                              onChange={(event) =>
+                                updateItemRow(index, { ingredientId: event.target.value })
+                              }
+                              hint="Conecta stock y costo promedio desde el inventario."
+                            >
+                              <option value="">Seleccionar insumo</option>
+                              {safeSupplies.map((supply) => (
+                                <option key={supply.id} value={supply.id}>
+                                  {supply.name}
+                                </option>
+                              ))}
+                            </FormSelect>
+
+                            <FormInput
+                              label="Nuevo insumo"
+                              labelNote="Si falta"
+                              className="min-w-0"
+                              value={item.manualName}
+                              onChange={(event) =>
+                                updateItemRow(index, {
+                                  ingredientId: "",
+                                  manualName: event.target.value,
+                                })
+                              }
+                              hint="Si no existe, se crea automaticamente al guardar."
+                            />
+                          </div>
+                        </section>
+
+                        <section className="min-w-0 grid gap-4 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              Detalle operativo
+                            </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Define como entra el insumo para mantener compras, recetas e inventario alineados.
+                            </p>
+                          </div>
+
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            <FormInput
+                              label="Cantidad"
+                              labelNote="Base"
+                              className="min-w-0"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.quantity}
+                              onChange={(event) => updateItemRow(index, { quantity: event.target.value })}
+                            />
+
+                            <FormSelect
+                              label="Unidad"
+                              labelNote="Consistente"
+                              className="min-w-0"
+                              value={item.unit}
+                              onChange={(event) => updateItemRow(index, { unit: event.target.value })}
+                            >
+                              {SUPPLY_UNITS.map((unit) => (
+                                <option key={unit} value={unit}>
+                                  {unit}
+                                </option>
+                              ))}
+                            </FormSelect>
+
+                            <FormSelect
+                              label="Categoria"
+                              labelNote="Lectura"
+                              className="min-w-0"
+                              value={item.category}
+                              onChange={(event) => updateItemRow(index, { category: event.target.value })}
+                              options={safeCategoryOptions}
+                            />
+                          </div>
+                        </section>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 2xl:grid-cols-[0.95fr_0.6fr_0.45fr]">
+                        <section className="min-w-0 grid gap-4 rounded-[24px] bg-[#fffaf0] p-4 ring-1 ring-[#d4a72c]/20">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#946200]">
+                              Validacion economica
+                            </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              Usa el valor final del documento y deja que el sistema calcule una referencia por unidad.
+                            </p>
+                          </div>
+
+                          <div className="grid gap-4 xl:grid-cols-2">
+                            <FormInput
+                              label="Valor total item"
+                              labelNote="Factura"
+                              className="min-w-0"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.lineTotal}
+                              onChange={(event) => updateItemRow(index, { lineTotal: event.target.value })}
+                              hint="Usa el valor final que trae la factura."
+                            />
+
+                            <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-[#d4a72c]/20">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#946200]">
+                                Costo unitario estimado
+                              </p>
+                              <p className="mt-2 text-lg font-bold text-slate-950">
+                                {formatCOP(getEstimatedUnitCost(item))}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-500">
+                                Referencia rapida para validar si el valor quedo bien cargado.
+                              </p>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="min-w-0 grid gap-3 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            Impuesto
+                          </p>
+                          <label className="flex items-center gap-2 text-sm text-slate-600">
+                            <input
+                              type="checkbox"
+                              checked={item.applyIva}
+                              onChange={(event) => updateItemRow(index, { applyIva: event.target.checked })}
+                              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            IVA separado
+                          </label>
+
+                          {item.applyIva ? (
+                            <FormInput
+                              label="IVA %"
+                              labelNote="Opcional"
+                              className="min-w-0"
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={item.ivaPct}
+                              onChange={(event) => updateItemRow(index, { ivaPct: event.target.value })}
+                            />
+                          ) : (
+                            <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500 ring-1 ring-slate-200">
+                              Activalo solo si necesitas separar el impuesto del costo base del insumo.
+                            </div>
+                          )}
+                        </section>
+
+                        <section className="min-w-0 grid gap-3 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            Estado de la linea
+                          </p>
+                          <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+                            <p className="text-sm font-semibold text-slate-900">
+                              {itemStatus.title}
+                            </p>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {itemStatus.body}
+                            </p>
+                          </div>
+                        </section>
+                      </div>
+                    </article>
+                  )})}
                 </div>
               </div>
 
@@ -763,3 +930,4 @@ export default function PurchaseManager({
     </section>
   );
 }
+

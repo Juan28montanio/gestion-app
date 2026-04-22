@@ -3,6 +3,7 @@ import { useId } from "react";
 export default function FormInput({
   label,
   hint,
+  labelNote,
   className = "",
   inputClassName = "",
   readOnly = false,
@@ -19,7 +20,17 @@ export default function FormInput({
 
   return (
     <label className={`grid gap-2 text-sm text-slate-700 ${className}`} htmlFor={inputId}>
-      <span className="font-medium text-slate-700">{label}</span>
+      <span className="flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <span className="min-w-0 font-medium text-slate-700">
+          {label}
+          {props.required ? <span className="ml-1 text-rose-500">*</span> : null}
+        </span>
+        {labelNote ? (
+          <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400 sm:text-right">
+            {labelNote}
+          </span>
+        ) : null}
+      </span>
       {multiline ? (
         <textarea
           id={inputId}

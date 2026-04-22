@@ -334,7 +334,8 @@ export function buildSpendByCategory(purchases) {
   const totals = purchases.reduce((acc, purchase) => {
     (purchase.items || []).forEach((item) => {
       const key = item.category || "Sin categoria";
-      acc[key] = (acc[key] || 0) + Number(item.total_cost || 0);
+      acc[key] =
+        (acc[key] || 0) + Number(item.line_total ?? item.total_cost ?? item.total ?? 0);
     });
     return acc;
   }, {});
