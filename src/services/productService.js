@@ -14,6 +14,30 @@ import { db } from "../firebase/firebaseConfig";
 
 const productsCollection = collection(db, "products");
 
+function normalizePreparationItems(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item) => {
+      const preparationId = String(item?.preparation_id || item?.preparationId || "").trim();
+      const quantity = Number(item?.quantity);
+
+      if (!preparationId || !Number.isFinite(quantity) || quantity <= 0) {
+        return null;
+      }
+
+      return {
+        preparation_id: preparationId,
+        preparation_name: String(item?.preparation_name || item?.preparationName || "").trim(),
+        output_unit: String(item?.output_unit || item?.outputUnit || "").trim(),
+        quantity,
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeProductPayload(product, businessId) {
   const name = String(product?.name || "").trim();
   const category = String(product?.category || "").trim();
@@ -21,9 +45,13 @@ function normalizeProductPayload(product, businessId) {
   const stock = Number(product?.stock);
   const normalizedBusinessId = String(product?.business_id || businessId || "").trim();
   const productType = String(product?.product_type || product?.productType || "standard").trim();
+  const recipeMode = String(product?.recipe_mode || product?.recipeMode || "direct").trim();
   const ticketUnits = Number(product?.ticket_units ?? product?.ticketUnits ?? 0);
   const ticketValidityDays = Number(
     product?.ticket_validity_days ?? product?.ticketValidityDays ?? 30
+  );
+  const preparationItems = normalizePreparationItems(
+    product?.preparation_items ?? product?.preparationItems
   );
 
   if (!name) {
@@ -57,6 +85,8 @@ function normalizeProductPayload(product, businessId) {
     desired_margin_pct: Number(product?.desired_margin_pct ?? product?.desiredMarginPct) || 0,
     suggested_price: Number(product?.suggested_price ?? product?.suggestedPrice) || price,
     product_type: productType || "standard",
+    recipe_mode: recipeMode === "composed" ? "composed" : "direct",
+    preparation_items: recipeMode === "composed" ? preparationItems : [],
     ticket_eligible:
       product?.ticket_eligible === true ||
       product?.ticketEligible === true ||

@@ -1,5 +1,6 @@
 import { ReceiptText, ArrowUpCircle, ArrowDownCircle, Landmark, CreditCard, Wallet, Clock3, Store, Truck } from "lucide-react";
 import { formatCOP } from "../../utils/formatters";
+import { expenseAffectsCash, resolvePurchasePaymentMethod } from "../../utils/payments";
 
 export const RANGE_OPTIONS = [
   { value: "daily", label: "Diario" },
@@ -245,7 +246,13 @@ export function getMovementVisual(movement) {
   if (movement.type === "expense") {
     return {
       icon: Truck,
-      badge: "Compra",
+      badge:
+        resolvePurchasePaymentMethod(
+          movement.raw?.payment_method || movement.paymentMethod,
+          movement.raw?.supplier_payment_terms
+        ) === "supplier_credit"
+          ? "Compra a credito"
+          : "Compra",
       accent: "bg-rose-50 text-rose-700 ring-rose-200",
       iconWrap: "bg-rose-50 text-rose-600",
     };
@@ -457,12 +464,10 @@ export function buildCashPressureQueue({ purchases, receivableTotal, receivableC
   const purchaseCount = purchases.length;
   const purchaseTotal = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
   const creditPurchases = purchases.filter((purchase) => {
-    const paymentTerms = String(
-      purchase.supplier_payment_terms || purchase.raw?.supplier_payment_terms || "Contado"
-    )
-      .trim()
-      .toLowerCase();
-    return paymentTerms === "credito";
+    return resolvePurchasePaymentMethod(
+      purchase.payment_method || purchase.raw?.payment_method,
+      purchase.supplier_payment_terms || purchase.raw?.supplier_payment_terms
+    ) === "supplier_credit";
   }).length;
 
   return [
@@ -494,4 +499,171 @@ export function buildCashPressureQueue({ purchases, receivableTotal, receivableC
         : "bg-slate-50 text-slate-900 ring-slate-200",
     },
   ];
+}
+
+export function movementMatchesPaymentFilter(movement, selectedPaymentMethod, paymentMatcher) {
+  if (!selectedPaymentMethod || selectedPaymentMethod === "all") {
+    return true;
+  }
+
+  if (movement.type === "income") {
+    return paymentMatcher(
+      movement.paymentBreakdown,
+      selectedPaymentMethod,
+      movement.paymentMethod,
+      movement.amount
+    );
+  }
+
+  if (movement.source === "purchase") {
+    return (
+      resolvePurchasePaymentMethod(
+        movement.raw?.payment_method || movement.paymentMethod,
+        movement.raw?.supplier_payment_terms
+      ) === selectedPaymentMethod
+    );
+  }
+
+  return String(movement.paymentMethod || "").trim().toLowerCase() === selectedPaymentMethod;
+}
+
+export function summarizeCashExpenseImpact(movements) {
+  return movements.reduce(
+    (summary, movement) => {
+      if (movement.type !== "expense") {
+        return summary;
+      }
+
+      const impactsCash = expenseAffectsCash({
+        source: movement.source,
+        paymentMethod: movement.raw?.payment_method || movement.paymentMethod,
+        supplierPaymentTerms: movement.raw?.supplier_payment_terms,
+      });
+
+      if (!impactsCash) {
+        return summary;
+      }
+
+      summary.total += Number(movement.amount || 0);
+
+      if (movement.source === "purchase") {
+        summary.purchases += Number(movement.amount || 0);
+      } else {
+        summary.operating += Number(movement.amount || 0);
+      }
+
+      return summary;
+    },
+    { total: 0, purchases: 0, operating: 0 }
+  );
+}
+
+export function buildAccountsReceivable(sales = [], normalizeMovementDate) {
+  return sales
+    .filter((sale) => Number(sale.pending_debt_remaining ?? sale.debt_amount ?? 0) > 0)
+    .sort((left, right) => {
+      const leftTime =
+        normalizeMovementDate(left.closed_at || left.createdAt)?.getTime?.() || 0;
+      const rightTime =
+        normalizeMovementDate(right.closed_at || right.createdAt)?.getTime?.() || 0;
+      return rightTime - leftTime;
+    });
+}
+
+export function summarizeReceivables(accountsReceivable = []) {
+  return accountsReceivable.reduce(
+    (sum, sale) => sum + Number(sale.pending_debt_remaining ?? sale.debt_amount ?? 0),
+    0
+  );
+}
+
+export function buildClosingPreview({
+  openSession,
+  todayMovements,
+  cashCollected,
+  cashCounted,
+}) {
+  if (!openSession) {
+    return null;
+  }
+
+  const openingAmount = Number(openSession.opening_amount || 0);
+  const todayExpenses = todayMovements
+    .filter((movement) => movement.type === "expense")
+    .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const cashExpenseImpact = summarizeCashExpenseImpact(todayMovements);
+  const countedCashValue = Number(cashCounted || 0);
+  const expectedCash =
+    openingAmount + Number(cashCollected || 0) - Number(cashExpenseImpact.total || 0);
+
+  return {
+    openingAmount,
+    expectedCash,
+    countedCash: countedCashValue,
+    difference: countedCashValue - expectedCash,
+    expenses: todayExpenses,
+    cashExpenses: cashExpenseImpact.total,
+    cashPurchases: cashExpenseImpact.purchases,
+    cashOperatingExpenses: cashExpenseImpact.operating,
+    ticketWalletUnits: todayMovements.reduce(
+      (sum, movement) => sum + Number(movement.raw?.ticket_units_consumed || 0),
+      0
+    ),
+  };
+}
+
+export function buildClosingPurchaseSummary(todayMovements = [], incomeTotal = 0) {
+  const todayPurchases = todayMovements.filter((movement) => movement.source === "purchase");
+  const total = todayPurchases.reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+  const supplierTotals = todayPurchases.reduce((accumulator, movement) => {
+    const key = String(movement.raw?.supplier_name || movement.concept || "Sin proveedor").trim();
+    accumulator[key] = (accumulator[key] || 0) + Number(movement.amount || 0);
+    return accumulator;
+  }, {});
+  const topSupplier = Object.entries(supplierTotals).sort((a, b) => b[1] - a[1])[0];
+
+  return {
+    count: todayPurchases.length,
+    total,
+    sharePct: incomeTotal > 0 ? (total / incomeTotal) * 100 : null,
+    topSupplierName: topSupplier?.[0] || "",
+    topSupplierTotal: Number(topSupplier?.[1] || 0),
+  };
+}
+
+export function buildPaymentMethodCards({
+  filteredIncome = 0,
+  paymentMethodTotals = {},
+  previousFilteredIncome = 0,
+  previousFilteredMovements = [],
+  paymentMatcher,
+}) {
+  return ["all", "cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map(
+    (method) => {
+      const total = method === "all" ? filteredIncome : Number(paymentMethodTotals[method] || 0);
+      const previousTotal =
+        method === "all"
+          ? previousFilteredIncome
+          : previousFilteredMovements.reduce((sum, movement) => {
+              if (movement.type !== "income") {
+                return sum;
+              }
+
+              return paymentMatcher(
+                movement.paymentBreakdown,
+                method,
+                movement.paymentMethod,
+                movement.amount
+              )
+                ? sum + Number(movement.amount || 0)
+                : sum;
+            }, 0);
+
+      return {
+        method,
+        total,
+        variation: getVariation(total, previousTotal),
+      };
+    }
+  );
 }

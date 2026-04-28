@@ -11,8 +11,10 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { refreshPreparationsForIngredients } from "./preparationService";
 import { refreshRecipeBooksForIngredients } from "./recipeBookService";
 import { buildSupplySearchKey, listSupplies } from "./supplyService";
+import { resolvePurchasePaymentMethod } from "../utils/payments";
 
 const purchasesCollection = collection(db, "purchases");
 
@@ -97,6 +99,9 @@ function buildPurchasePayload(purchase, items) {
   const businessId = String(purchase?.business_id || purchase?.businessId || "").trim();
   const supplierId = String(purchase?.supplier_id || purchase?.supplierId || "").trim();
   const supplierName = String(purchase?.supplier_name || purchase?.supplierName || "").trim();
+  const supplierPaymentTerms = String(
+    purchase?.supplier_payment_terms || purchase?.supplierPaymentTerms || "Contado"
+  ).trim();
   const invoiceNumber = String(purchase?.invoice_number || purchase?.invoiceNumber || "").trim();
   const purchaseDate = String(purchase?.purchase_date || purchase?.purchaseDate || "").trim();
 
@@ -116,6 +121,11 @@ function buildPurchasePayload(purchase, items) {
     business_id: businessId,
     supplier_id: supplierId,
     supplier_name: supplierName,
+    supplier_payment_terms: supplierPaymentTerms || "Contado",
+    payment_method: resolvePurchasePaymentMethod(
+      purchase?.payment_method || purchase?.paymentMethod,
+      supplierPaymentTerms
+    ),
     invoice_number: invoiceNumber || `COMP-${Date.now()}`,
     purchase_date: purchaseDate,
     items,
@@ -292,7 +302,10 @@ export async function createPurchase(purchase) {
     return createdPurchaseRef.id;
   });
 
-  await refreshRecipeBooksForIngredients(payload.business_id, touchedIngredientIds);
+  await Promise.all([
+    refreshRecipeBooksForIngredients(payload.business_id, touchedIngredientIds),
+    refreshPreparationsForIngredients(payload.business_id, touchedIngredientIds),
+  ]);
   return createdPurchaseId;
 }
 

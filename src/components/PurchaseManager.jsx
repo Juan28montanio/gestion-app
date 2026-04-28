@@ -284,6 +284,8 @@ export default function PurchaseManager({
         business_id: businessId,
         supplier_id: header.supplierId,
         supplier_name: selectedSupplier?.name || "",
+        supplier_payment_terms:
+          selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado",
         invoice_number: header.invoiceNumber,
         purchase_date: header.purchaseDate,
         items: items.map((item) => {

@@ -7,6 +7,7 @@ export const PAYMENT_METHOD_LABELS = {
   daviplata: "Daviplata",
   ticket_wallet: "Tiquetera",
   account_credit: "Cuenta por cobrar",
+  supplier_credit: "Credito proveedor",
   split: "Pago dividido",
   expense: "Compra",
 };
@@ -25,6 +26,25 @@ export function createEmptyPaymentTotals() {
 function normalizeMethod(method) {
   const normalized = String(method || "").trim().toLowerCase();
   return normalized || "cash";
+}
+
+export function resolvePurchasePaymentMethod(paymentMethod, supplierPaymentTerms = "") {
+  const normalizedMethod = normalizeMethod(paymentMethod);
+
+  if (normalizedMethod && normalizedMethod !== "expense") {
+    return normalizedMethod;
+  }
+
+  const normalizedTerms = String(supplierPaymentTerms || "").trim().toLowerCase();
+  return normalizedTerms === "credito" ? "supplier_credit" : "cash";
+}
+
+export function expenseAffectsCash({ source, paymentMethod, supplierPaymentTerms } = {}) {
+  if (source === "purchase") {
+    return resolvePurchasePaymentMethod(paymentMethod, supplierPaymentTerms) === "cash";
+  }
+
+  return normalizeMethod(paymentMethod) === "cash";
 }
 
 function roundCurrency(value) {

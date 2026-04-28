@@ -331,6 +331,7 @@ function AppShellContent() {
                       businessId={businessId}
                       selectedTable={selectedTable}
                       onSelectTable={setSelectedTable}
+                      onOpenCatalog={() => setActiveSection("inventory")}
                       onOrderPaid={() => setSelectedTable(null)}
                       onOrderCancelled={() => {
                         notify("La orden fue cancelada y la mesa quedo libre.");

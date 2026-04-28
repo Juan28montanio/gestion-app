@@ -15,8 +15,11 @@ import { db } from "../firebase/firebaseConfig";
 import {
   accumulatePaymentBreakdown,
   createEmptyPaymentTotals,
+  expenseAffectsCash,
   PAYMENT_METHOD_LABELS,
+  resolvePurchasePaymentMethod,
 } from "../utils/payments";
+import { buildOperationalSaleItemDetail } from "../utils/sales";
 
 const cashClosingsCollection = collection(db, "cash_closings");
 const salesHistoryCollection = collection(db, "sales_history");
@@ -361,13 +364,28 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
   );
   const totalExpenses = purchaseExpensesTotal + operatingExpensesTotal;
   const purchaseSummary = buildPurchaseSummary(relevantPurchases, totalSales);
+  const cashPurchaseExpenses = relevantPurchases.reduce((sum, purchase) => {
+    return expenseAffectsCash({
+      source: "purchase",
+      paymentMethod: purchase.payment_method,
+      supplierPaymentTerms: purchase.supplier_payment_terms,
+    })
+      ? sum + Number(purchase.total || 0)
+      : sum;
+  }, 0);
   const cashOperatingExpenses = relevantOperatingExpenses.reduce((sum, expense) => {
-    return String(expense.payment_method || "cash").trim() === "cash"
+    return expenseAffectsCash({
+      source: "operating_expense",
+      paymentMethod: expense.payment_method,
+    })
       ? sum + Number(expense.total || expense.amount || 0)
       : sum;
   }, 0);
   const expectedCash =
-    Number(closingData.opening_amount || 0) + Number(byMethod.cash || 0) - cashOperatingExpenses;
+    Number(closingData.opening_amount || 0) +
+    Number(byMethod.cash || 0) -
+    cashPurchaseExpenses -
+    cashOperatingExpenses;
   const countedCash = Number(cashCounted || 0);
   const cashDifference = countedCash - expectedCash;
   const totalCollected = Object.values(byMethod).reduce(
@@ -406,10 +424,13 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
         (sale.customer_name
           ? `${sale.table_name || sale.table_id || "Mesa"} - ${sale.customer_name}`
           : sale.table_name || sale.table_id || "Venta POS"),
-      detail:
-        (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ") ||
-        "Sin detalle",
+      detail: (sale.items || []).map(buildOperationalSaleItemDetail).join(", ") || "Sin detalle",
       paymentMethod: sale.payment_method || "cash",
+      operationalType: (sale.items || []).some(
+        (item) => String(item?.recipe_mode || item?.recipeMode || "direct") === "composed"
+      )
+        ? "Venta compuesta"
+        : "Venta directa",
       amount: Number(sale.total || 0),
       at: normalizeDate(sale.closed_at || sale.createdAt),
     })),
@@ -420,7 +441,10 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
         (purchase.items || [])
           .map((item) => `${item.quantity}x ${item.ingredient_name || item.manual_name || "Insumo"}`)
           .join(", ") || "Sin detalle",
-      paymentMethod: "expense",
+      paymentMethod: resolvePurchasePaymentMethod(
+        purchase.payment_method,
+        purchase.supplier_payment_terms
+      ),
       amount: Number(purchase.total || 0),
       at: normalizeDate(purchase.purchase_date),
     })),
@@ -489,6 +513,7 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     cashDifference,
     operatingExpensesTotal,
     purchaseExpensesTotal,
+    cashPurchaseExpenses,
     totalSalesCount: relevantSales.length,
     auditEntries,
     movementEntries,
@@ -588,7 +613,7 @@ export function buildCashClosingReportHtml(report) {
   const movementRows = (report.movementEntries || [])
     .map(
       (entry) =>
-        `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.type}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.concept}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.detail}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${PAYMENT_METHOD_LABELS[entry.paymentMethod] || entry.paymentMethod || "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${entry.at ? entry.at.toLocaleString("es-CO") : "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">${formatCOP(entry.amount)}</td></tr>`
+        `<tr><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.type}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.concept}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${entry.detail}${entry.operationalType ? `<div style="margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:${entry.operationalType === "Venta compuesta" ? "#946200" : "#64748b"};">${entry.operationalType}</div>` : ""}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;">${PAYMENT_METHOD_LABELS[entry.paymentMethod] || entry.paymentMethod || "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${entry.at ? entry.at.toLocaleString("es-CO") : "-"}</td><td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">${formatCOP(entry.amount)}</td></tr>`
     )
     .join("");
   const purchaseSummary = report.purchaseSummary || {};

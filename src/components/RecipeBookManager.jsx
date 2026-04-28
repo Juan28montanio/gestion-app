@@ -159,26 +159,36 @@ export default function RecipeBookManager({
   const [highlightedRecipeId, setHighlightedRecipeId] = useState("");
   const [focusContextProductId, setFocusContextProductId] = useState("");
   const safeProducts = Array.isArray(products) ? products : [];
+  const directProducts = useMemo(
+    () => safeProducts.filter((product) => String(product.recipe_mode || "direct") !== "composed"),
+    [safeProducts]
+  );
   const safeSupplies = Array.isArray(supplies) ? supplies : [];
-  const safeRecipeBooks = Array.isArray(recipeBooks) ? recipeBooks : [];
+  const safeRecipeBooks = useMemo(
+    () =>
+      Array.isArray(recipeBooks)
+        ? recipeBooks.filter((recipeBook) => String(recipeBook.recipe_mode || "direct") !== "composed")
+        : [],
+    [recipeBooks]
+  );
   const supplyReferenceMap = useMemo(() => buildSupplyReferenceMap(safeSupplies), [safeSupplies]);
   const recipeReadiness = useMemo(() => getRecipeReadiness(form), [form]);
 
   const availableProducts = useMemo(
     () =>
-      safeProducts.filter(
+      directProducts.filter(
         (product) =>
           !safeRecipeBooks.some((recipeBook) => recipeBook.product_id === product.id) ||
           safeRecipeBooks.some(
             (recipeBook) => recipeBook.product_id === product.id && recipeBook.id === editingId
           )
       ),
-    [editingId, safeProducts, safeRecipeBooks]
+    [directProducts, editingId, safeRecipeBooks]
   );
 
   const selectedProduct = useMemo(
-    () => safeProducts.find((product) => product.id === form.productId),
-    [form.productId, safeProducts]
+    () => directProducts.find((product) => product.id === form.productId),
+    [directProducts, form.productId]
   );
 
   const recipeSummary = useMemo(() => {

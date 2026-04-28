@@ -31,6 +31,7 @@ import {
 } from "../services/cashClosingService";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
+import { buildOperationalSaleItemDetail } from "../utils/sales";
 import {
   accumulatePaymentBreakdown,
   createEmptyPaymentTotals,
@@ -40,9 +41,14 @@ import {
 } from "../utils/payments";
 import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
 import {
+  buildAccountsReceivable,
   buildCashActionItems,
+  buildClosingPreview,
+  buildClosingPurchaseSummary,
   buildCashPressureQueue,
   buildExecutiveInsights,
+  buildPaymentMethodCards,
+  summarizeReceivables,
   buildSupplyChainInsights,
   createEmptyOperatingExpenseForm,
   formatDuration,
@@ -57,6 +63,7 @@ import {
   PAYMENT_METHOD_STYLES,
   QUICK_FILTERS,
   RANGE_OPTIONS,
+  movementMatchesPaymentFilter,
   summarizeMovements,
 } from "../features/finance/dashboardHelpers";
 
@@ -73,6 +80,14 @@ function openPrintableReport(report) {
   reportWindow.document.close();
   reportWindow.focus();
   window.setTimeout(() => reportWindow.print(), 300);
+}
+
+function getMovementOperationalBadge(movement) {
+  if (movement.type !== "income") {
+    return null;
+  }
+
+  return movement.operationalType === "compuesto" ? "Venta compuesta" : "Venta directa";
 }
 
 export default function AdminDashboard({
@@ -158,7 +173,7 @@ export default function AdminDashboard({
           ? `${sale.table_name || sale.table_id || "Mesa"} - ${sale.customer_name}`
           : sale.table_name || sale.table_id || "Venta POS"),
       category: (sale.items || []).map((item) => item.category).filter(Boolean).join(", "),
-      details: (sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", "),
+      details: (sale.items || []).map(buildOperationalSaleItemDetail).join(", "),
       amount: Number(sale.total || 0),
       paymentMethod: sale.payment_method || "cash",
       paymentBreakdown: normalizePaymentBreakdown(
@@ -166,6 +181,11 @@ export default function AdminDashboard({
         sale.payment_method || "cash",
         Number(sale.total || 0)
       ),
+      operationalType: (sale.items || []).some(
+        (item) => String(item?.recipe_mode || item?.recipeMode || "direct") === "composed"
+      )
+        ? "compuesto"
+        : "directo",
       raw: sale,
       source: "sale",
     }));
@@ -178,7 +198,7 @@ export default function AdminDashboard({
       category: [...new Set((purchase.items || []).map((item) => item.category).filter(Boolean))].join(", "),
       details: (purchase.items || []).map((item) => `${item.quantity}x ${item.ingredient_name}`).join(", "),
       amount: Number(purchase.total || 0),
-      paymentMethod: "expense",
+      paymentMethod: purchase.payment_method || "cash",
       raw: purchase,
       source: "purchase",
     }));
@@ -206,15 +226,11 @@ export default function AdminDashboard({
 
     return movements.filter((movement) => {
       const matchesRange = isInRange(movement.date, selectedRange, selectedDate);
-      const matchesPayment =
-        selectedPaymentMethod === "all" ||
-        movement.type === "expense" ||
-        paymentBreakdownIncludesMethod(
-          movement.paymentBreakdown,
-          selectedPaymentMethod,
-          movement.paymentMethod,
-          movement.amount
-        );
+      const matchesPayment = movementMatchesPaymentFilter(
+        movement,
+        selectedPaymentMethod,
+        paymentBreakdownIncludesMethod
+      );
       const searchable = `${movement.concept} ${movement.category} ${movement.details}`.toLowerCase();
       return matchesRange && matchesPayment && (!term || searchable.includes(term));
     });
@@ -256,67 +272,30 @@ export default function AdminDashboard({
     [filteredSummary, previousFilteredSummary]
   );
 
-  const accountsReceivable = useMemo(() => {
-    return sales
-      .filter((sale) => Number(sale.pending_debt_remaining ?? sale.debt_amount ?? 0) > 0)
-      .sort((a, b) => {
-        const aTime = normalizeDate(a.closed_at || a.createdAt)?.getTime?.() || 0;
-        const bTime = normalizeDate(b.closed_at || b.createdAt)?.getTime?.() || 0;
-        return bTime - aTime;
-      });
-  }, [sales]);
+  const accountsReceivable = useMemo(
+    () => buildAccountsReceivable(sales, normalizeDate),
+    [sales]
+  );
 
   const totalReceivable = useMemo(
-    () =>
-      accountsReceivable.reduce(
-        (sum, sale) => sum + Number(sale.pending_debt_remaining ?? sale.debt_amount ?? 0),
-        0
-      ),
+    () => summarizeReceivables(accountsReceivable),
     [accountsReceivable]
   );
 
-  const closingPreview = useMemo(() => {
-    if (!openSession) {
-      return null;
-    }
-
-    const openingAmount = Number(openSession.opening_amount || 0);
-    const todayExpenses = todayMovements
-      .filter((movement) => movement.type === "expense")
-      .reduce((sum, movement) => sum + movement.amount, 0);
-    const expectedCash = openingAmount + Number(paymentMethodTotals.cash || 0);
-    const countedCash = Number(cashCounted || 0);
-
-    return {
-      openingAmount,
-      expectedCash,
-      countedCash,
-      difference: countedCash - expectedCash,
-      expenses: todayExpenses,
-      ticketWalletUnits: todayMovements.reduce(
-        (sum, movement) => sum + Number(movement.raw?.ticket_units_consumed || 0),
-        0
-      ),
-    };
-  }, [cashCounted, openSession, paymentMethodTotals.cash, todayMovements]);
-  const closingPurchaseSummary = useMemo(() => {
-    const todayPurchases = todayMovements.filter((movement) => movement.type === "expense");
-    const total = todayPurchases.reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
-    const supplierTotals = todayPurchases.reduce((accumulator, movement) => {
-      const key = String(movement.raw?.supplier_name || movement.concept || "Sin proveedor").trim();
-      accumulator[key] = (accumulator[key] || 0) + Number(movement.amount || 0);
-      return accumulator;
-    }, {});
-    const topSupplier = Object.entries(supplierTotals).sort((a, b) => b[1] - a[1])[0];
-
-    return {
-      count: todayPurchases.length,
-      total,
-      sharePct: todaySummary.income > 0 ? (total / todaySummary.income) * 100 : null,
-      topSupplierName: topSupplier?.[0] || "",
-      topSupplierTotal: Number(topSupplier?.[1] || 0),
-    };
-  }, [todayMovements, todaySummary.income]);
+  const closingPreview = useMemo(
+    () =>
+      buildClosingPreview({
+        openSession,
+        todayMovements,
+        cashCollected: paymentMethodTotals.cash,
+        cashCounted,
+      }),
+    [cashCounted, openSession, paymentMethodTotals.cash, todayMovements]
+  );
+  const closingPurchaseSummary = useMemo(
+    () => buildClosingPurchaseSummary(todayMovements, todaySummary.income),
+    [todayMovements, todaySummary.income]
+  );
 
   const boxOpenDuration = useMemo(() => {
     const openedAt = normalizeDate(openSession?.opened_at || openSession?.createdAt);
@@ -331,32 +310,22 @@ export default function AdminDashboard({
     };
   }, [now, openSession]);
 
-  const paymentMethodCards = useMemo(() => {
-    return ["all", "cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map((method) => {
-      const total = method === "all" ? filteredSummary.income : paymentMethodTotals[method] || 0;
-      const previousTotal =
-        method === "all"
-          ? previousFilteredSummary.income
-          : previousFilteredMovements.reduce((sum, movement) => {
-              if (movement.type !== "income") {
-                return sum;
-              }
-              return paymentBreakdownIncludesMethod(
-                movement.paymentBreakdown,
-                method,
-                movement.paymentMethod,
-                movement.amount
-              )
-                ? sum + movement.amount
-                : sum;
-            }, 0);
-      return {
-        method,
-        total,
-        variation: getVariation(total, previousTotal),
-      };
-    });
-  }, [filteredSummary.income, paymentMethodTotals, previousFilteredMovements, previousFilteredSummary.income]);
+  const paymentMethodCards = useMemo(
+    () =>
+      buildPaymentMethodCards({
+        filteredIncome: filteredSummary.income,
+        paymentMethodTotals,
+        previousFilteredIncome: previousFilteredSummary.income,
+        previousFilteredMovements,
+        paymentMatcher: paymentBreakdownIncludesMethod,
+      }),
+    [
+      filteredSummary.income,
+      paymentMethodTotals,
+      previousFilteredMovements,
+      previousFilteredSummary.income,
+    ]
+  );
   const executiveInsights = useMemo(
     () =>
       buildExecutiveInsights({
@@ -935,7 +904,93 @@ export default function AdminDashboard({
             })}
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 xl:hidden">
+            {filteredMovements.map((movement) => {
+              const visual = getMovementVisual(movement);
+              const Icon = visual.icon;
+              const operationalBadge = getMovementOperationalBadge(movement);
+
+              return (
+                <article
+                  key={`movement-card-${movement.id}`}
+                  className="rounded-[24px] border border-slate-200 bg-slate-50 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${visual.iconWrap}`}>
+                          <Icon size={16} />
+                        </span>
+                        <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${visual.accent}`}>
+                          {visual.badge}
+                        </span>
+                        {operationalBadge ? (
+                          <span
+                            className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                              movement.operationalType === "compuesto"
+                                ? "bg-[#fff7df] text-[#946200]"
+                                : "bg-white text-slate-500 ring-1 ring-slate-200"
+                            }`}
+                          >
+                            {operationalBadge}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-3 text-sm font-semibold text-slate-900">{movement.concept}</p>
+                      <p className="mt-1 text-sm text-slate-500">{movement.category || "General"}</p>
+                      <p className="mt-2 line-clamp-2 text-sm text-slate-600">{movement.details || "-"}</p>
+                    </div>
+                    <p
+                      className={`shrink-0 text-right font-mono text-sm font-semibold ${
+                        movement.type === "income" ? "text-emerald-800" : "text-rose-800"
+                      }`}
+                    >
+                      {movement.type === "income" ? "+" : "-"}
+                      {formatCOP(movement.amount)}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+                        {movement.type === "income"
+                          ? PAYMENT_METHOD_LABELS[movement.paymentMethod] || movement.paymentMethod
+                          : "Egreso"}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {movement.date
+                          ? new Intl.DateTimeFormat("es-CO", {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            }).format(movement.date)
+                          : "-"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMovement(movement)}
+                        className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200"
+                      >
+                        <Eye size={12} />
+                        Ver detalle
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openMovementEditor(movement)}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200"
+                      >
+                        <Pencil size={12} />
+                        Editar
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto xl:block">
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
@@ -970,7 +1025,7 @@ export default function AdminDashboard({
                     <td className="py-3 pr-4 font-medium text-slate-900">
                       <div className="space-y-1">
                         <p>{movement.concept}</p>
-                        <div className="flex items-center gap-2 opacity-0 transition group-hover:opacity-100">
+                        <div className="flex items-center gap-2 opacity-100 transition xl:opacity-0 xl:group-hover:opacity-100">
                           <button
                             type="button"
                             onClick={() => setSelectedMovement(movement)}
@@ -1024,7 +1079,22 @@ export default function AdminDashboard({
                       )}
                     </td>
                     <td className="py-3 pr-4">{movement.category || "General"}</td>
-                    <td className="py-3 pr-4">{movement.details || "-"}</td>
+                    <td className="py-3 pr-4">
+                      <div className="space-y-1">
+                        <p className="line-clamp-2 max-w-[320px]">{movement.details || "-"}</p>
+                        {getMovementOperationalBadge(movement) ? (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                              movement.operationalType === "compuesto"
+                                ? "bg-[#fff7df] text-[#946200]"
+                                : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            {getMovementOperationalBadge(movement)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="py-3 pr-4">
                       {movement.date
                         ? new Intl.DateTimeFormat("es-CO", {

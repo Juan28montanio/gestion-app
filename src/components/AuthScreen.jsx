@@ -70,13 +70,13 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
   };
 
   return (
-    <main className="min-h-screen bg-[#f4f6f8] px-6 py-6 text-slate-900">
-      <div className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-[1480px] gap-6 xl:grid-cols-[1.08fr_0.7fr]">
-        <section className="relative overflow-hidden rounded-[36px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_55%,#eef2ff_100%)] p-8 shadow-[0_24px_100px_rgba(15,23,42,0.08)] md:p-10">
+    <main className="min-h-screen bg-[#f4f6f8] px-4 py-4 text-slate-900 sm:px-6 sm:py-6">
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-[1480px] gap-4 xl:min-h-[calc(100vh-3rem)] xl:grid-cols-[1.08fr_0.7fr] xl:gap-6">
+        <section className="order-2 relative overflow-hidden rounded-[30px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_55%,#eef2ff_100%)] p-6 shadow-[0_24px_100px_rgba(15,23,42,0.08)] sm:p-8 md:p-10 xl:order-1 xl:rounded-[36px]">
           <div className="absolute -right-20 top-[-120px] h-72 w-72 rounded-full bg-emerald-100/50 blur-3xl" />
           <div className="absolute bottom-[-140px] left-[-120px] h-80 w-80 rounded-full bg-amber-100/50 blur-3xl" />
 
-          <div className="relative flex h-full flex-col justify-between gap-8">
+          <div className="relative flex h-full flex-col justify-between gap-6 md:gap-8">
             <div className="flex items-center gap-3">
               <SmartProfitWordmark />
             </div>
@@ -85,16 +85,16 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
               <p className="text-xs font-semibold uppercase tracking-[0.26em] text-slate-400">
                 Copiloto financiero operativo
               </p>
-              <h1 className="mt-5 text-4xl font-bold leading-[0.98] tracking-[-0.05em] text-slate-950 md:text-6xl">
+              <h1 className="mt-4 text-[2.85rem] font-bold leading-[0.98] tracking-[-0.05em] text-slate-950 sm:text-5xl lg:text-6xl">
                 Controla lo que vendes, lo que cuesta y lo que realmente ganas.
               </h1>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600 md:text-lg">
+              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 md:mt-5 md:text-lg">
                 SmartProfit conecta punto de venta, compras, costeo, clientes y caja para que el negocio
                 trabaje con mas claridad y menos friccion.
               </p>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <article className="rounded-[24px] border border-slate-200 bg-white/80 px-4 py-4 shadow-sm">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Operacion</p>
                 <p className="mt-2 text-xl font-black text-slate-950">POS + salon</p>
@@ -109,7 +109,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                   Productos, recetas e insumos alineados para defender el margen.
                 </p>
               </article>
-              <article className="rounded-[24px] border border-slate-200 bg-white/80 px-4 py-4 shadow-sm">
+              <article className="rounded-[24px] border border-slate-200 bg-white/80 px-4 py-4 shadow-sm sm:col-span-2 xl:col-span-1">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Caja</p>
                 <p className="mt-2 text-xl font-black text-slate-950">Cierre con contexto</p>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -141,8 +141,8 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
           </div>
         </section>
 
-        <section className="flex items-center">
-          <div className="w-full rounded-[32px] border border-slate-200 bg-white p-8 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
+        <section className="order-1 flex items-start xl:order-2 xl:items-center">
+          <div className="w-full rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)] sm:p-8 xl:rounded-[32px]">
             <div className="mb-6 inline-flex rounded-2xl bg-slate-100 p-1 ring-1 ring-slate-200">
               <button
                 type="button"
@@ -173,7 +173,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
             {mode === "login" ? (
               <form onSubmit={handleLogin} className="grid gap-5">
                 <div>
-                  <h2 className="text-3xl font-bold tracking-[-0.04em] text-slate-950">
+                  <h2 className="text-[2.4rem] font-bold tracking-[-0.04em] text-slate-950 sm:text-3xl">
                     Entra a tu operacion
                   </h2>
                   <p className="mt-3 text-sm leading-6 text-slate-500">
@@ -233,7 +233,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
             ) : (
               <form onSubmit={handleRegister} className="grid gap-5">
                 <div>
-                  <h2 className="text-3xl font-bold tracking-[-0.04em] text-slate-950">
+                  <h2 className="text-[2.4rem] font-bold tracking-[-0.04em] text-slate-950 sm:text-3xl">
                     Crea tu espacio de trabajo
                   </h2>
                   <p className="mt-3 text-sm leading-6 text-slate-500">

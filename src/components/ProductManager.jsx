@@ -33,6 +33,7 @@ import {
   subscribeToRecipeBooks,
   updateRecipeBook,
 } from "../services/recipeBookService";
+import { subscribeToPreparations } from "../services/preparationService";
 import { subscribeToPurchases } from "../services/purchaseService";
 import ConfirmModal from "./ConfirmModal";
 import ModalWrapper from "./ModalWrapper";
@@ -40,6 +41,7 @@ import FormInput from "./FormInput";
 import FormSelect from "./FormSelect";
 import SupplierManager from "./SupplierManager";
 import PurchaseManager from "./PurchaseManager";
+import PreparationManager from "./PreparationManager";
 import RecipeBookManager from "./RecipeBookManager";
 import { formatCOP } from "../utils/formatters";
 import TaxonomyManagerModal from "./TaxonomyManagerModal";
@@ -64,12 +66,42 @@ import {
   TABS,
 } from "../features/resources/resourceDashboardHelpers";
 
+function getProductFlowSummary({ product, recipeBook }) {
+  const recipeMode = String(product?.recipe_mode || "direct").trim();
+  const preparationCount = Array.isArray(product?.preparation_items)
+    ? product.preparation_items.length
+    : 0;
+
+  if (recipeMode === "composed") {
+    return {
+      compact:
+        preparationCount > 0
+          ? `${preparationCount} preparacion(es) conectada(s)`
+          : "Producto compuesto pendiente de bases",
+      detail:
+        preparationCount > 0
+          ? `Producto compuesto con ${preparationCount} preparacion(es) conectada(s).`
+          : "Producto compuesto aun sin preparaciones conectadas.",
+      badge: "Compuesto",
+    };
+  }
+
+  return {
+    compact: recipeBook ? "Ficha conectada" : "Sin ficha conectada",
+    detail: recipeBook
+      ? "Este producto ya conecta precio, costo real y rentabilidad."
+      : "Aun no tiene ficha tecnica conectada para leer utilidad real.",
+    badge: "Directo",
+  };
+}
+
 export default function ProductManager({ businessId, mode = "resources" }) {
   const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const [products, setProducts] = useState([]);
   const [supplies, setSupplies] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [purchases, setPurchases] = useState([]);
+  const [preparations, setPreparations] = useState([]);
   const [recipeBooks, setRecipeBooks] = useState([]);
   const [supplierCategories, setSupplierCategories] = useState([]);
   const [ingredientCategories, setIngredientCategories] = useState([]);
@@ -92,6 +124,24 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     () => recipeBooks.find((recipeBook) => recipeBook.product_id === editingProductId) || null,
     [editingProductId, recipeBooks]
   );
+  const preparationOptions = useMemo(
+    () =>
+      preparations.map((preparation) => ({
+        value: preparation.id,
+        label: `${preparation.name} · ${Number(preparation.yield_quantity || 0)} ${
+          preparation.output_unit || "porcion"
+        }`,
+      })),
+    [preparations]
+  );
+  const preparationMap = useMemo(
+    () =>
+      preparations.reduce((acc, preparation) => {
+        acc[preparation.id] = preparation;
+        return acc;
+      }, {}),
+    [preparations]
+  );
 
   useEffect(() => {
     setActiveTab(mode === "catalog" ? "products" : "suppliers");
@@ -102,6 +152,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     const unsubscribeSupplies = subscribeToSupplies(businessId, setSupplies);
     const unsubscribeSuppliers = subscribeToSuppliers(businessId, setSuppliers);
     const unsubscribePurchases = subscribeToPurchases(businessId, setPurchases);
+    const unsubscribePreparations = subscribeToPreparations(businessId, setPreparations);
     const unsubscribeRecipeBooks = subscribeToRecipeBooks(businessId, setRecipeBooks);
 
     return () => {
@@ -109,6 +160,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       unsubscribeSupplies();
       unsubscribeSuppliers();
       unsubscribePurchases();
+      unsubscribePreparations();
       unsubscribeRecipeBooks();
     };
   }, [businessId]);
@@ -171,6 +223,18 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       return acc;
     }, {});
   }, [recipeBooks]);
+  const preparationImpactBySupply = useMemo(() => {
+    return preparations.reduce((acc, preparation) => {
+      (preparation.ingredients || []).forEach((ingredient) => {
+        if (!ingredient.ingredient_id) {
+          return;
+        }
+
+        acc[ingredient.ingredient_id] = (acc[ingredient.ingredient_id] || 0) + 1;
+      });
+      return acc;
+    }, {});
+  }, [preparations]);
 
   const productCategories = useMemo(
     () => [...new Set(products.map((product) => product.category).filter(Boolean))].sort(),
@@ -213,19 +277,20 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     return map;
   }, [purchases]);
   const resourceStats = useMemo(
-    () => buildResourceStats({ purchases, recipeBooks, supplies }),
-    [purchases, recipeBooks, supplies]
+    () => buildResourceStats({ purchases, preparations, recipeBooks, supplies }),
+    [preparations, purchases, recipeBooks, supplies]
   );
   const resourceFlowInsights = useMemo(
     () =>
       buildResourceFlowInsights({
         purchases,
+        preparations,
         recipeBooks,
         spendByCategory,
         suppliers,
         supplies,
       }),
-    [purchases, recipeBooks, spendByCategory, suppliers, supplies]
+    [preparations, purchases, recipeBooks, spendByCategory, suppliers, supplies]
   );
   const resourceActionQueue = useMemo(
     () => buildResourceActionQueue({ purchases, recipeBooks, supplies }),
@@ -285,6 +350,10 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     setFocusedRecipeProductId(productId);
     setActiveTab("recipes");
   };
+  const openPreparationContext = () => {
+    setActiveTab("preparations");
+    setIsProductModalOpen(false);
+  };
 
   useEffect(() => {
     if (!isSupplyModalOpen || editingSupplyId) {
@@ -329,10 +398,26 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         price: Number(productForm.price),
         stock: Number(productForm.stock),
         productType: productForm.productType,
+        recipeMode: productForm.recipeMode,
+        preparationItems:
+          productForm.recipeMode === "composed"
+            ? productForm.preparationItems.map((item) => ({
+                preparation_id: item.preparationId,
+                preparation_name:
+                  preparationMap[item.preparationId]?.name || item.preparationName || "",
+                output_unit:
+                  preparationMap[item.preparationId]?.output_unit || item.outputUnit || "",
+                quantity: Number(item.quantity),
+              }))
+            : [],
         ticketEligible: productForm.ticketEligible,
         ticketUnits: Number(productForm.ticketUnits),
         ticketValidityDays: Number(productForm.ticketValidityDays),
       };
+
+      if (payload.recipeMode === "composed" && payload.preparationItems.length === 0) {
+        throw new Error("Agrega al menos una preparacion para guardar un producto compuesto.");
+      }
 
       let productId = editingProductId;
       if (editingProductId) {
@@ -348,6 +433,12 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           business_id: businessId,
           product_id: productId,
           product_name: payload.name,
+          recipe_mode: payload.recipeMode,
+          preparation_items: payload.preparationItems,
+          direct_ingredients:
+            payload.recipeMode === "direct"
+              ? existingRecipeBook.direct_ingredients || existingRecipeBook.ingredients || []
+              : [],
           sale_price: payload.price,
         });
       } else {
@@ -355,6 +446,8 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           business_id: businessId,
           product_id: productId,
           product_name: payload.name,
+          recipe_mode: payload.recipeMode,
+          preparation_items: payload.preparationItems,
           sale_price: payload.price,
           waste_pct: 0,
           target_margin_pct: 30,
@@ -373,6 +466,29 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const addPreparationRow = () => {
+    setProductForm((current) => ({
+      ...current,
+      preparationItems: [...current.preparationItems, { preparationId: "", quantity: "" }],
+    }));
+  };
+
+  const updatePreparationRow = (index, field, value) => {
+    setProductForm((current) => ({
+      ...current,
+      preparationItems: current.preparationItems.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item
+      ),
+    }));
+  };
+
+  const removePreparationRow = (index) => {
+    setProductForm((current) => ({
+      ...current,
+      preparationItems: current.preparationItems.filter((_, itemIndex) => itemIndex !== index),
+    }));
   };
 
   const handleSupplySubmit = async (event) => {
@@ -537,6 +653,14 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         />
       ) : null}
 
+      {activeTab === "preparations" && !isCatalogMode ? (
+        <PreparationManager
+          businessId={businessId}
+          supplies={supplies}
+          preparations={preparations}
+        />
+      ) : null}
+
       {activeTab === "recipes" && !isCatalogMode ? (
         <RecipeBookManager
           businessId={businessId}
@@ -644,6 +768,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                       const missing = Math.max(min - stock, 0);
                       const latestPurchase = (priceHistoryBySupply[supply.id] || [])[0];
                       const linkedRecipes = recipeImpactBySupply[supply.id] || 0;
+                      const linkedPreparations = preparationImpactBySupply[supply.id] || 0;
 
                       return (
                         <article
@@ -662,9 +787,9 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                                   : "Revisa el nivel actual para evitar quiebres de stock."}
                               </p>
                               <p className="mt-2 text-sm text-slate-500">
-                                {linkedRecipes > 0
-                                  ? `${linkedRecipes} ficha(s) dependen de este insumo.`
-                                  : "Aun no impacta fichas tecnicas conectadas."}
+                                {linkedPreparations + linkedRecipes > 0
+                                  ? `${linkedPreparations} preparacion(es) y ${linkedRecipes} ficha(s) dependen de este insumo.`
+                                  : "Aun no impacta preparaciones ni fichas tecnicas conectadas."}
                               </p>
                             </div>
                             <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${status.classes}`}>
@@ -697,6 +822,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   const min = Number(supply.stock_min_alert || 0);
                   const missing = Math.max(min - stock, 0);
                   const linkedRecipes = recipeImpactBySupply[supply.id] || 0;
+                  const linkedPreparations = preparationImpactBySupply[supply.id] || 0;
 
                   return (
                     <article
@@ -739,9 +865,9 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                         <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200 sm:col-span-3">
                           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Uso en recetas</p>
                           <p className="mt-2 font-semibold text-slate-900">
-                            {linkedRecipes > 0
-                              ? `${linkedRecipes} ficha(s) dependen de este insumo`
-                              : "Todavia no afecta fichas tecnicas conectadas"}
+                            {linkedPreparations + linkedRecipes > 0
+                              ? `${linkedPreparations} preparacion(es) y ${linkedRecipes} ficha(s) dependen de este insumo`
+                              : "Todavia no afecta preparaciones ni fichas tecnicas conectadas"}
                           </p>
                         </div>
                       </div>
@@ -886,23 +1012,40 @@ export default function ProductManager({ businessId, mode = "resources" }) {
 
           <div className={productView === "grid" ? "grid gap-4 xl:grid-cols-2" : "grid gap-3"}>
             {products.length === 0 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingProductId(null);
-                  setProductForm(PRODUCT_FORM);
-                  setIsProductModalOpen(true);
-                }}
-                className="flex min-h-32 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-white px-5 py-6 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
-              >
-                <PackagePlus size={24} />
-                <p className="mt-3 text-base font-semibold text-slate-700">Crea tu primer producto</p>
-                <p className="mt-1 text-sm">Empieza tu catalogo comercial con una ficha limpia.</p>
-              </button>
+              <div className="rounded-[24px] border border-dashed border-slate-300 bg-white px-5 py-6 shadow-sm xl:col-span-2">
+                <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingProductId(null);
+                      setProductForm(PRODUCT_FORM);
+                      setIsProductModalOpen(true);
+                    }}
+                    className="flex min-h-32 flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-center text-slate-500 transition hover:border-emerald-300 hover:text-slate-700"
+                  >
+                    <PackagePlus size={24} />
+                    <p className="mt-3 text-base font-semibold text-slate-700">Crea tu primer producto</p>
+                    <p className="mt-1 text-sm">Empieza tu catalogo comercial con una ficha limpia.</p>
+                  </button>
+
+                  <div className="rounded-[24px] bg-slate-50 px-5 py-5 ring-1 ring-slate-200">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Flujo inicial
+                    </p>
+                    <div className="mt-3 space-y-3 text-sm text-slate-600">
+                      <p>1. Define nombre, categoria y precio de venta.</p>
+                      <p>2. Si aplica, conecta la ficha tecnica o las preparaciones base.</p>
+                      <p>3. Cuando el catalogo exista, el POS quedara listo para vender.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : null}
             {products.map((product) => {
               const recipeBook = productRecipeMap[product.id];
               const margin = Number(recipeBook?.current_margin_pct || 0);
+              const recipeMode = product.recipe_mode || "direct";
+              const flowSummary = getProductFlowSummary({ product, recipeBook });
               const semaforoClasses =
                 recipeBook?.profitability_status === "healthy"
                   ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
@@ -921,10 +1064,22 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                         {product.category}
                       </p>
                       <h3 className="mt-2 text-lg font-semibold text-slate-900">{product.name}</h3>
-                      <p className="mt-2 text-sm text-slate-500">
-                        {recipeBook
-                          ? "Este producto ya conecta precio, costo real y rentabilidad."
-                          : "Aun no tiene ficha tecnica conectada para leer utilidad real."}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                            recipeMode === "composed"
+                              ? "bg-[#fff7df] text-[#946200]"
+                              : "bg-slate-200 text-slate-600"
+                          }`}
+                        >
+                          {flowSummary.badge}
+                        </span>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-500 ring-1 ring-slate-200 sm:hidden">
+                          {flowSummary.compact}
+                        </span>
+                      </div>
+                      <p className="mt-2 hidden text-sm text-slate-500 sm:block">
+                        {flowSummary.detail}
                       </p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${semaforoClasses}`}>
@@ -957,7 +1112,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                   </div>
 
                   <div
-                    className={`mt-5 grid gap-3 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 ${isCatalogMode ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
+                    className={`mt-5 grid gap-3 opacity-100 transition xl:opacity-0 xl:group-hover:opacity-100 xl:group-focus-within:opacity-100 ${isCatalogMode ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}
                   >
                     <button
                       type="button"
@@ -972,14 +1127,25 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                       Editar
                     </button>
                     {!isCatalogMode ? (
-                      <button
-                        type="button"
-                        onClick={() => openRecipeContext(product.id)}
-                        className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
-                      >
-                        <Sparkles size={16} />
-                        Ficha
-                      </button>
+                      recipeMode === "composed" ? (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("preparations")}
+                          className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
+                        >
+                          <Sparkles size={16} />
+                          Preparaciones
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openRecipeContext(product.id)}
+                          className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
+                        >
+                          <Sparkles size={16} />
+                          Ficha
+                        </button>
+                      )
                     ) : null}
                     <button
                       type="button"
@@ -1135,6 +1301,127 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                 />
               </div>
 
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormSelect
+                  label="Modo de costeo"
+                  labelNote="Flujo"
+                  value={productForm.recipeMode}
+                  onChange={(event) =>
+                    setProductForm((current) => ({
+                      ...current,
+                      recipeMode: event.target.value,
+                      preparationItems:
+                        event.target.value === "composed" ? current.preparationItems : [],
+                    }))
+                  }
+                  options={[
+                    { value: "direct", label: "Ficha tecnica directa" },
+                    { value: "composed", label: "Producto compuesto por preparaciones" },
+                  ]}
+                  hint="Usa ficha directa para productos simples y preparaciones para platos armados."
+                />
+                <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
+                  <p className="text-sm font-semibold text-slate-800">
+                    {productForm.recipeMode === "composed"
+                      ? "Este producto tomara su costo desde preparaciones base."
+                      : "Este producto seguira usando una ficha tecnica editable por insumos."}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {productForm.recipeMode === "composed"
+                      ? "Ideal para almuerzos, combos o platos que mezclan varias bases ya preparadas."
+                      : "Ideal para productos simples como galletas, bebidas directas o recetas sin armado compuesto."}
+                  </p>
+                </div>
+              </div>
+
+              {productForm.recipeMode === "composed" ? (
+                <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-white p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h4 className="text-base font-semibold text-slate-900">
+                        Preparaciones que componen el producto
+                      </h4>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Define cuantas porciones o unidades de cada preparacion usa este plato.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={addPreparationRow}
+                        className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        Agregar preparacion
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openPreparationContext}
+                        className="rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-2 text-sm font-semibold text-[#946200] transition hover:brightness-95"
+                      >
+                        Ir a preparaciones base
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    {productForm.preparationItems.length > 0 ? (
+                      productForm.preparationItems.map((item, index) => {
+                        const linkedPreparation = preparationMap[item.preparationId];
+
+                        return (
+                          <div
+                            key={`product-preparation-${index}`}
+                            className="grid gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 lg:grid-cols-[minmax(0,1.6fr)_minmax(160px,0.8fr)_auto]"
+                          >
+                            <FormSelect
+                              label={`Preparacion ${index + 1}`}
+                              labelNote="Base"
+                              value={item.preparationId}
+                              onChange={(event) =>
+                                updatePreparationRow(index, "preparationId", event.target.value)
+                              }
+                              className="min-w-0"
+                            >
+                              <option value="">Seleccionar preparacion</option>
+                              {preparationOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </FormSelect>
+                            <FormInput
+                              label="Cantidad usada"
+                              labelNote={linkedPreparation?.output_unit || "porcion"}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.quantity}
+                              onChange={(event) =>
+                                updatePreparationRow(index, "quantity", event.target.value)
+                              }
+                              className="min-w-0"
+                            />
+                            <div className="flex items-end">
+                              <button
+                                type="button"
+                                onClick={() => removePreparationRow(index)}
+                                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                        Agrega las preparaciones base que componen este producto.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              ) : null}
+
               <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
                 <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
                   <div>
@@ -1188,12 +1475,18 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                 Ficha tecnica
               </p>
               <h4 className="mt-3 text-lg font-semibold text-slate-900">
-                {currentProductRecipe ? "Costeo enlazado" : "Aun sin costeo"}
+                {currentProductRecipe
+                  ? productForm.recipeMode === "composed"
+                    ? "Costeo compuesto enlazado"
+                    : "Costeo enlazado"
+                  : "Aun sin costeo"}
               </h4>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {currentProductRecipe
-                  ? "Este panel se alimenta automaticamente desde la receta estandar y el costo vigente de insumos."
-                  : "Conecta este producto con una ficha tecnica para medir costo real, margen y precio recomendado."}
+                  ? productForm.recipeMode === "composed"
+                    ? "Este panel se alimenta desde las preparaciones conectadas y recalcula costo, margen y precio sugerido."
+                    : "Este panel se alimenta automaticamente desde la receta estandar y el costo vigente de insumos."
+                  : "Conecta este producto con una ficha tecnica o con preparaciones para medir costo real, margen y precio recomendado."}
               </p>
             </div>
 
@@ -1216,22 +1509,36 @@ export default function ProductManager({ businessId, mode = "resources" }) {
               {currentProductRecipe ? (
                 <div className="space-y-3">
                   <p className="text-sm font-semibold text-slate-800">
-                    {productModalMetrics.ingredientsCount} insumos conectados
+                    {productForm.recipeMode === "composed"
+                      ? `${productModalMetrics.preparationCount} preparacion(es) y ${productModalMetrics.ingredientsCount} insumo(s) derivados`
+                      : `${productModalMetrics.ingredientsCount} insumos conectados`}
                   </p>
                   <p className="text-sm text-slate-500">
-                    El precio sugerido responde al margen objetivo configurado en la ficha.
+                    {productForm.recipeMode === "composed"
+                      ? "El precio sugerido responde a la suma de preparaciones base y al margen objetivo activo."
+                      : "El precio sugerido responde al margen objetivo configurado en la ficha."}
                   </p>
                   {!isCatalogMode ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        closeProductModal();
-                        openRecipeContext(editingProductId);
-                      }}
-                      className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Abrir ficha tecnica
-                    </button>
+                    productForm.recipeMode === "composed" ? (
+                      <button
+                        type="button"
+                        onClick={openPreparationContext}
+                        className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        Abrir preparaciones
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeProductModal();
+                          openRecipeContext(editingProductId);
+                        }}
+                        className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        Abrir ficha tecnica
+                      </button>
+                    )
                   ) : null}
                 </div>
               ) : (
@@ -1241,7 +1548,11 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     onClick={() => {
                       if (!isCatalogMode) {
                         closeProductModal();
-                        openRecipeContext(editingProductId || form.productId);
+                        if (productForm.recipeMode === "composed") {
+                          setActiveTab("preparations");
+                        } else {
+                          openRecipeContext(editingProductId || "");
+                        }
                       }
                     }}
                     disabled={isCatalogMode}
@@ -1250,11 +1561,17 @@ export default function ProductManager({ businessId, mode = "resources" }) {
                     <Plus size={22} />
                   </button>
                   <div>
-                    <p className="text-sm font-semibold text-slate-800">Agrega una ficha tecnica</p>
+                    <p className="text-sm font-semibold text-slate-800">
+                      {productForm.recipeMode === "composed"
+                        ? "Conecta preparaciones base"
+                        : "Agrega una ficha tecnica"}
+                    </p>
                     <p className="mt-1 text-sm text-slate-500">
                       {isCatalogMode
                         ? "Crea la receta desde Centro de Recursos para activar costos y rentabilidad."
-                        : "Enlaza receta, merma y margen objetivo desde el modulo de fichas tecnicas."}
+                        : productForm.recipeMode === "composed"
+                          ? "Compone el producto con preparaciones ya costeadas para calcular su rentabilidad."
+                          : "Enlaza receta, merma y margen objetivo desde el modulo de fichas tecnicas."}
                     </p>
                   </div>
                 </div>

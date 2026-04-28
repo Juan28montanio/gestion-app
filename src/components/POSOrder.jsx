@@ -34,6 +34,97 @@ import {
   PAYMENT_OPTIONS,
 } from "../features/pos/posHelpers";
 
+function getPreparationSummary(items = []) {
+  return items
+    .map((item) => {
+      const name = String(item?.preparation_name || item?.preparationName || "").trim();
+      const quantity = Number(item?.quantity || 0);
+      const unit = String(item?.output_unit || item?.outputUnit || "").trim();
+
+      if (!name || !Number.isFinite(quantity) || quantity <= 0) {
+        return null;
+      }
+
+      return `${quantity} ${unit || "porcion"} de ${name}`;
+    })
+    .filter(Boolean);
+}
+
+function getProductOperationalCopy(product) {
+  const recipeMode = String(product?.recipe_mode || product?.recipeMode || "direct").trim();
+  const preparationSummary = getPreparationSummary(
+    product?.preparation_items || product?.preparationItems || []
+  );
+
+  if (recipeMode === "composed") {
+    return {
+      badge: "Compuesto",
+      detail:
+        preparationSummary.length > 0
+          ? preparationSummary.slice(0, 2).join(" · ")
+          : "Usa preparaciones base ya costeadas.",
+    };
+  }
+
+  return {
+    badge: "Directo",
+    detail: "Producto con ficha tecnica directa.",
+  };
+}
+
+function getCartItemOperationalCopy(item) {
+  const recipeMode = String(item?.recipe_mode || item?.recipeMode || "direct").trim();
+  const preparationSummary = getPreparationSummary(
+    item?.preparation_items || item?.preparationItems || []
+  );
+
+  if (recipeMode === "composed") {
+    return preparationSummary.length > 0
+      ? `Base operativa: ${preparationSummary.slice(0, 3).join(" · ")}`
+      : "Producto compuesto con preparaciones base.";
+  }
+
+  return "Producto con ficha tecnica directa.";
+}
+
+function getCompactProductOperationalCopy(product) {
+  const recipeMode = String(product?.recipe_mode || product?.recipeMode || "direct").trim();
+  const preparationSummary = getPreparationSummary(
+    product?.preparation_items || product?.preparationItems || []
+  );
+
+  if (recipeMode === "composed") {
+    return preparationSummary.length > 0 ? `${preparationSummary.length} base(s)` : "Preparaciones";
+  }
+
+  return "Ficha directa";
+}
+
+function getResponsiveCartOperationalCopy(item, compact = false) {
+  const recipeMode = String(item?.recipe_mode || item?.recipeMode || "direct").trim();
+  const preparationSummary = getPreparationSummary(
+    item?.preparation_items || item?.preparationItems || []
+  );
+
+  if (compact) {
+    if (recipeMode === "composed") {
+      return preparationSummary.length > 0
+        ? `${preparationSummary.length} base(s) activas`
+        : "Preparaciones base";
+    }
+
+    return "Ficha directa";
+  }
+
+  if (recipeMode === "composed") {
+    return preparationSummary.length > 0
+      ? `Base operativa: ${preparationSummary.slice(0, 2).join(" | ")}`
+      : "Producto compuesto con preparaciones base.";
+  }
+
+  return "Producto con ficha tecnica directa.";
+}
+
 function SearchSelector({
   label,
   placeholder,
@@ -240,13 +331,13 @@ function CartPanel({
             Estado operativo
           </p>
           <p className="mt-2 text-sm font-semibold text-white">{operationStatus.label}</p>
-          <p className="mt-1 text-xs text-slate-300">{operationStatus.detail}</p>
+          <p className="mt-1 hidden text-xs text-slate-300 sm:block">{operationStatus.detail}</p>
         </article>
         <article className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             Venta actual
           </p>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-center">
+          <div className="mt-2 grid grid-cols-2 gap-2 text-center lg:grid-cols-3">
             <div className="rounded-2xl bg-slate-950/60 px-2 py-2">
               <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Items</p>
               <p className="mt-1 text-base font-semibold text-white">{itemCount}</p>
@@ -255,10 +346,10 @@ function CartPanel({
               <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Tickets</p>
               <p className="mt-1 text-base font-semibold text-white">{ticketUnits}</p>
             </div>
-            <div className="col-span-2 rounded-2xl bg-slate-950/60 px-3 py-2 text-left">
+            <div className="col-span-2 rounded-2xl bg-slate-950/60 px-3 py-2 text-left lg:col-span-1">
               <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Cliente</p>
               <p className="mt-1 truncate text-sm font-semibold text-white">
-                {selectedCustomer ? "Asignado" : "Ocasional"}
+                {selectedCustomer ? selectedCustomer.name : "Ocasional"}
               </p>
             </div>
           </div>
@@ -277,12 +368,31 @@ function CartPanel({
               className="rounded-2xl border border-slate-800 bg-slate-900 p-4"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-medium">{item.name}</h3>
-                  <p className="text-xs text-slate-400">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="line-clamp-2 min-w-0 text-sm font-medium sm:text-base">{item.name}</h3>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                        String(item?.recipe_mode || item?.recipeMode || "direct") === "composed"
+                          ? "bg-[#fff7df] text-[#946200]"
+                          : "bg-slate-800 text-slate-300"
+                      }`}
+                    >
+                      {String(item?.recipe_mode || item?.recipeMode || "direct") === "composed"
+                        ? "Compuesto"
+                        : "Directo"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
                     {item.useTicket
                       ? `Tiquetera aplicada · ${item.quantity} ticket(s)`
                       : `${formatCOP(item.price)} x ${item.quantity}`}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-5 text-slate-500 sm:hidden">
+                    {getResponsiveCartOperationalCopy(item, true)}
+                  </p>
+                  <p className="mt-1 hidden text-[11px] leading-5 text-slate-500 sm:block">
+                    {getResponsiveCartOperationalCopy(item)}
                   </p>
                 </div>
 
@@ -375,7 +485,7 @@ function CartPanel({
               <p className={`mt-2 text-sm font-medium ${paymentReadiness.tone}`}>
                 {paymentReadiness.label}
               </p>
-              <p className="mt-1 text-xs text-slate-300">{paymentReadiness.detail}</p>
+              <p className="mt-1 hidden text-xs text-slate-300 sm:block">{paymentReadiness.detail}</p>
             </div>
             <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-right">
               <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Metodo actual</p>
@@ -567,6 +677,7 @@ export default function POSOrder({
   onOrderPaid,
   onOrderCancelled,
   onPaymentSuccess,
+  onOpenCatalog,
 }) {
   const [products, setProducts] = useState([]);
   const [tables, setTables] = useState([]);
@@ -696,6 +807,7 @@ export default function POSOrder({
       return matchesCategory && matchesSearch;
     });
   }, [products, search, selectedCategory]);
+  const hasProducts = products.length > 0;
 
   const ticketConsumption = useMemo(() => {
     const units = cartItems.reduce(
@@ -1155,22 +1267,37 @@ export default function POSOrder({
                   <div className="p-5">
                     <div className="flex items-end justify-between gap-3">
                       <div>
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                            String(product.recipe_mode || "direct") === "composed"
+                              ? "bg-[#fff7df] text-[#946200]"
+                              : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {getProductOperationalCopy(product).badge}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-500 sm:hidden">
+                            {getCompactProductOperationalCopy(product)}
+                          </span>
+                        </div>
                         <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
                           Precio
                         </p>
                         <p className="mt-2 text-lg font-semibold text-slate-900">
                           {formatCOP(product.price)}
                         </p>
+                        <p className="mt-2 hidden line-clamp-2 text-xs leading-5 text-slate-500 sm:block">
+                          {getProductOperationalCopy(product).detail}
+                        </p>
                       </div>
 
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                      <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
                         Stock {product.stock}
                       </span>
                     </div>
                   </div>
                 </button>
               ))
-            ) : (
+            ) : hasProducts ? (
               <div className="col-span-full rounded-[28px] border border-dashed border-slate-200 bg-white px-5 py-10 text-center">
                 <p className="text-sm font-semibold text-slate-900">
                   No encontramos productos con ese filtro.
@@ -1178,6 +1305,46 @@ export default function POSOrder({
                 <p className="mt-2 text-sm leading-6 text-slate-500">
                   Prueba otra categoria o cambia el texto de busqueda para continuar la venta.
                 </p>
+              </div>
+            ) : (
+              <div className="col-span-full rounded-[28px] border border-dashed border-slate-200 bg-white px-5 py-8 shadow-sm">
+                <div className="mx-auto grid max-w-3xl gap-5 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+                  <div className="text-left">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Catalogo pendiente
+                    </p>
+                    <p className="mt-3 text-xl font-semibold text-slate-900">
+                      Antes de vender, crea tu primer producto.
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      El punto de venta mostrara la carta en cuanto registres al menos un producto
+                      en el catalogo comercial.
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => onOpenCatalog?.()}
+                        className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105"
+                      >
+                        Ir a Productos
+                      </button>
+                      <span className="inline-flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        Luego regresa aqui para tomar pedidos y cobrar.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[24px] bg-slate-50 px-5 py-5 text-left ring-1 ring-slate-200">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Flujo sugerido
+                    </p>
+                    <div className="mt-3 space-y-3 text-sm text-slate-600">
+                      <p>1. Crea el producto con precio y categoria.</p>
+                      <p>2. Vuelve al POS y selecciona mesa o venta rapida.</p>
+                      <p>3. Agrega productos y cobra desde el carrito.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1511,3 +1678,5 @@ export default function POSOrder({
     </>
   );
 }
+
+

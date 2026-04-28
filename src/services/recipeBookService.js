@@ -4,6 +4,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -15,6 +16,7 @@ import { db } from "../firebase/firebaseConfig";
 
 const recipeBooksCollection = collection(db, "recipeBooks");
 const ingredientsCollection = collection(db, "ingredients");
+const preparationsCollection = collection(db, "preparations");
 
 function normalizeRecipeIngredients(ingredients) {
   if (!Array.isArray(ingredients)) {
@@ -38,6 +40,68 @@ function normalizeRecipeIngredients(ingredients) {
       };
     })
     .filter(Boolean);
+}
+
+function normalizePreparationItems(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item) => {
+      const preparationId = String(item?.preparation_id || item?.preparationId || "").trim();
+      const quantity = Number(item?.quantity);
+
+      if (!preparationId || !Number.isFinite(quantity) || quantity <= 0) {
+        return null;
+      }
+
+      return {
+        preparation_id: preparationId,
+        preparation_name: String(item?.preparation_name || item?.preparationName || "").trim(),
+        output_unit: String(item?.output_unit || item?.outputUnit || "").trim(),
+        quantity,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildIngredientsFromPreparations(preparationItems, preparations) {
+  const ingredientMap = new Map();
+
+  preparationItems.forEach((item) => {
+    const preparation = preparations.find((candidate) => candidate.id === item.preparation_id);
+    if (!preparation) {
+      return;
+    }
+
+    const yieldQuantity = Number(preparation.yield_quantity || 1);
+    const wastePct = Number(preparation.waste_pct || 0);
+    const wasteFactor =
+      Number.isFinite(wastePct) && wastePct >= 0 && wastePct < 100
+        ? 1 / Math.max(1 - wastePct / 100, 0.01)
+        : 1;
+    const multiplier = (Number(item.quantity || 0) / Math.max(yieldQuantity, 0.0001)) * wasteFactor;
+
+    (preparation.ingredients || []).forEach((ingredient) => {
+      const ingredientId = String(ingredient?.ingredient_id || "").trim();
+      const quantity = Number(ingredient?.quantity || 0);
+
+      if (!ingredientId || !Number.isFinite(quantity) || quantity <= 0) {
+        return;
+      }
+
+      ingredientMap.set(
+        ingredientId,
+        (ingredientMap.get(ingredientId) || 0) + quantity * multiplier
+      );
+    });
+  });
+
+  return Array.from(ingredientMap.entries()).map(([ingredient_id, quantity]) => ({
+    ingredient_id,
+    quantity,
+  }));
 }
 
 function computeRecipeMetrics({ ingredients, inventory, wastePct, salePrice, targetMarginPct }) {
@@ -93,10 +157,11 @@ export function calculateRecipeMetricsPreview({
   });
 }
 
-function normalizeRecipeBookPayload(recipeBook, inventory) {
+function normalizeRecipeBookPayload(recipeBook, inventory, preparations = []) {
   const businessId = String(recipeBook?.business_id || recipeBook?.businessId || "").trim();
   const productId = String(recipeBook?.product_id || recipeBook?.productId || "").trim();
   const productName = String(recipeBook?.product_name || recipeBook?.productName || "").trim();
+  const recipeMode = String(recipeBook?.recipe_mode || recipeBook?.recipeMode || "direct").trim();
   const salePrice = Number(recipeBook?.sale_price ?? recipeBook?.salePrice ?? 0);
   const wastePct = Number(recipeBook?.waste_pct ?? recipeBook?.wastePct ?? 0);
   const targetMarginPct = Number(
@@ -114,7 +179,16 @@ function normalizeRecipeBookPayload(recipeBook, inventory) {
         .split("\n")
         .map((step) => step.trim())
         .filter(Boolean);
-  const normalizedIngredients = normalizeRecipeIngredients(recipeBook?.ingredients);
+  const directIngredients = normalizeRecipeIngredients(
+    recipeBook?.direct_ingredients ?? recipeBook?.directIngredients ?? recipeBook?.ingredients
+  );
+  const normalizedPreparationItems = normalizePreparationItems(
+    recipeBook?.preparation_items ?? recipeBook?.preparationItems
+  );
+  const normalizedIngredients =
+    recipeMode === "composed"
+      ? buildIngredientsFromPreparations(normalizedPreparationItems, preparations)
+      : directIngredients;
 
   if (!businessId) {
     throw new Error("El business_id de la ficha tecnica es obligatorio.");
@@ -140,12 +214,15 @@ function normalizeRecipeBookPayload(recipeBook, inventory) {
     business_id: businessId,
     product_id: productId,
     product_name: productName,
+    recipe_mode: recipeMode === "composed" ? "composed" : "direct",
     sale_price: Number.isFinite(salePrice) ? salePrice : 0,
     waste_pct: Number.isFinite(wastePct) ? wastePct : 0,
     target_margin_pct: Number.isFinite(targetMarginPct) ? targetMarginPct : 30,
     prep_time_minutes: Number.isFinite(prepTimeMinutes) ? prepTimeMinutes : 0,
     plating_photo_url: platingPhotoUrl,
     preparation_steps: preparationSteps,
+    direct_ingredients: recipeMode === "composed" ? [] : directIngredients,
+    preparation_items: recipeMode === "composed" ? normalizedPreparationItems : [],
     ingredients: normalizedIngredients,
     base_cost: metrics.baseCost,
     real_cost: metrics.realCost,
@@ -182,10 +259,23 @@ async function loadInventory(businessId) {
   return snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
 }
 
+async function loadPreparations(businessId) {
+  const preparationsQuery = query(
+    preparationsCollection,
+    where("business_id", "==", businessId),
+    orderBy("name", "asc")
+  );
+  const snapshot = await getDocs(preparationsQuery);
+  return snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+}
+
 export async function createRecipeBook(recipeBook) {
   const businessId = String(recipeBook?.business_id || recipeBook?.businessId || "").trim();
-  const inventory = await loadInventory(businessId);
-  const payload = normalizeRecipeBookPayload(recipeBook, inventory);
+  const [inventory, preparations] = await Promise.all([
+    loadInventory(businessId),
+    loadPreparations(businessId),
+  ]);
+  const payload = normalizeRecipeBookPayload(recipeBook, inventory, preparations);
 
   const createdRecipeBook = await addDoc(recipeBooksCollection, {
     ...payload,
@@ -203,8 +293,11 @@ export async function updateRecipeBook(recipeBookId, recipeBook) {
   }
 
   const businessId = String(recipeBook?.business_id || recipeBook?.businessId || "").trim();
-  const inventory = await loadInventory(businessId);
-  const payload = normalizeRecipeBookPayload(recipeBook, inventory);
+  const [inventory, preparations] = await Promise.all([
+    loadInventory(businessId),
+    loadPreparations(businessId),
+  ]);
+  const payload = normalizeRecipeBookPayload(recipeBook, inventory, preparations);
 
   await updateDoc(doc(db, "recipeBooks", recipeBookId), {
     ...payload,
@@ -227,7 +320,10 @@ export async function refreshRecipeBooksForIngredients(businessId, ingredientIds
     return;
   }
 
-  const inventory = await loadInventory(normalizedBusinessId);
+  const [inventory, preparations] = await Promise.all([
+    loadInventory(normalizedBusinessId),
+    loadPreparations(normalizedBusinessId),
+  ]);
   const recipeBooksQuery = query(recipeBooksCollection, where("business_id", "==", normalizedBusinessId));
   const snapshot = await getDocs(recipeBooksQuery);
 
@@ -245,7 +341,49 @@ export async function refreshRecipeBooksForIngredients(businessId, ingredientIds
   await Promise.all(
     affectedDocs.map(async (recipeBookDoc) => {
       const recipeBook = recipeBookDoc.data();
-      const payload = normalizeRecipeBookPayload(recipeBook, inventory);
+      const payload = normalizeRecipeBookPayload(recipeBook, inventory, preparations);
+
+      await updateDoc(doc(db, "recipeBooks", recipeBookDoc.id), {
+        ...payload,
+        cost_reference_updated_at: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    })
+  );
+}
+
+export async function refreshRecipeBooksForPreparations(businessId, preparationIds = []) {
+  const normalizedBusinessId = String(businessId || "").trim();
+  if (!normalizedBusinessId) {
+    return;
+  }
+
+  const [inventory, preparations] = await Promise.all([
+    loadInventory(normalizedBusinessId),
+    loadPreparations(normalizedBusinessId),
+  ]);
+  const recipeBooksQuery = query(recipeBooksCollection, where("business_id", "==", normalizedBusinessId));
+  const snapshot = await getDocs(recipeBooksQuery);
+
+  const affectedDocs = snapshot.docs.filter((recipeBookDoc) => {
+    const recipeBook = recipeBookDoc.data();
+    if (String(recipeBook.recipe_mode || "direct") !== "composed") {
+      return false;
+    }
+
+    if (!preparationIds.length) {
+      return true;
+    }
+
+    return (recipeBook.preparation_items || []).some((item) =>
+      preparationIds.includes(String(item.preparation_id || "").trim())
+    );
+  });
+
+  await Promise.all(
+    affectedDocs.map(async (recipeBookDoc) => {
+      const recipeBook = recipeBookDoc.data();
+      const payload = normalizeRecipeBookPayload(recipeBook, inventory, preparations);
 
       await updateDoc(doc(db, "recipeBooks", recipeBookDoc.id), {
         ...payload,
