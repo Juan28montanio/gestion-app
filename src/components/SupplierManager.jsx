@@ -16,21 +16,31 @@ const PAYMENT_TERMS = [
   { value: "Credito", label: "Credito" },
 ];
 
-const EMPTY_SUPPLIER_FORM = {
-  name: "",
-  nit: "",
-  category: "",
-  contactName: "",
-  phone: "",
-  mobile: "",
-  email: "",
-  address: "",
-  paymentTerms: "Contado",
-};
+function normalizeComparableValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function createEmptySupplierForm() {
+  return {
+    name: "",
+    nit: "",
+    category: "",
+    contactName: "",
+    phone: "",
+    mobile: "",
+    email: "",
+    address: "",
+    paymentTerms: "Contado",
+  };
+}
 
 function buildSupplierForm(supplier) {
   if (!supplier) {
-    return EMPTY_SUPPLIER_FORM;
+    return createEmptySupplierForm();
   }
 
   return {
@@ -54,7 +64,7 @@ export default function SupplierManager({
   onManageCategories,
 }) {
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState(EMPTY_SUPPLIER_FORM);
+  const [form, setForm] = useState(createEmptySupplierForm);
   const [editingId, setEditingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -114,22 +124,95 @@ export default function SupplierManager({
     );
   }, [safeSuppliers, search]);
 
+  const supplierDuplicates = useMemo(() => {
+    const currentName = normalizeComparableValue(form.name);
+    const currentNit = normalizeComparableValue(form.nit);
+    const currentMobile = normalizeComparableValue(form.mobile);
+    const currentEmail = normalizeComparableValue(form.email);
+    const currentContact = normalizeComparableValue(form.contactName);
+
+    if (!currentName) {
+      return {
+        exactMatch: null,
+        nameMatches: [],
+      };
+    }
+
+    const candidates = safeSuppliers.filter((supplier) => supplier.id !== editingId);
+    const nameMatches = candidates.filter(
+      (supplier) => normalizeComparableValue(supplier.name) === currentName
+    );
+
+    const exactMatch =
+      candidates.find((supplier) => {
+        const supplierNit = normalizeComparableValue(supplier.nit);
+        const supplierMobile = normalizeComparableValue(supplier.mobile);
+        const supplierEmail = normalizeComparableValue(supplier.email);
+        const supplierContact = normalizeComparableValue(
+          supplier.contact_name || supplier.contact
+        );
+
+        return (
+          normalizeComparableValue(supplier.name) === currentName &&
+          ((currentNit && supplierNit === currentNit) ||
+            (currentMobile && supplierMobile === currentMobile) ||
+            (currentEmail && supplierEmail === currentEmail) ||
+            (currentContact && supplierContact === currentContact))
+        );
+      }) || null;
+
+    return {
+      exactMatch,
+      nameMatches,
+    };
+  }, [editingId, form.contactName, form.email, form.mobile, form.name, form.nit, safeSuppliers]);
+
+  const isSupplierSubmitBlocked =
+    isSaving ||
+    !String(form.name || "").trim() ||
+    Boolean(supplierDuplicates.exactMatch);
+
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    setForm(EMPTY_SUPPLIER_FORM);
+    setForm(createEmptySupplierForm());
     setFeedback({ type: "", message: "" });
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    const normalizedName = String(form.name || "").trim();
+
+    if (!normalizedName) {
+      setFeedback({
+        type: "error",
+        message: "El proveedor debe tener nombre o razon social para poder guardarse.",
+      });
+      return;
+    }
+
+    if (supplierDuplicates.exactMatch) {
+      setFeedback({
+        type: "error",
+        message: `Ya existe un proveedor muy similar: ${supplierDuplicates.exactMatch.name}. Revisa NIT, contacto o actualiza el registro existente.`,
+      });
+      return;
+    }
+
     setIsSaving(true);
     setFeedback({ type: "", message: "" });
 
     try {
       const payload = {
         ...form,
-        contactName: form.contactName,
+        name: normalizedName,
+        nit: String(form.nit || "").trim(),
+        category: String(form.category || "").trim(),
+        contactName: String(form.contactName || "").trim(),
+        phone: String(form.phone || "").trim(),
+        mobile: String(form.mobile || "").trim(),
+        email: String(form.email || "").trim(),
+        address: String(form.address || "").trim(),
       };
 
       if (editingId) {
@@ -181,19 +264,20 @@ export default function SupplierManager({
           />
           <button
             type="button"
-            onClick={onManageCategories}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            onClick={() => onManageCategories?.()}
+            disabled={!onManageCategories}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Settings2 size={16} />
             Categorias
           </button>
           <button
             type="button"
-            onClick={() => {
-              setEditingId(null);
-              setForm(EMPTY_SUPPLIER_FORM);
-              setIsModalOpen(true);
-            }}
+              onClick={() => {
+                setEditingId(null);
+                setForm(createEmptySupplierForm());
+                setIsModalOpen(true);
+              }}
             className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
           >
             <Plus size={16} />
@@ -292,7 +376,7 @@ export default function SupplierManager({
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                 <p className="text-sm font-semibold text-slate-900">2. Define el canal util</p>
-                <p className="mt-1 text-sm text-slate-500">Celular, correo o ambos para resolver rápido.</p>
+                <p className="mt-1 text-sm text-slate-500">Celular, correo o ambos para resolver rapido.</p>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
                 <p className="text-sm font-semibold text-slate-900">3. Guarda lo minimo valioso</p>
@@ -340,8 +424,9 @@ export default function SupplierManager({
               <div className="grid content-end">
                 <button
                   type="button"
-                  onClick={onManageCategories}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => onManageCategories?.()}
+                  disabled={!onManageCategories}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Gestionar categorias
                 </button>
@@ -411,6 +496,18 @@ export default function SupplierManager({
             </div>
           </section>
 
+          {supplierDuplicates.nameMatches.length > 0 && !supplierDuplicates.exactMatch ? (
+            <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+              Ya existe {supplierDuplicates.nameMatches.length === 1 ? "un proveedor con este nombre" : `${supplierDuplicates.nameMatches.length} proveedores con este nombre`}. Si es otro registro distinto, agrega NIT, contacto o celular para diferenciarlo mejor en compras.
+            </div>
+          ) : null}
+
+          {supplierDuplicates.exactMatch ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              Este proveedor parece duplicado del registro existente <span className="font-semibold">{supplierDuplicates.exactMatch.name}</span>. Usa el proveedor actual o cambia los datos identificadores antes de guardar.
+            </div>
+          ) : null}
+
           {feedback.message ? (
             <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
               {feedback.message}
@@ -427,8 +524,8 @@ export default function SupplierManager({
             </button>
             <button
               type="submit"
-              disabled={isSaving}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+              disabled={isSupplierSubmitBlocked}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSaving ? "Guardando..." : editingId ? "Actualizar" : "Crear proveedor"}
             </button>
@@ -447,3 +544,4 @@ export default function SupplierManager({
     </section>
   );
 }
+

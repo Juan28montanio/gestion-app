@@ -21,6 +21,7 @@ import {
   getPrimaryPaymentMethod,
   normalizePaymentBreakdown,
 } from "../utils/payments";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 function getTicketProductGrant(items = []) {
   return items.reduce(
@@ -186,6 +187,10 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
   const preloadedOrderData = preloadedOrderSnapshot.data();
   const openCashSession = await getCurrentOpenCashSession(preloadedOrderData.business_id);
+
+  if (!openCashSession) {
+    throw new Error("Debes abrir caja antes de registrar un cobro en el punto de venta.");
+  }
 
   await runTransaction(db, async (transaction) => {
     const orderSnapshot = await transaction.get(orderRef);
@@ -420,7 +425,11 @@ export function subscribeToSalesHistory(businessId, callback) {
 
   return onSnapshot(salesQuery, (snapshot) => {
     callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "sales_history:subscribeToSalesHistory",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function updateSaleHistoryEntry(saleId, updates = {}) {
@@ -477,5 +486,9 @@ export function subscribeToDailySales(businessId, callback) {
       total: sales.reduce((sum, sale) => sum + (Number(sale.total) || 0), 0),
       byMethod,
     });
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "sales_history:subscribeToDailySales",
+    callback,
+    emptyValue: { sales: [], total: 0, byMethod: createEmptyPaymentTotals() },
+  }));
 }

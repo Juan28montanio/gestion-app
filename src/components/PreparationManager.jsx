@@ -12,16 +12,26 @@ import FormSelect from "./FormSelect";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 
-const EMPTY_FORM = {
-  name: "",
-  category: "",
-  outputUnit: "porcion",
-  yieldQuantity: "1",
-  wastePct: "0",
-  prepTimeMinutes: "",
-  preparationSteps: "",
-  ingredients: [],
-};
+function normalizeComparableValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function createEmptyPreparationForm() {
+  return {
+    name: "",
+    category: "",
+    outputUnit: "porcion",
+    yieldQuantity: "1",
+    wastePct: "0",
+    prepTimeMinutes: "",
+    preparationSteps: "",
+    ingredients: [],
+  };
+}
 
 const OUTPUT_UNITS = [
   { value: "porcion", label: "Porcion" },
@@ -49,7 +59,7 @@ const READINESS_META = {
 
 function buildPreparationForm(preparation) {
   if (!preparation) {
-    return EMPTY_FORM;
+    return createEmptyPreparationForm();
   }
 
   return {
@@ -72,7 +82,7 @@ function buildPreparationForm(preparation) {
 }
 
 export default function PreparationManager({ businessId, supplies, preparations }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(createEmptyPreparationForm);
   const [editingId, setEditingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -107,6 +117,28 @@ export default function PreparationManager({ businessId, supplies, preparations 
     );
   }, [safePreparations]);
 
+  const preparationDuplicates = useMemo(() => {
+    const currentName = normalizeComparableValue(form.name);
+    const currentCategory = normalizeComparableValue(form.category);
+
+    if (!currentName) {
+      return { exactMatch: null, nameMatches: [] };
+    }
+
+    const candidates = safePreparations.filter((preparation) => preparation.id !== editingId);
+    const nameMatches = candidates.filter(
+      (preparation) => normalizeComparableValue(preparation.name) === currentName
+    );
+    const exactMatch =
+      candidates.find(
+        (preparation) =>
+          normalizeComparableValue(preparation.name) === currentName &&
+          normalizeComparableValue(preparation.category) === currentCategory
+      ) || null;
+
+    return { exactMatch, nameMatches };
+  }, [editingId, form.category, form.name, safePreparations]);
+
   const supplyOptions = useMemo(
     () =>
       safeSupplies.map((supply) => ({
@@ -128,13 +160,13 @@ export default function PreparationManager({ businessId, supplies, preparations 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    setForm(EMPTY_FORM);
+    setForm(createEmptyPreparationForm());
     setFeedback({ type: "", message: "" });
   };
 
   const openCreateModal = () => {
     setEditingId(null);
-    setForm(EMPTY_FORM);
+    setForm(createEmptyPreparationForm());
     setFeedback({ type: "", message: "" });
     setIsModalOpen(true);
   };
@@ -171,22 +203,71 @@ export default function PreparationManager({ businessId, supplies, preparations 
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    const normalizedName = String(form.name || "").trim();
+    const normalizedIngredients = form.ingredients
+      .map((ingredient) => ({
+        ingredient_id: ingredient.ingredientId,
+        quantity: Number(ingredient.quantity),
+      }))
+      .filter((ingredient) => ingredient.ingredient_id);
+
+    if (!normalizedName) {
+      setFeedback({
+        type: "error",
+        message: "La preparacion debe tener un nombre para poder guardarse.",
+      });
+      return;
+    }
+
+    if (preparationDuplicates.exactMatch) {
+      setFeedback({
+        type: "error",
+        message: `Ya existe una preparacion muy similar: ${preparationDuplicates.exactMatch.name}. Ajusta categoria o edita la base existente antes de duplicarla.`,
+      });
+      return;
+    }
+
+    if (!Number.isFinite(Number(form.yieldQuantity)) || Number(form.yieldQuantity) <= 0) {
+      setFeedback({
+        type: "error",
+        message: "El rendimiento debe ser mayor a cero para calcular bien el costo por salida.",
+      });
+      return;
+    }
+
+    if (!normalizedIngredients.length) {
+      setFeedback({
+        type: "error",
+        message: "Agrega al menos un insumo vinculado para registrar la preparacion.",
+      });
+      return;
+    }
+
+    const hasInvalidIngredient = normalizedIngredients.some(
+      (ingredient) => !Number.isFinite(ingredient.quantity) || ingredient.quantity <= 0
+    );
+
+    if (hasInvalidIngredient) {
+      setFeedback({
+        type: "error",
+        message: "Cada insumo debe tener una cantidad mayor a cero.",
+      });
+      return;
+    }
+
     setIsSaving(true);
     setFeedback({ type: "", message: "" });
 
     const payload = {
       business_id: businessId,
-      name: form.name,
-      category: form.category,
+      name: normalizedName,
+      category: String(form.category || "").trim(),
       output_unit: form.outputUnit,
       yield_quantity: Number(form.yieldQuantity),
       waste_pct: Number(form.wastePct),
       prep_time_minutes: Number(form.prepTimeMinutes || 0),
-      preparationSteps: form.preparationSteps,
-      ingredients: form.ingredients.map((ingredient) => ({
-        ingredient_id: ingredient.ingredientId,
-        quantity: Number(ingredient.quantity),
-      })),
+      preparationSteps: String(form.preparationSteps || "").trim(),
+      ingredients: normalizedIngredients,
     };
 
     try {
@@ -590,6 +671,18 @@ export default function PreparationManager({ businessId, supplies, preparations 
             </div>
           </section>
 
+          {preparationDuplicates.nameMatches.length > 0 && !preparationDuplicates.exactMatch ? (
+            <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+              Ya existe {preparationDuplicates.nameMatches.length === 1 ? "una preparacion con este nombre" : `${preparationDuplicates.nameMatches.length} preparaciones con este nombre`}. Si es otra base distinta, agrega una categoria mas clara para no confundir costeo y armado compuesto.
+            </div>
+          ) : null}
+
+          {preparationDuplicates.exactMatch ? (
+            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              Esta preparacion parece duplicada de una base ya existente. Revisa nombre y categoria antes de guardarla.
+            </div>
+          ) : null}
+
           {feedback.message ? (
             <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
               {feedback.message}
@@ -606,7 +699,13 @@ export default function PreparationManager({ businessId, supplies, preparations 
             </button>
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={
+                isSaving ||
+                !String(form.name || "").trim() ||
+                Number(form.yieldQuantity) <= 0 ||
+                form.ingredients.filter((ingredient) => ingredient.ingredientId).length === 0 ||
+                Boolean(preparationDuplicates.exactMatch)
+              }
               className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isSaving ? "Guardando..." : editingId ? "Actualizar" : "Crear preparacion"}

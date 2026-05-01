@@ -14,16 +14,18 @@ import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
 
-const EMPTY_CUSTOMER_FORM = {
-  name: "",
-  phone: "",
-  email: "",
-  notes: "",
-  ticketBalanceUnits: 0,
-  ticketTotalPurchased: 0,
-  ticketLastUsedAt: null,
-  ticketExpiresAt: null,
-};
+function createEmptyCustomerForm() {
+  return {
+    name: "",
+    phone: "",
+    email: "",
+    notes: "",
+    ticketBalanceUnits: 0,
+    ticketTotalPurchased: 0,
+    ticketLastUsedAt: null,
+    ticketExpiresAt: null,
+  };
+}
 
 const FILTERS = [
   { id: "all", label: "Todos" },
@@ -56,7 +58,7 @@ function getCustomerSegment(customer) {
 
 function buildCustomerForm(customer) {
   if (!customer) {
-    return EMPTY_CUSTOMER_FORM;
+    return createEmptyCustomerForm();
   }
 
   return {
@@ -78,7 +80,7 @@ export default function CustomerManager({ businessId }) {
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
   const [viewMode, setViewMode] = useState("cards");
-  const [form, setForm] = useState(EMPTY_CUSTOMER_FORM);
+  const [form, setForm] = useState(createEmptyCustomerForm);
   const [editingId, setEditingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
@@ -272,20 +274,38 @@ export default function CustomerManager({ businessId }) {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
-    setForm(EMPTY_CUSTOMER_FORM);
+    setForm(createEmptyCustomerForm());
     setFeedback({ type: "", message: "" });
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    const normalizedName = String(form.name || "").trim();
+
+    if (!normalizedName) {
+      setFeedback({
+        type: "error",
+        message: "El cliente debe tener un nombre para poder guardarse.",
+      });
+      return;
+    }
+
     setIsSaving(true);
     setFeedback({ type: "", message: "" });
 
     try {
+      const payload = {
+        ...form,
+        name: normalizedName,
+        phone: String(form.phone || "").trim(),
+        email: String(form.email || "").trim(),
+        notes: String(form.notes || "").trim(),
+      };
+
       if (editingId) {
-        await updateCustomer(editingId, businessId, form);
+        await updateCustomer(editingId, businessId, payload);
       } else {
-        await createCustomer(businessId, form);
+        await createCustomer(businessId, payload);
       }
       closeModal();
     } catch (error) {
@@ -352,7 +372,7 @@ export default function CustomerManager({ businessId }) {
               type="button"
               onClick={() => {
                 setEditingId(null);
-                setForm(EMPTY_CUSTOMER_FORM);
+                setForm(createEmptyCustomerForm());
                 setIsModalOpen(true);
               }}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
@@ -658,8 +678,8 @@ export default function CustomerManager({ businessId }) {
             </button>
             <button
               type="submit"
-              disabled={isSaving}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+              disabled={isSaving || !String(form.name || "").trim()}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSaving ? "Guardando..." : editingId ? "Actualizar cliente" : "Crear cliente"}
             </button>

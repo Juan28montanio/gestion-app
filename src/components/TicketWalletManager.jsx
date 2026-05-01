@@ -16,19 +16,23 @@ import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
 
-const EMPTY_PLAN_FORM = {
-  name: "",
-  category: "Almuerzos",
-  price: "",
-  ticketUnits: "10",
-  ticketValidityDays: "30",
-};
+function createEmptyPlanForm() {
+  return {
+    name: "",
+    category: "Almuerzos",
+    price: "",
+    ticketUnits: "10",
+    ticketValidityDays: "30",
+  };
+}
 
-const EMPTY_ASSIGNMENT_FORM = {
-  customerId: "",
-  units: "0",
-  expiresAt: "",
-};
+function createEmptyAssignmentForm() {
+  return {
+    customerId: "",
+    units: "0",
+    expiresAt: "",
+  };
+}
 
 function getWalletHealth(wallet) {
   if (wallet.balance <= 0) {
@@ -56,7 +60,7 @@ function getWalletHealth(wallet) {
 
 function buildPlanForm(plan) {
   if (!plan) {
-    return EMPTY_PLAN_FORM;
+    return createEmptyPlanForm();
   }
 
   return {
@@ -75,8 +79,8 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
   const [search, setSearch] = useState("");
-  const [planForm, setPlanForm] = useState(EMPTY_PLAN_FORM);
-  const [assignmentForm, setAssignmentForm] = useState(EMPTY_ASSIGNMENT_FORM);
+  const [planForm, setPlanForm] = useState(createEmptyPlanForm);
+  const [assignmentForm, setAssignmentForm] = useState(createEmptyAssignmentForm);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
@@ -281,16 +285,29 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
 
   const handleSavePlan = async (event) => {
     event.preventDefault();
+    const normalizedName = String(planForm.name || "").trim();
+    const price = Number(planForm.price);
+    const ticketUnits = Number(planForm.ticketUnits);
+    const ticketValidityDays = Number(planForm.ticketValidityDays);
+
+    if (!normalizedName) {
+      return;
+    }
+
+    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(ticketUnits) || ticketUnits <= 0 || !Number.isFinite(ticketValidityDays) || ticketValidityDays <= 0) {
+      return;
+    }
+
     setIsSaving(true);
     try {
       const payload = {
-        name: planForm.name,
-        category: planForm.category,
-        price: Number(planForm.price),
+        name: normalizedName,
+        category: String(planForm.category || "Almuerzos").trim() || "Almuerzos",
+        price,
         stock: 9999,
         productType: "ticket_wallet",
-        ticketUnits: Number(planForm.ticketUnits),
-        ticketValidityDays: Number(planForm.ticketValidityDays),
+        ticketUnits,
+        ticketValidityDays,
       };
 
       if (editingPlanId) {
@@ -301,7 +318,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
 
       setIsPlanModalOpen(false);
       setEditingPlanId(null);
-      setPlanForm(EMPTY_PLAN_FORM);
+      setPlanForm(createEmptyPlanForm());
     } finally {
       setIsSaving(false);
     }
@@ -309,32 +326,40 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
 
   const handleAssignTickets = async (event) => {
     event.preventDefault();
+    const units = Number(assignmentForm.units);
+
     if (!assignmentForm.customerId) {
+      return;
+    }
+
+    if (!Number.isFinite(units) || units < 0) {
       return;
     }
 
     setIsSaving(true);
     try {
       await adjustCustomerTicketWallet(assignmentForm.customerId, {
-        units: Number(assignmentForm.units),
-        totalPurchased: Number(assignmentForm.units),
+        units,
+        totalPurchased: units,
         expiresAt: assignmentForm.expiresAt ? new Date(`${assignmentForm.expiresAt}T00:00:00`) : null,
       });
       setIsAssignmentModalOpen(false);
-      setAssignmentForm(EMPTY_ASSIGNMENT_FORM);
+      setAssignmentForm(createEmptyAssignmentForm());
     } finally {
       setIsSaving(false);
     }
   };
 
   const openAssignmentModal = async (customer = null) => {
-    const isAuthorized = await requestAuditPin?.({
-      title: "Validar PIN de auditoria",
-      description: "Confirma el PIN para ajustar saldo de ticketera.",
-    });
+    if (requestAuditPin) {
+      const isAuthorized = await requestAuditPin({
+        title: "Validar PIN de auditoria",
+        description: "Confirma el PIN para ajustar saldo de ticketera.",
+      });
 
-    if (!isAuthorized) {
-      return;
+      if (!isAuthorized) {
+        return;
+      }
     }
 
     setAssignmentForm({
@@ -362,7 +387,7 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
               type="button"
               onClick={() => {
                 setEditingPlanId(null);
-                setPlanForm(EMPTY_PLAN_FORM);
+                setPlanForm(createEmptyPlanForm());
                 setIsPlanModalOpen(true);
               }}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg"
@@ -729,8 +754,14 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
             </button>
             <button
               type="submit"
-              disabled={isSaving}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+              disabled={
+                isSaving ||
+                !String(planForm.name || "").trim() ||
+                Number(planForm.price) <= 0 ||
+                Number(planForm.ticketUnits) <= 0 ||
+                Number(planForm.ticketValidityDays) <= 0
+              }
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSaving ? "Guardando..." : editingPlanId ? "Actualizar plan" : "Crear plan"}
             </button>
@@ -795,8 +826,13 @@ export default function TicketWalletManager({ businessId, requestAuditPin }) {
             </button>
             <button
               type="submit"
-              disabled={isSaving}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+              disabled={
+                isSaving ||
+                !assignmentForm.customerId ||
+                Number.isNaN(Number(assignmentForm.units)) ||
+                Number(assignmentForm.units) < 0
+              }
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSaving ? "Guardando..." : "Guardar ajuste"}
             </button>

@@ -5,13 +5,13 @@ import {
   doc,
   getDocs,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 import {
   INGREDIENT_CATEGORY_DEFAULTS,
   SUPPLIER_CATEGORY_DEFAULTS,
@@ -19,6 +19,14 @@ import {
 } from "../utils/resourceOptions";
 
 const taxonomiesCollection = collection(db, "resource_taxonomies");
+
+function sortTaxonomies(items = []) {
+  return [...items].sort((left, right) =>
+    String(left?.label || "").localeCompare(String(right?.label || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 function getDefaultsByScope(scope) {
   if (scope === "supplier_categories") {
@@ -110,13 +118,18 @@ export function subscribeToTaxonomies(businessId, scope, callback) {
   const taxonomiesQuery = query(
     taxonomiesCollection,
     where("business_id", "==", normalizedBusinessId),
-    where("scope", "==", normalizedScope),
-    orderBy("label", "asc")
+    where("scope", "==", normalizedScope)
   );
 
   return onSnapshot(taxonomiesQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortTaxonomies(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
+    );
+  }, createSubscriptionErrorHandler({
+    scope: `resource_taxonomies:${normalizedScope}`,
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function createTaxonomy(businessId, scope, label) {

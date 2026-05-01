@@ -4,15 +4,23 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const suppliersCollection = collection(db, "suppliers");
+
+function sortSuppliers(items = []) {
+  return [...items].sort((left, right) =>
+    String(left?.name || "").localeCompare(String(right?.name || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 function normalizeSupplierPayload(supplier, businessId) {
   const name = String(supplier?.name || "").trim();
@@ -59,13 +67,18 @@ export function subscribeToSuppliers(businessId, callback) {
 
   const suppliersQuery = query(
     suppliersCollection,
-    where("business_id", "==", businessId),
-    orderBy("name", "asc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(suppliersQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortSuppliers(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "suppliers:subscribeToSuppliers",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function createSupplier(businessId, supplier) {

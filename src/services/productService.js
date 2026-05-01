@@ -4,15 +4,23 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const productsCollection = collection(db, "products");
+
+function sortProducts(items = []) {
+  return [...items].sort((left, right) =>
+    String(left?.name || "").localeCompare(String(right?.name || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 function normalizePreparationItems(items) {
   if (!Array.isArray(items)) {
@@ -105,13 +113,18 @@ export function subscribeToProducts(businessId, callback) {
 
   const productsQuery = query(
     productsCollection,
-    where("business_id", "==", businessId),
-    orderBy("name", "asc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(productsQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortProducts(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "products:subscribeToProducts",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export function subscribeToAvailableProducts(businessId, callback) {

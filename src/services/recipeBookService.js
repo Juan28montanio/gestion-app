@@ -6,17 +6,25 @@ import {
   getDocs,
   getDoc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const recipeBooksCollection = collection(db, "recipeBooks");
 const ingredientsCollection = collection(db, "ingredients");
 const preparationsCollection = collection(db, "preparations");
+
+function sortByLabel(items = [], field = "name") {
+  return [...items].sort((left, right) =>
+    String(left?.[field] || "").localeCompare(String(right?.[field] || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 function normalizeRecipeIngredients(ingredients) {
   if (!Array.isArray(ingredients)) {
@@ -240,33 +248,33 @@ export function subscribeToRecipeBooks(businessId, callback) {
 
   const recipeBooksQuery = query(
     recipeBooksCollection,
-    where("business_id", "==", businessId),
-    orderBy("product_name", "asc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(recipeBooksQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortByLabel(
+        snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })),
+        "product_name"
+      )
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "recipeBooks:subscribeToRecipeBooks",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 async function loadInventory(businessId) {
-  const inventoryQuery = query(
-    ingredientsCollection,
-    where("business_id", "==", businessId),
-    orderBy("name", "asc")
-  );
+  const inventoryQuery = query(ingredientsCollection, where("business_id", "==", businessId));
   const snapshot = await getDocs(inventoryQuery);
-  return snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+  return sortByLabel(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
 }
 
 async function loadPreparations(businessId) {
-  const preparationsQuery = query(
-    preparationsCollection,
-    where("business_id", "==", businessId),
-    orderBy("name", "asc")
-  );
+  const preparationsQuery = query(preparationsCollection, where("business_id", "==", businessId));
   const snapshot = await getDocs(preparationsQuery);
-  return snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+  return sortByLabel(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
 }
 
 export async function createRecipeBook(recipeBook) {

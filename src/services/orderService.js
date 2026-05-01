@@ -2,7 +2,6 @@ import {
   collection,
   doc,
   onSnapshot,
-  orderBy,
   query,
   runTransaction,
   serverTimestamp,
@@ -13,9 +12,18 @@ import {
 import { db } from "../firebase/firebaseConfig";
 import { closeOrderAndLogSale } from "./financeService";
 import { QUICK_SALE_TABLE } from "../utils/posConstants";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const ordersCollection = collection(db, "orders");
 const tablesCollection = collection(db, "tables");
+
+function sortOrders(items = []) {
+  return [...items].sort((left, right) => {
+    const leftTime = String(left?.updatedAt?.seconds || left?.updatedAt || left?.created_at?.seconds || 0);
+    const rightTime = String(right?.updatedAt?.seconds || right?.updatedAt || right?.created_at?.seconds || 0);
+    return rightTime.localeCompare(leftTime, "es", { sensitivity: "base" });
+  });
+}
 
 function normalizeOrderItems(items) {
   if (!Array.isArray(items) || items.length === 0) {
@@ -173,7 +181,11 @@ export function subscribeToActiveOrders(businessId, callback) {
 
   return onSnapshot(ordersQuery, (snapshot) => {
     callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "orders:subscribeToActiveOrders",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export function subscribeToOrderHistory(businessId, callback) {
@@ -184,13 +196,18 @@ export function subscribeToOrderHistory(businessId, callback) {
 
   const ordersQuery = query(
     ordersCollection,
-    where("business_id", "==", businessId),
-    orderBy("updatedAt", "desc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(ordersQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortOrders(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "orders:subscribeToOrderHistory",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export function subscribeToActiveOrder(businessId, tableId, callback) {
@@ -208,7 +225,11 @@ export function subscribeToActiveOrder(businessId, tableId, callback) {
   return onSnapshot(orderQuery, (snapshot) => {
     const activeOrder = snapshot.docs[0];
     callback(activeOrder ? { id: activeOrder.id, ...activeOrder.data() } : null);
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "orders:subscribeToActiveOrder",
+    callback,
+    emptyValue: null,
+  }));
 }
 
 export async function submitOrder({

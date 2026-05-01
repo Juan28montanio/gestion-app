@@ -1,27 +1,34 @@
 import { BookOpenText, Boxes, ClipboardList, Factory, Package, Sparkles } from "lucide-react";
-import { formatCOP } from "../../utils/formatters";
+import { formatCOP } from "../../../utils/formatters";
+import { buildRecipeCostSnapshot } from "../recipes/recipeCostingShared";
 
-export const PRODUCT_FORM = {
-  name: "",
-  category: "",
-  price: "",
-  stock: "",
-  productType: "standard",
-  recipeMode: "direct",
-  preparationItems: [],
-  ticketEligible: false,
-  ticketUnits: "10",
-  ticketValidityDays: "30",
-};
+export function createProductForm() {
+  return {
+    name: "",
+    category: "",
+    price: "",
+    stock: "",
+    productType: "standard",
+    recipeMode: "direct",
+    preparationItems: [],
+    ticketEligible: false,
+    ticketUnits: "10",
+    ticketValidityDays: "30",
+  };
+}
 
-export const SUPPLY_FORM = {
-  name: "",
-  category: "",
-  unit: "g",
-  stock: "",
-  stockMinAlert: "",
-  averageCost: "",
-};
+export function createSupplyForm() {
+  return {
+    name: "",
+    category: "",
+    unit: "g",
+    stock: "",
+    stockMinAlert: "",
+    averageCost: "",
+  };
+}
+
+export const SUPPLY_FORM = createSupplyForm();
 
 export const RESOURCE_TABS = [
   "suppliers",
@@ -43,7 +50,7 @@ export const TABS = [
 
 export function buildProductForm(product) {
   if (!product) {
-    return PRODUCT_FORM;
+    return createProductForm();
   }
 
   return {
@@ -69,7 +76,7 @@ export function buildProductForm(product) {
 
 export function buildSupplyForm(supply) {
   if (!supply) {
-    return SUPPLY_FORM;
+    return createSupplyForm();
   }
 
   return {
@@ -317,26 +324,7 @@ export function summarizeSupplies(supplies) {
 }
 
 export function buildProductModalMetrics(currentProductRecipe, currentPrice) {
-  if (!currentProductRecipe) {
-    return {
-      realCost: 0,
-      currentMarginPct: 0,
-      suggestedPrice: Number(currentPrice || 0),
-      ingredientsCount: 0,
-    };
-  }
-
-  return {
-    realCost: Number(currentProductRecipe.real_cost || 0),
-    currentMarginPct: Number(currentProductRecipe.current_margin_pct || 0),
-    suggestedPrice: Number(currentProductRecipe.suggested_price || 0),
-    preparationCount: Array.isArray(currentProductRecipe.preparation_items)
-      ? currentProductRecipe.preparation_items.length
-      : 0,
-    ingredientsCount: Array.isArray(currentProductRecipe.ingredients)
-      ? currentProductRecipe.ingredients.length
-      : 0,
-  };
+  return buildRecipeCostSnapshot(currentProductRecipe, currentPrice);
 }
 
 export function summarizeProducts(products, productRecipeMap) {

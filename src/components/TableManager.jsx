@@ -115,18 +115,6 @@ function getOperationalMessage(table, currentOrder) {
   return "Disponible para abrir servicio.";
 }
 
-function getOrderedItemsLabel(order) {
-  const names = (order?.items || [])
-    .map((item) => String(item.name || "").trim())
-    .filter(Boolean);
-
-  if (!names.length) {
-    return "";
-  }
-
-  return names.slice(0, 3).join(", ");
-}
-
 function getOrderedItemsPreview(order) {
   const names = (order?.items || [])
     .map((item) => String(item.name || "").trim())

@@ -4,16 +4,24 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const customersCollection = collection(db, "customers");
 const TICKET_WARNING_THRESHOLD = 2;
+
+function sortCustomers(items = []) {
+  return [...items].sort((left, right) =>
+    String(left?.name || "").localeCompare(String(right?.name || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 function normalizeDate(value) {
   if (!value) {
@@ -107,13 +115,18 @@ export function subscribeToCustomers(businessId, callback) {
 
   const customersQuery = query(
     customersCollection,
-    where("business_id", "==", businessId),
-    orderBy("name", "asc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(customersQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortCustomers(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "customers:subscribeToCustomers",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function createCustomer(businessId, customer) {

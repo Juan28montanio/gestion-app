@@ -14,6 +14,7 @@ import {
 } from "./navigation/navigationConfig";
 import SplashScreen from "./layout/SplashScreen";
 import SectionFallback from "./layout/SectionFallback";
+import SectionErrorBoundary from "./layout/SectionErrorBoundary";
 import MainHeader from "./layout/MainHeader";
 import MobileBottomNav from "./layout/MobileBottomNav";
 import DesktopSidebar from "./layout/DesktopSidebar";
@@ -30,6 +31,7 @@ const TableManager = lazy(() => import("../components/TableManager"));
 const TicketWalletManager = lazy(() => import("../components/TicketWalletManager"));
 const CustomerMenu = lazy(() => import("../components/CustomerMenu"));
 const AccountSettings = lazy(() => import("../components/AccountSettings"));
+const UsageGuide = lazy(() => import("../components/UsageGuide"));
 const AuthScreen = lazy(() => import("../components/AuthScreen"));
 const AuditPinModal = lazy(() => import("../components/AuditPinModal"));
 
@@ -47,6 +49,7 @@ function AppShellContent() {
     saveBusinessAccount,
     saveUserProfile,
     verifyAuditPin,
+    resetWorkspace,
   } = useAuthContext();
   const [selectedTable, setSelectedTable] = useState(null);
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -61,6 +64,7 @@ function AppShellContent() {
   const [cashLockDismissed, setCashLockDismissed] = useState(false);
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [auditChallenge, setAuditChallenge] = useState(null);
+  const [sectionRenderNonce, setSectionRenderNonce] = useState(0);
   const { entriesBySection, isOpen: isDecisionCenterOpen, openDecisionCenter, closeDecisionCenter } = useDecisionCenter();
 
   useEffect(() => {
@@ -316,72 +320,90 @@ function AppShellContent() {
               />
 
               <div className="flex-1 px-4 py-6 pb-36 md:px-6 xl:pb-28">
-                <Suspense fallback={<SectionFallback title={currentSectionMeta.title} />}>
-                  {activeSection === "salon" ? (
-                    <TableManager
-                      businessId={businessId}
-                      selectedTableId={selectedTable?.id}
-                      onSelectTable={setSelectedTable}
-                      onNotify={notify}
-                    />
-                  ) : null}
+                <SectionErrorBoundary
+                  key={`${activeSection}-${sectionRenderNonce}`}
+                  resetKey={`${activeSection}-${sectionRenderNonce}`}
+                  title={`No fue posible cargar ${currentSectionMeta.title}`}
+                  description="Revisa el modulo nuevamente o vuelve a una vista segura para seguir operando mientras solucionamos el fallo."
+                  onRetry={() => setSectionRenderNonce((current) => current + 1)}
+                  onGoSafeSection={() => setActiveSection("account")}
+                >
+                  <Suspense fallback={<SectionFallback title={currentSectionMeta.title} />}>
+                    {activeSection === "salon" ? (
+                      <TableManager
+                        businessId={businessId}
+                        selectedTableId={selectedTable?.id}
+                        onSelectTable={setSelectedTable}
+                        onNotify={notify}
+                      />
+                    ) : null}
 
-                  {activeSection === "pos" ? (
-                    <POSOrder
-                      businessId={businessId}
-                      selectedTable={selectedTable}
-                      onSelectTable={setSelectedTable}
-                      onOpenCatalog={() => setActiveSection("inventory")}
-                      onOrderPaid={() => setSelectedTable(null)}
-                      onOrderCancelled={() => {
-                        notify("La orden fue cancelada y la mesa quedo libre.");
-                        setSelectedTable(null);
-                      }}
-                      onPaymentSuccess={(paymentMethod) =>
-                        notify(
-                          `Pago registrado con ${
-                            PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod
-                          }.`
-                        )
-                      }
-                    />
-                  ) : null}
+                    {activeSection === "pos" ? (
+                      <POSOrder
+                        businessId={businessId}
+                        selectedTable={selectedTable}
+                        onSelectTable={setSelectedTable}
+                        onOpenCatalog={() => setActiveSection("inventory")}
+                        onOrderPaid={() => setSelectedTable(null)}
+                        onOrderCancelled={() => {
+                          notify("La orden fue cancelada y la mesa quedo libre.");
+                          setSelectedTable(null);
+                        }}
+                        onPaymentSuccess={(paymentMethod) =>
+                          notify(
+                            `Pago registrado con ${
+                              PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod
+                            }.`
+                          )
+                        }
+                      />
+                    ) : null}
 
-                  {activeSection === "inventory" ? (
-                    <ProductManager businessId={businessId} mode="catalog" />
-                  ) : null}
+                    {activeSection === "inventory" ? (
+                      <ProductManager businessId={businessId} mode="catalog" />
+                    ) : null}
 
-                  {activeSection === "resources" ? (
-                    <ProductManager businessId={businessId} mode="resources" />
-                  ) : null}
+                    {activeSection === "resources" ? (
+                      <ProductManager businessId={businessId} mode="resources" />
+                    ) : null}
 
-                  {activeSection === "ticketing" ? (
-                    <TicketWalletManager businessId={businessId} requestAuditPin={requestAuditPin} />
-                  ) : null}
+                    {activeSection === "ticketing" ? (
+                      <TicketWalletManager businessId={businessId} requestAuditPin={requestAuditPin} />
+                    ) : null}
 
-                  {activeSection === "clients" ? <CustomerManager businessId={businessId} /> : null}
+                    {activeSection === "clients" ? <CustomerManager businessId={businessId} /> : null}
 
-                  {activeSection === "finance" ? (
-                    <AdminDashboard
-                      businessId={businessId}
-                      business={business}
-                      userProfile={userProfile}
-                      currentUser={currentUser}
-                      requestAuditPin={requestAuditPin}
-                    />
-                  ) : null}
+                    {activeSection === "finance" ? (
+                      <AdminDashboard
+                        businessId={businessId}
+                        business={business}
+                        userProfile={userProfile}
+                        currentUser={currentUser}
+                        requestAuditPin={requestAuditPin}
+                      />
+                    ) : null}
 
-                  {activeSection === "account" ? (
-                    <AccountSettings
-                      business={business}
-                      userProfile={userProfile}
-                      currentUser={currentUser}
-                      verifySessionPassword={verifySessionPassword}
-                      onSaveBusiness={(values) => saveBusinessAccount(businessId, values)}
-                      onSaveProfile={(values) => saveUserProfile(currentUser.uid, values)}
-                    />
-                  ) : null}
-                </Suspense>
+                    {activeSection === "account" ? (
+                      <AccountSettings
+                        business={business}
+                        userProfile={userProfile}
+                        currentUser={currentUser}
+                        verifySessionPassword={verifySessionPassword}
+                        onSaveBusiness={(values) => saveBusinessAccount(businessId, values)}
+                        onSaveProfile={(values) => saveUserProfile(currentUser.uid, values)}
+                        onResetWorkspace={() => resetWorkspace(businessId)}
+                        onGoGuide={() => setActiveSection("guide")}
+                      />
+                    ) : null}
+
+                    {activeSection === "guide" ? (
+                      <UsageGuide
+                        business={business}
+                        onNavigate={(section) => setActiveSection(section)}
+                      />
+                    ) : null}
+                  </Suspense>
+                </SectionErrorBoundary>
               </div>
             </div>
           </div>

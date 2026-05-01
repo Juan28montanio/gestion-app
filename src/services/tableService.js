@@ -5,15 +5,19 @@ import {
   doc,
   getDoc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const tablesCollection = collection(db, "tables");
+
+function sortTables(items = []) {
+  return [...items].sort((left, right) => Number(left?.number || 0) - Number(right?.number || 0));
+}
 
 function normalizeTablePayload(tableInput, capacity, businessId) {
   const source =
@@ -106,18 +110,23 @@ export function subscribeToTables(businessId, callback) {
 
   const tablesQuery = query(
     tablesCollection,
-    where("business_id", "==", businessId),
-    orderBy("number", "asc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(tablesQuery, (snapshot) => {
-    const tables = snapshot.docs.map((snapshotDoc) => ({
-      id: snapshotDoc.id,
-      ...snapshotDoc.data(),
-    }));
+    const tables = sortTables(
+      snapshot.docs.map((snapshotDoc) => ({
+        id: snapshotDoc.id,
+        ...snapshotDoc.data(),
+      }))
+    );
 
     callback(tables);
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "tables:subscribeToTables",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function updateTableState(tableId, updates) {

@@ -20,6 +20,7 @@ import {
   resolvePurchasePaymentMethod,
 } from "../utils/payments";
 import { buildOperationalSaleItemDetail } from "../utils/sales";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const cashClosingsCollection = collection(db, "cash_closings");
 const salesHistoryCollection = collection(db, "sales_history");
@@ -185,7 +186,11 @@ export function subscribeToOpenCashSession(businessId, callback) {
       });
 
     callback(sessions[0] || null);
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "cash_closings:subscribeToOpenCashSession",
+    callback,
+    emptyValue: null,
+  }));
 }
 
 export function subscribeToCashClosings(businessId, callback) {
@@ -206,7 +211,11 @@ export function subscribeToCashClosings(businessId, callback) {
       });
 
     callback(closings);
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "cash_closings:subscribeToCashClosings",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function getCurrentOpenCashSession(businessId) {
@@ -293,6 +302,14 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
   }
 
   const closingData = closingSnapshot.data();
+  if (String(closingData.business_id || "").trim() !== normalizedBusinessId) {
+    throw new Error("La caja abierta no pertenece al negocio activo.");
+  }
+
+  if (String(closingData.status || "").trim().toLowerCase() !== "open") {
+    throw new Error("La caja seleccionada ya fue cerrada.");
+  }
+
   const openedAt = normalizeDate(closingData.opened_at || closingData.createdAt) || new Date();
   const now = new Date();
 
@@ -549,6 +566,10 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
   const customerRef = customerId ? doc(db, "customers", customerId) : null;
   const openSession = await getCurrentOpenCashSession(saleData.business_id);
 
+  if (!openSession) {
+    throw new Error("Debes abrir caja antes de registrar un abono de cartera.");
+  }
+
   const batch = writeBatch(db);
 
   batch.update(saleRef, {
@@ -598,6 +619,22 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
 }
 
 export function buildCashClosingReportHtml(report) {
+  const openedAtLabel = report.openedAt ? report.openedAt.toLocaleString("es-CO") : "-";
+  const closedAtLabel = report.closedAt ? report.closedAt.toLocaleString("es-CO") : "-";
+  const cashDifferenceTone =
+    Number(report.cashDifference || 0) === 0
+      ? "#166534"
+      : Number(report.cashDifference || 0) > 0
+        ? "#946200"
+        : "#b42318";
+  const cashDifferenceLabel =
+    Number(report.cashDifference || 0) === 0
+      ? "Cuadre exacto"
+      : Number(report.cashDifference || 0) > 0
+        ? "Sobrante en caja"
+        : "Faltante en caja";
+  const incomeMovementCount = (report.movementEntries || []).filter((entry) => entry.type === "Ingreso").length;
+  const expenseMovementCount = (report.movementEntries || []).filter((entry) => entry.type === "Egreso").length;
   const byMethodRows = Object.entries(report.byMethod || {})
     .map(
       ([method, total]) =>
@@ -654,13 +691,14 @@ export function buildCashClosingReportHtml(report) {
       <meta charset="utf-8" />
       <title>Reporte de cierre SmartProfit</title>
       <style>
-        body { font-family: "Segoe UI", Arial, sans-serif; padding: 32px; color: #0f172a; background: #f3f4f6; }
+        body { font-family: "Segoe UI", Arial, sans-serif; padding: 24px; color: #0f172a; background: #eef2f7; }
         .sheet { max-width: 1120px; margin: 0 auto; background: white; border-radius: 24px; padding: 36px; box-shadow: 0 20px 60px rgba(15,23,42,.12); }
-        .topbar { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:24px; }
+        .topbar { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:24px; padding-bottom:24px; border-bottom:1px solid #e2e8f0; }
         .brand { display:flex; flex-direction:column; gap:6px; }
         .pill { display:inline-flex; align-items:center; border-radius:999px; padding:8px 14px; font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; background:#f8fafc; color:#334155; border:1px solid #cbd5e1; }
         .grid { display:grid; gap:16px; }
         .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+        .grid-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
         .card { border:1px solid #e2e8f0; border-radius:24px; padding:20px; background:#fff; }
         .card.dark { background: linear-gradient(135deg,#0f172a 0%,#1e293b 100%); color:#fff; border:none; }
         .eyebrow { font-size:12px; letter-spacing:.18em; text-transform:uppercase; font-weight:700; color:#94a3b8; }
@@ -671,6 +709,16 @@ export function buildCashClosingReportHtml(report) {
         table { width:100%; border-collapse: collapse; }
         th { text-align:left; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#64748b; padding:10px 12px; border-bottom:1px solid #cbd5e1; }
         .section-title { font-size:18px; font-weight:700; margin:28px 0 14px; }
+        .muted { color:#64748b; }
+        .kpi-note { margin:10px 0 0; color:#64748b; font-size:13px; line-height:1.6; }
+        .two-col { display:grid; gap:16px; grid-template-columns: 1.1fr .9fr; }
+        .meta-list { display:grid; gap:10px; }
+        .meta-row { display:flex; justify-content:space-between; gap:16px; border-bottom:1px solid #e2e8f0; padding-bottom:10px; }
+        .meta-row:last-child { border-bottom:none; padding-bottom:0; }
+        @media print {
+          body { background:white; padding:0; }
+          .sheet { box-shadow:none; border-radius:0; max-width:none; padding:24px; }
+        }
       </style>
     </head>
     <body>
@@ -680,13 +728,16 @@ export function buildCashClosingReportHtml(report) {
             <h1 style="margin:0;font-size:22px;">${report.businessName || "SmartProfit"}</h1>
             <p style="margin:0;color:#64748b;">Reporte operativo y financiero de cierre</p>
             <h2 style="margin:18px 0 0;font-size:32px;">Reporte de cierre de caja</h2>
+            <p style="margin:8px 0 0;color:#475569;max-width:560px;line-height:1.6;">
+              Documento de control del turno con resumen financiero, medios de pago, movimientos y trazabilidad del responsable.
+            </p>
           </div>
           <div style="text-align:right;">
             <span class="pill">${report.closingCode || buildClosingCode(report.closedAt, 1)}</span>
             <p style="margin:16px 0 0;"><strong>Operador:</strong> ${report.operatorName || report.cashierName || "Operador SmartProfit"}</p>
             <p style="margin:6px 0 0;"><strong>Cuenta:</strong> ${report.cashierEmail || "Sin correo"}</p>
-            <p style="margin:6px 0 0;"><strong>Apertura:</strong> ${report.openedAt.toLocaleString("es-CO")}</p>
-            <p style="margin:6px 0 0;"><strong>Cierre:</strong> ${report.closedAt.toLocaleString("es-CO")}</p>
+            <p style="margin:6px 0 0;"><strong>Apertura:</strong> ${openedAtLabel}</p>
+            <p style="margin:6px 0 0;"><strong>Cierre:</strong> ${closedAtLabel}</p>
           </div>
         </div>
 
@@ -703,6 +754,24 @@ export function buildCashClosingReportHtml(report) {
           <div class="card dark">
             <div class="eyebrow" style="color:#cbd5e1;">Balance neto</div>
             <div class="value">${formatCOP(report.netBalance)}</div>
+          </div>
+        </div>
+
+        <div class="band">
+          <div class="band-title">Identificacion del turno</div>
+          <div class="two-col" style="margin-top:14px;">
+            <div class="meta-list">
+              <div class="meta-row"><span class="muted">Negocio</span><strong>${report.businessName || "SmartProfit"}</strong></div>
+              <div class="meta-row"><span class="muted">Responsable</span><strong>${report.operatorName || report.cashierName || "Operador SmartProfit"}</strong></div>
+              <div class="meta-row"><span class="muted">Cuenta</span><strong>${report.cashierEmail || "Sin correo"}</strong></div>
+              <div class="meta-row"><span class="muted">Codigo de cierre</span><strong>${report.closingCode || buildClosingCode(report.closedAt, 1)}</strong></div>
+            </div>
+            <div class="meta-list">
+              <div class="meta-row"><span class="muted">Inicio del turno</span><strong>${openedAtLabel}</strong></div>
+              <div class="meta-row"><span class="muted">Fin del turno</span><strong>${closedAtLabel}</strong></div>
+              <div class="meta-row"><span class="muted">Base de apertura</span><strong>${formatCOP(report.openingAmount || 0)}</strong></div>
+              <div class="meta-row"><span class="muted">Movimientos auditables</span><strong>${report.auditEntries?.length || 0}</strong></div>
+            </div>
           </div>
         </div>
 
@@ -726,6 +795,12 @@ export function buildCashClosingReportHtml(report) {
           </thead>
           <tbody>
             <tr>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;">Base de apertura</td>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">${formatCOP(report.openingAmount || 0)}</td>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">-</td>
+              <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">-</td>
+            </tr>
+            <tr>
               <td style="padding:12px;border-bottom:1px solid #e2e8f0;">Efectivo</td>
               <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">${formatCOP(report.cashExpected)}</td>
               <td style="padding:12px;border-bottom:1px solid #e2e8f0;text-align:right;">${formatCOP(report.cashCounted)}</td>
@@ -733,9 +808,10 @@ export function buildCashClosingReportHtml(report) {
             </tr>
           </tbody>
         </table>
+        <p class="kpi-note"><strong style="color:${cashDifferenceTone};">${cashDifferenceLabel}.</strong> La diferencia entre efectivo esperado y contado define el ajuste final del arqueo.</p>
 
         <div class="section-title">Movimientos del turno</div>
-        <div class="grid grid-3">
+        <div class="grid grid-4">
           <div class="card">
             <div class="eyebrow">Total recaudado</div>
             <div class="value">${formatCOP(report.totalCollected)}</div>
@@ -747,6 +823,11 @@ export function buildCashClosingReportHtml(report) {
           <div class="card">
             <div class="eyebrow">Servicios por tiquetera</div>
             <div class="value">${report.ticketWalletUnits || 0} uds</div>
+          </div>
+          <div class="card">
+            <div class="eyebrow">Movimientos del periodo</div>
+            <div class="value">${(report.movementEntries || []).length}</div>
+            <p class="kpi-note">Ingresos: ${incomeMovementCount} · Egresos: ${expenseMovementCount}</p>
           </div>
         </div>
 

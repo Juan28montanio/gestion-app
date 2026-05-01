@@ -5,15 +5,23 @@ import {
   doc,
   getDocs,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const ingredientsCollection = collection(db, "ingredients");
+
+function sortSupplies(items = []) {
+  return [...items].sort((left, right) =>
+    String(left?.name || "").localeCompare(String(right?.name || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 export function buildSupplySearchKey(name) {
   return String(name || "").trim().toLocaleLowerCase("es");
@@ -82,13 +90,18 @@ export function subscribeToSupplies(businessId, callback) {
 
   const ingredientsQuery = query(
     ingredientsCollection,
-    where("business_id", "==", businessId),
-    orderBy("name", "asc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(ingredientsQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortSupplies(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "ingredients:subscribeToSupplies",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function createSupply(businessId, supply) {
@@ -131,11 +144,7 @@ export async function listSupplies(businessId) {
     return [];
   }
 
-  const ingredientsQuery = query(
-    ingredientsCollection,
-    where("business_id", "==", normalizedBusinessId),
-    orderBy("name", "asc")
-  );
+  const ingredientsQuery = query(ingredientsCollection, where("business_id", "==", normalizedBusinessId));
   const snapshot = await getDocs(ingredientsQuery);
-  return snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
+  return sortSupplies(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
 }

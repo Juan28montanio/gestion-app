@@ -296,6 +296,48 @@ export default function AdminDashboard({
     () => buildClosingPurchaseSummary(todayMovements, todaySummary.income),
     [todayMovements, todaySummary.income]
   );
+  const closingDifference = Number(closingPreview?.difference || 0);
+  const closingDifferenceTone =
+    closingDifference === 0
+      ? {
+          label: "Cuadre exacto",
+          classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+          text: "El conteo coincide con el efectivo esperado por el sistema.",
+        }
+      : closingDifference > 0
+        ? {
+            label: "Sobrante detectado",
+            classes: "bg-amber-50 text-amber-700 ring-amber-200",
+            text: "Hay mas efectivo contado que el esperado. Conviene revisar ajustes o cobros no registrados.",
+          }
+        : {
+            label: "Faltante detectado",
+            classes: "bg-rose-50 text-rose-700 ring-rose-200",
+            text: "El efectivo contado es menor al esperado. Revisa egresos, devoluciones o diferencias de caja.",
+          };
+  const closingHistoryCards = useMemo(
+    () =>
+      cashClosings.slice(0, 6).map((closing) => {
+        const isOpenCurrentSession = Boolean(openSession?.id) && closing.id === openSession.id;
+
+        if (!isOpenCurrentSession || closing.status !== "open") {
+          return {
+            ...closing,
+            displaySalesTotal: Number(closing.sales_total || 0),
+            displayExpensesTotal: Number(closing.expenses_total || 0),
+            displayNetBalance: Number(closing.net_balance || 0),
+          };
+        }
+
+        return {
+          ...closing,
+          displaySalesTotal: Number(todaySummary.income || 0),
+          displayExpensesTotal: Number(todaySummary.expense || 0),
+          displayNetBalance: Number(todaySummary.income || 0) - Number(todaySummary.expense || 0),
+        };
+      }),
+    [cashClosings, openSession?.id, todaySummary.expense, todaySummary.income]
+  );
 
   const boxOpenDuration = useMemo(() => {
     const openedAt = normalizeDate(openSession?.opened_at || openSession?.createdAt);
@@ -494,13 +536,24 @@ export default function AdminDashboard({
   };
 
   const handleSaveOperatingExpense = async () => {
+    const concept = String(operatingExpenseForm.concept || "").trim();
+    const amount = Number(operatingExpenseForm.amount);
+
+    if (!concept) {
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return;
+    }
+
     setIsBusy(true);
     try {
       await createOperatingExpense({
         business_id: businessId,
-        concept: operatingExpenseForm.concept,
+        concept,
         category: operatingExpenseForm.category,
-        amount: Number(operatingExpenseForm.amount),
+        amount,
         expense_date: operatingExpenseForm.expenseDate,
         payment_method: operatingExpenseForm.paymentMethod,
         vendor_name: operatingExpenseForm.vendorName,
@@ -540,24 +593,35 @@ export default function AdminDashboard({
       return;
     }
 
+    const concept = String(movementEditForm.concept || "").trim();
+    const total = Number(movementEditForm.total);
+
+    if (!concept) {
+      return;
+    }
+
+    if (!Number.isFinite(total) || total <= 0) {
+      return;
+    }
+
     setIsBusy(true);
     try {
       if (movementToEdit.type === "income") {
         await updateSaleHistoryEntry(movementToEdit.raw.id, {
-          concept: movementEditForm.concept,
-          total: Number(movementEditForm.total),
+          concept,
+          total,
           paymentMethod: movementEditForm.paymentMethod,
         });
       } else if (movementToEdit.source === "operating_expense") {
         await updateOperatingExpense(movementToEdit.raw.id, {
-          concept: movementEditForm.concept,
-          amount: Number(movementEditForm.total),
+          concept,
+          amount: total,
           paymentMethod: movementEditForm.paymentMethod,
         });
       } else {
         await updatePurchaseMovement(movementToEdit.raw.id, {
-          concept: movementEditForm.concept,
-          total: Number(movementEditForm.total),
+          concept,
+          total,
         });
       }
 
@@ -566,6 +630,16 @@ export default function AdminDashboard({
       setIsBusy(false);
     }
   };
+
+  const canSaveOperatingExpense =
+    String(operatingExpenseForm.concept || "").trim().length > 0 &&
+    Number.isFinite(Number(operatingExpenseForm.amount)) &&
+    Number(operatingExpenseForm.amount) > 0;
+
+  const canSaveMovementEdit =
+    String(movementEditForm.concept || "").trim().length > 0 &&
+    Number.isFinite(Number(movementEditForm.total)) &&
+    Number(movementEditForm.total) > 0;
 
   return (
     <>
@@ -1178,7 +1252,7 @@ export default function AdminDashboard({
           </div>
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {cashClosings.slice(0, 6).map((closing) => (
+            {closingHistoryCards.map((closing) => (
               <div key={closing.id} className="rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-slate-900">{closing.opened_date_key || "Jornada"}</p>
@@ -1193,15 +1267,15 @@ export default function AdminDashboard({
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <div className="rounded-2xl bg-white px-3 py-3 ring-1 ring-slate-200">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Ventas</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatCOP(closing.sales_total || 0)}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatCOP(closing.displaySalesTotal || 0)}</p>
                   </div>
                   <div className="rounded-2xl bg-white px-3 py-3 ring-1 ring-slate-200">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Gastos</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatCOP(closing.expenses_total || 0)}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatCOP(closing.displayExpensesTotal || 0)}</p>
                   </div>
                   <div className="rounded-2xl bg-white px-3 py-3 ring-1 ring-slate-200">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Balance</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatCOP(closing.net_balance || 0)}</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{formatCOP(closing.displayNetBalance || 0)}</p>
                   </div>
                 </div>
               </div>
@@ -1357,8 +1431,8 @@ export default function AdminDashboard({
             <button
               type="button"
               onClick={handleSaveOperatingExpense}
-              disabled={isBusy}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+              disabled={isBusy || !canSaveOperatingExpense}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? "Guardando..." : "Registrar gasto"}
             </button>
@@ -1504,8 +1578,8 @@ export default function AdminDashboard({
             <button
               type="button"
               onClick={handleSaveMovementEdit}
-              disabled={isBusy}
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+              disabled={isBusy || !canSaveMovementEdit}
+              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? "Guardando..." : "Guardar ajuste"}
             </button>
@@ -1515,13 +1589,56 @@ export default function AdminDashboard({
 
       <ModalWrapper
         open={isCloseModalOpen}
-        onClose={() => setIsCloseModalOpen(false)}
+        onClose={() => {
+          setIsCloseModalOpen(false);
+          setCashCounted("");
+        }}
         maxWidthClass="max-w-4xl"
         icon={{ main: <ReceiptText size={20} />, close: "X" }}
         title="Cierre de caja"
         description="Revisa el conteo, confirma el resumen y cierra la jornada con su reporte."
       >
         <div className="grid gap-6">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_320px]">
+            <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Resumen del turno
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl bg-slate-50 px-4 py-4 ring-1 ring-slate-200">
+                  <p className="text-xs text-slate-500">Ventas</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {formatCOP(todaySummary.income)}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-4 ring-1 ring-slate-200">
+                  <p className="text-xs text-slate-500">Gastos</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {formatCOP(todaySummary.expense)}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-4 ring-1 ring-slate-200">
+                  <p className="text-xs text-slate-500">Balance</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {formatCOP(todaySummary.income - todaySummary.expense)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Estado del cuadre
+              </p>
+              <span
+                className={`mt-4 inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 ${closingDifferenceTone.classes}`}
+              >
+                {closingDifferenceTone.label}
+              </span>
+              <p className="mt-3 text-sm leading-6 text-slate-600">{closingDifferenceTone.text}</p>
+            </div>
+          </div>
+
           <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
               Contexto del turno
@@ -1572,6 +1689,9 @@ export default function AdminDashboard({
             <div className="rounded-3xl bg-[#fff7df] p-5 ring-1 ring-[#d4a72c]/20">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#946200]">Paso 3</p>
               <h4 className="mt-2 text-lg font-semibold text-slate-900">Resultado del cierre</h4>
+              <p className="mt-2 text-sm text-slate-600">
+                Compara el efectivo esperado contra el conteo real antes de emitir el reporte final.
+              </p>
               <div className="mt-4 space-y-2 text-sm text-slate-700">
                 <div className="flex items-center justify-between">
                   <span>Efectivo esperado</span>
@@ -1583,7 +1703,17 @@ export default function AdminDashboard({
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Diferencia</span>
-                  <span className="font-semibold">{formatCOP(closingPreview?.difference || 0)}</span>
+                  <span
+                    className={`font-semibold ${
+                      closingDifference === 0
+                        ? "text-emerald-700"
+                        : closingDifference > 0
+                          ? "text-amber-700"
+                          : "text-rose-700"
+                    }`}
+                  >
+                    {formatCOP(closingPreview?.difference || 0)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Servicios por tiquetera</span>
@@ -1596,7 +1726,10 @@ export default function AdminDashboard({
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
-              onClick={() => setIsCloseModalOpen(false)}
+              onClick={() => {
+                setIsCloseModalOpen(false);
+                setCashCounted("");
+              }}
               className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
             >
               Volver
@@ -1608,7 +1741,7 @@ export default function AdminDashboard({
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
             >
               <Printer size={16} />
-              {isBusy ? "Cerrando..." : "Cerrar caja y generar reporte"}
+              {isBusy ? "Cerrando..." : "Cerrar caja y emitir reporte"}
             </button>
           </div>
         </div>

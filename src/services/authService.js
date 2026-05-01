@@ -42,6 +42,10 @@ export async function registerBusinessOwner({
     throw new Error("El correo es obligatorio.");
   }
 
+  if (String(password || "").length < 6) {
+    throw new Error("La contrasena debe tener al menos 6 caracteres.");
+  }
+
   const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
   await updateProfile(credential.user, { displayName: normalizedAdminName });
 
@@ -92,6 +96,10 @@ export async function loginWithEmailPassword(email, password) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) {
     throw new Error("El correo es obligatorio.");
+  }
+
+  if (!String(password || "")) {
+    throw new Error("La contrasena es obligatoria.");
   }
 
   const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../firebase/firebaseConfig";
 import {
+  buildBusinessId,
   LEGACY_BUSINESS_ID,
   loginWithEmailPassword,
   reauthenticateCurrentUserPassword,
@@ -16,6 +17,7 @@ import {
   updateBusinessUserProfile,
   verifyBusinessAuditPin,
 } from "../services/businessService";
+import { resetBusinessWorkspace } from "../services/workspaceService";
 
 const AuthContext = createContext(null);
 
@@ -25,6 +27,8 @@ export function AuthProvider({ children }) {
   const [business, setBusiness] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProfileResolved, setIsProfileResolved] = useState(false);
+  const fallbackBusinessId = currentUser?.uid ? buildBusinessId(currentUser.uid) : "";
+  const resolvedBusinessId = userProfile?.business_id || fallbackBusinessId;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -88,7 +92,7 @@ export function AuthProvider({ children }) {
       return undefined;
     }
 
-    const businessId = userProfile?.business_id || "";
+    const businessId = resolvedBusinessId || "";
     if (!businessId) {
       setBusiness(null);
       return undefined;
@@ -105,14 +109,14 @@ export function AuthProvider({ children }) {
     });
 
     return () => unsubscribe();
-  }, [isProfileResolved, userProfile]);
+  }, [isProfileResolved, resolvedBusinessId]);
 
   const value = useMemo(
     () => ({
       currentUser,
       userProfile,
       business,
-      businessId: business?.id || userProfile?.business_id || "",
+      businessId: business?.id || resolvedBusinessId || "",
       isLoading: isLoading || (Boolean(currentUser) && !isProfileResolved),
       login: loginWithEmailPassword,
       registerOwner: registerBusinessOwner,
@@ -121,8 +125,9 @@ export function AuthProvider({ children }) {
       saveBusinessAccount: updateBusinessAccount,
       saveUserProfile: updateBusinessUserProfile,
       verifyAuditPin: verifyBusinessAuditPin,
+      resetWorkspace: resetBusinessWorkspace,
     }),
-    [business, currentUser, isLoading, isProfileResolved, userProfile]
+    [business, currentUser, isLoading, isProfileResolved, resolvedBusinessId, userProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

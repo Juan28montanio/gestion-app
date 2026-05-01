@@ -2,6 +2,7 @@ import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/fires
 import { updateProfile } from "firebase/auth";
 import { auth, db } from "../firebase/firebaseConfig";
 import { buildBusinessId, LEGACY_BUSINESS_ID } from "./authService";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 function toHex(buffer) {
   return Array.from(new Uint8Array(buffer))
@@ -45,7 +46,11 @@ export function subscribeToBusiness(businessId, callback) {
 
   return onSnapshot(doc(db, "businesses", normalizedBusinessId), (snapshot) => {
     callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "businesses:subscribeToBusiness",
+    callback,
+    emptyValue: null,
+  }));
 }
 
 export function subscribeToBusinessUser(userId, callback) {
@@ -57,7 +62,11 @@ export function subscribeToBusinessUser(userId, callback) {
 
   return onSnapshot(doc(db, "business_users", normalizedUserId), (snapshot) => {
     callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "business_users:subscribeToBusinessUser",
+    callback,
+    emptyValue: null,
+  }));
 }
 
 export async function migrateLegacyBusinessUser(user, profile) {
@@ -174,6 +183,10 @@ export async function verifyBusinessAuditPin(businessId, pin) {
   const normalizedPin = String(pin || "").trim();
 
   if (!normalizedBusinessId || !normalizedPin) {
+    return false;
+  }
+
+  if (!/^\d{4,6}$/.test(normalizedPin)) {
     return false;
   }
 

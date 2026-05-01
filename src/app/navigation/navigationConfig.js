@@ -1,6 +1,7 @@
 import {
   BarChart3,
   ContactRound,
+  Compass,
   Package2,
   PanelsTopLeft,
   ReceiptText,
@@ -69,6 +70,13 @@ export const NAV_ITEMS = [
     description: "Caja, cierres, cartera e historial.",
   },
   {
+    id: "guide",
+    label: "Guia de uso",
+    icon: Compass,
+    section: "Configuracion",
+    description: "Aprende por donde empezar y como usar el sistema paso a paso.",
+  },
+  {
     id: "account",
     label: "Cuenta",
     icon: UserCog,
@@ -121,5 +129,9 @@ export const SECTION_GUIDANCE = {
   account: {
     promise: "Mantiene identidad, responsables y datos del negocio en orden.",
     workflow: "Ajusta configuracion clave sin salir del entorno operativo.",
+  },
+  guide: {
+    promise: "Empieza con orden y evita cargar datos en el modulo equivocado.",
+    workflow: "Sigue la ruta sugerida para configurar, costear, vender y cerrar mejor.",
   },
 };

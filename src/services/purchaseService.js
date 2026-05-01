@@ -3,7 +3,6 @@ import {
   doc,
   getDocs,
   onSnapshot,
-  orderBy,
   query,
   runTransaction,
   serverTimestamp,
@@ -15,8 +14,17 @@ import { refreshPreparationsForIngredients } from "./preparationService";
 import { refreshRecipeBooksForIngredients } from "./recipeBookService";
 import { buildSupplySearchKey, listSupplies } from "./supplyService";
 import { resolvePurchasePaymentMethod } from "../utils/payments";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const purchasesCollection = collection(db, "purchases");
+
+function sortPurchases(items = []) {
+  return [...items].sort((left, right) =>
+    String(right?.purchase_date || "").localeCompare(String(left?.purchase_date || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 function toNumber(value) {
   const parsed = Number(value);
@@ -172,13 +180,18 @@ export function subscribeToPurchases(businessId, callback) {
 
   const purchasesQuery = query(
     purchasesCollection,
-    where("business_id", "==", businessId),
-    orderBy("purchase_date", "desc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(purchasesQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortPurchases(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "purchases:subscribeToPurchases",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function createPurchase(purchase) {
@@ -319,19 +332,20 @@ export async function getIngredientPriceHistory(businessId, ingredientId) {
 
   const purchasesQuery = query(
     purchasesCollection,
-    where("business_id", "==", normalizedBusinessId),
-    orderBy("purchase_date", "desc")
+    where("business_id", "==", normalizedBusinessId)
   );
 
   const snapshot = await getDocs(purchasesQuery);
 
-  return snapshot.docs
+  return sortPurchases(
+    snapshot.docs.map((purchaseDoc) => ({ id: purchaseDoc.id, ...purchaseDoc.data() }))
+  )
     .flatMap((purchaseDoc) => {
-      const purchase = purchaseDoc.data();
+      const purchase = purchaseDoc;
       return (purchase.items || [])
         .filter((item) => item.ingredient_id === normalizedIngredientId)
         .map((item) => ({
-          purchase_id: purchaseDoc.id,
+          purchase_id: purchase.id,
           purchase_date: purchase.purchase_date,
           invoice_number: purchase.invoice_number,
           unit_price: item.unit_price,

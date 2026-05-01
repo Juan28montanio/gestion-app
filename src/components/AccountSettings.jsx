@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
-import { Building2, ShieldCheck, UserRound } from "lucide-react";
+import { AlertTriangle, Building2, Compass, RotateCcw, ShieldCheck, UserRound } from "lucide-react";
 import FormInput from "./FormInput";
 import LogoImage from "./LogoImage";
+import ModalWrapper from "./ModalWrapper";
 import { SmartProfitIsotype } from "./SmartProfitMark";
 import { normalizeLogoUrl, validateLogoUrl } from "../utils/logoUrl";
 
-const EMPTY_FORM = {
-  businessName: "",
-  logoUrl: "",
-  displayName: "",
-  auditPin: "",
-  confirmAuditPin: "",
-  currentPassword: "",
-};
+function createEmptyAccountForm() {
+  return {
+    businessName: "",
+    logoUrl: "",
+    displayName: "",
+    auditPin: "",
+    confirmAuditPin: "",
+    currentPassword: "",
+  };
+}
 
 function SettingsCard({ icon, title, description, children }) {
   return (
@@ -38,15 +41,39 @@ export default function AccountSettings({
   verifySessionPassword,
   onSaveBusiness,
   onSaveProfile,
+  onResetWorkspace,
+  onGoGuide,
 }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(createEmptyAccountForm);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [isSaving, setIsSaving] = useState(false);
   const [logoValidation, setLogoValidation] = useState({
     status: "idle",
     message: "Valida el enlace antes de guardar para confirmar que el logo sea publico.",
   });
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetPhrase, setResetPhrase] = useState("");
+  const [isResettingWorkspace, setIsResettingWorkspace] = useState(false);
   const previewLogoUrl = normalizeLogoUrl(form.logoUrl);
+  const normalizedBusinessName = String(form.businessName || "").trim();
+  const normalizedDisplayName = String(form.displayName || "").trim();
+  const normalizedCurrentPassword = String(form.currentPassword || "").trim();
+  const pinChangeRequested = Boolean(form.auditPin || form.confirmAuditPin);
+  const hasValidAuditPin = /^\d{4,6}$/.test(String(form.auditPin || ""));
+  const canSubmit =
+    !isSaving &&
+    Boolean(normalizedBusinessName) &&
+    Boolean(normalizedDisplayName) &&
+    logoValidation.status !== "loading" &&
+    (!pinChangeRequested ||
+      (hasValidAuditPin &&
+        form.auditPin === form.confirmAuditPin &&
+        Boolean(normalizedCurrentPassword)));
+  const canResetWorkspace =
+    !isResettingWorkspace &&
+    String(resetPhrase || "").trim().toUpperCase() === "REINICIAR" &&
+    Boolean(String(resetPassword || "").trim());
 
   useEffect(() => {
     setForm({
@@ -102,6 +129,14 @@ export default function AccountSettings({
     event.preventDefault();
     setFeedback({ type: "", message: "" });
 
+    if (pinChangeRequested && typeof verifySessionPassword !== "function") {
+      setFeedback({
+        type: "error",
+        message: "La validacion de identidad no esta disponible en este momento.",
+      });
+      return;
+    }
+
     if (form.auditPin && form.auditPin !== form.confirmAuditPin) {
       setFeedback({ type: "error", message: "La confirmacion del PIN no coincide." });
       return;
@@ -111,6 +146,22 @@ export default function AccountSettings({
       setFeedback({
         type: "error",
         message: "Ingresa tu contrasena actual para crear o cambiar el PIN de auditoria.",
+      });
+      return;
+    }
+
+    if (pinChangeRequested && !hasValidAuditPin) {
+      setFeedback({
+        type: "error",
+        message: "El PIN de auditoria debe tener entre 4 y 6 digitos numericos.",
+      });
+      return;
+    }
+
+    if (!normalizedBusinessName || !normalizedDisplayName) {
+      setFeedback({
+        type: "error",
+        message: "Completa el nombre del negocio y el nombre visible antes de guardar.",
       });
       return;
     }
@@ -127,16 +178,16 @@ export default function AccountSettings({
       }
 
       if (form.auditPin) {
-        await verifySessionPassword?.(form.currentPassword);
+        await verifySessionPassword(form.currentPassword);
       }
 
       await Promise.all([
         onSaveBusiness({
-          name: form.businessName,
-          logoUrl: normalizeLogoUrl(form.logoUrl),
+          name: normalizedBusinessName,
+          logoUrl: logoResult.resolvedUrl || normalizeLogoUrl(form.logoUrl),
           auditPin: form.auditPin,
         }),
-        onSaveProfile({ displayName: form.displayName }),
+        onSaveProfile({ displayName: normalizedDisplayName }),
       ]);
 
       setFeedback({ type: "success", message: "La informacion de la cuenta fue actualizada." });
@@ -157,6 +208,57 @@ export default function AccountSettings({
     }
   };
 
+  const closeResetModal = (force = false) => {
+    if (isResettingWorkspace && !force) {
+      return;
+    }
+
+    setIsResetModalOpen(false);
+    setResetPassword("");
+    setResetPhrase("");
+  };
+
+  const handleWorkspaceReset = async () => {
+    if (typeof verifySessionPassword !== "function" || typeof onResetWorkspace !== "function") {
+      setFeedback({
+        type: "error",
+        message: "El reinicio seguro no esta disponible en este momento.",
+      });
+      return;
+    }
+
+    if (!canResetWorkspace) {
+      setFeedback({
+        type: "error",
+        message: "Confirma REINICIAR y escribe tu contrasena actual para vaciar la app.",
+      });
+      return;
+    }
+
+    setIsResettingWorkspace(true);
+    setFeedback({ type: "", message: "" });
+
+    try {
+      await verifySessionPassword(resetPassword);
+      await onResetWorkspace();
+      closeResetModal(true);
+      setFeedback({
+        type: "success",
+        message:
+          "El espacio de trabajo quedo reiniciado. La cuenta se conserva y la app vuelve a empezar en cero.",
+      });
+      onGoGuide?.();
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message:
+          error instanceof Error ? error.message : "No fue posible reiniciar el espacio de trabajo.",
+      });
+    } finally {
+      setIsResettingWorkspace(false);
+    }
+  };
+
   return (
     <section className="space-y-6">
       <section className="rounded-[32px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_52%,#eef2ff_100%)] px-6 py-6 shadow-sm">
@@ -169,7 +271,7 @@ export default function AccountSettings({
               Identidad, seguridad y control del espacio de trabajo
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-              Mantén consistente la identidad del negocio, deja claro quién opera el sistema y protege cambios sensibles con una verificación real antes de tocar el PIN de auditoría.
+              Manten consistente la identidad del negocio, deja claro quien opera el sistema y protege cambios sensibles con una verificacion real antes de tocar el PIN de auditoria.
             </p>
           </div>
 
@@ -258,7 +360,7 @@ export default function AccountSettings({
           <SettingsCard
             icon={<UserRound size={20} />}
             title="Responsable operativo"
-            description="Este nombre acompaña la operacion diaria y ayuda a reconocer quien esta administrando el sistema."
+            description="Este nombre acompana la operacion diaria y ayuda a reconocer quien esta administrando el sistema."
           >
             <div className="grid gap-4 md:grid-cols-2">
               <FormInput
@@ -274,6 +376,27 @@ export default function AccountSettings({
                   {currentUser?.email || userProfile?.email || "Sin correo"}
                 </div>
               </div>
+            </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={<Compass size={20} />}
+            title="Ruta recomendada"
+            description="Si vas a arrancar de nuevo, sigue la guia antes de empezar a cargar datos en cualquier modulo."
+          >
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <p className="text-sm leading-6 text-slate-500">
+                La guia te muestra en que orden conviene configurar cuenta, recursos, productos,
+                mesas, ventas y finanzas para que el sistema quede limpio desde el principio.
+              </p>
+              <button
+                type="button"
+                onClick={onGoGuide}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                <Compass size={16} />
+                Abrir guia de uso
+              </button>
             </div>
           </SettingsCard>
         </section>
@@ -301,7 +424,10 @@ export default function AccountSettings({
                 inputMode="numeric"
                 value={form.auditPin}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, auditPin: event.target.value }))
+                  setForm((current) => ({
+                    ...current,
+                    auditPin: event.target.value.replace(/\D/g, "").slice(0, 6),
+                  }))
                 }
                 placeholder={
                   business?.audit_pin_hash
@@ -316,7 +442,10 @@ export default function AccountSettings({
                 inputMode="numeric"
                 value={form.confirmAuditPin}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, confirmAuditPin: event.target.value }))
+                  setForm((current) => ({
+                    ...current,
+                    confirmAuditPin: event.target.value.replace(/\D/g, "").slice(0, 6),
+                  }))
                 }
                 placeholder="Repite el PIN"
               />
@@ -355,6 +484,30 @@ export default function AccountSettings({
             </div>
           </article>
 
+          <article className="rounded-[28px] border border-rose-200 bg-[linear-gradient(135deg,#fff8f8_0%,#fff1f2_100%)] p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-200 bg-white text-rose-600">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-slate-950">Reiniciar espacio de trabajo</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Esta accion borra ventas, compras, clientes, mesas, catalogo, insumos,
+                  preparaciones, fichas, gastos, cierres y configuraciones operativas del negocio
+                  actual. Tu acceso a la cuenta se conserva.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(true)}
+                  className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-500"
+                >
+                  <RotateCcw size={16} />
+                  Reiniciar app en cero
+                </button>
+              </div>
+            </div>
+          </article>
+
           {feedback.message ? (
             <div
               className={`rounded-2xl px-4 py-3 text-sm ring-1 ${
@@ -369,13 +522,66 @@ export default function AccountSettings({
 
           <button
             type="submit"
-            disabled={isSaving}
-            className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
+            disabled={!canSubmit}
+            className="rounded-2xl bg-slate-900 px-5 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isSaving ? "Guardando..." : "Guardar cambios"}
           </button>
         </aside>
       </form>
+
+      <ModalWrapper
+        open={isResetModalOpen}
+        onClose={closeResetModal}
+        maxWidthClass="max-w-2xl"
+        icon={{ main: <AlertTriangle size={20} />, close: "X" }}
+        title="Reiniciar espacio de trabajo"
+        description="Esta accion es irreversible. Se mantendra tu acceso, pero la data operativa del negocio actual quedara en cero."
+      >
+        <div className="grid gap-5">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm leading-6 text-rose-700">
+            Se eliminaran mesas, pedidos, ventas, productos, proveedores, insumos, compras,
+            preparaciones, fichas tecnicas, clientes, ticketeras, gastos operativos, cierres y
+            categorias operativas del negocio actual.
+          </div>
+
+          <FormInput
+            label='Escribe "REINICIAR"'
+            value={resetPhrase}
+            onChange={(event) => setResetPhrase(event.target.value)}
+            placeholder="REINICIAR"
+            hint="Esto evita borrados accidentales."
+          />
+
+          <FormInput
+            label="Contrasena actual"
+            type="password"
+            value={resetPassword}
+            onChange={(event) => setResetPassword(event.target.value)}
+            placeholder="Confirma tu identidad para continuar"
+            hint="La app validara que la cuenta actual esta autorizando el reinicio."
+          />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={closeResetModal}
+              className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleWorkspaceReset}
+              disabled={!canResetWorkspace}
+              className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isResettingWorkspace ? "Reiniciando..." : "Confirmar reinicio"}
+            </button>
+          </div>
+        </div>
+      </ModalWrapper>
     </section>
   );
 }
+

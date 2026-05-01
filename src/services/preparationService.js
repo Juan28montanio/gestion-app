@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import { refreshRecipeBooksForPreparations } from "./recipeBookService";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const preparationsCollection = collection(db, "preparations");
 const ingredientsCollection = collection(db, "ingredients");
@@ -193,7 +194,11 @@ export function subscribeToPreparations(businessId, callback) {
     callback(
       sortByName(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })))
     );
-  });
+  }, createSubscriptionErrorHandler({
+    scope: "preparations:subscribeToPreparations",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function createPreparation(preparation) {

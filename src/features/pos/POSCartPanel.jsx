@@ -392,38 +392,40 @@ export default function POSCartPanel({
           </div>
         </div>
 
-        <div className="grid gap-3">
-          <button
-            type="button"
-            onClick={handleCommand}
-            disabled={loading || !selectedTable || cartItems.length === 0 || selectedTable?.isQuickSale}
-            className="rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] transition hover:bg-[#fde9a8] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {selectedTable?.isQuickSale ? "Venta inmediata" : "Comandar"}
-          </button>
+        <div className="sticky bottom-0 z-10 -mx-2 mt-5 rounded-[24px] border border-slate-800 bg-[rgba(15,23,42,0.96)] p-3 shadow-[0_-12px_30px_rgba(2,6,23,0.35)] backdrop-blur">
+          <div className="grid gap-3">
+            <button
+              type="button"
+              onClick={handleCommand}
+              disabled={loading || !selectedTable || cartItems.length === 0 || selectedTable?.isQuickSale}
+              className="rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] transition hover:bg-[#fde9a8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {selectedTable?.isQuickSale ? "Venta inmediata" : "Comandar"}
+            </button>
 
-          <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
-            <button
-              type="button"
-              onClick={handlePay}
-              disabled={
-                loading ||
-                !selectedTable ||
-                cashLockInfo?.blocked ||
-                (!activeOrder?.id && cartItems.length === 0)
-              }
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-400 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Cobrar ahora
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenCancel}
-              disabled={loading || !selectedTable || !activeOrder?.id}
-              className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Cancelar orden
-            </button>
+            <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
+              <button
+                type="button"
+                onClick={handlePay}
+                disabled={
+                  loading ||
+                  !selectedTable ||
+                  cashLockInfo?.blocked ||
+                  (!activeOrder?.id && cartItems.length === 0)
+                }
+                className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-400 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cobrar ahora
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenCancel}
+                disabled={loading || !selectedTable || !activeOrder?.id}
+                className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancelar orden
+              </button>
+            </div>
           </div>
         </div>
       </div>

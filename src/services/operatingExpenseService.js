@@ -3,15 +3,23 @@ import {
   collection,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
+import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const operatingExpensesCollection = collection(db, "operating_expenses");
+
+function sortOperatingExpenses(items = []) {
+  return [...items].sort((left, right) =>
+    String(right?.expense_date || "").localeCompare(String(left?.expense_date || ""), "es", {
+      sensitivity: "base",
+    })
+  );
+}
 
 function toNumber(value) {
   const parsed = Number(value);
@@ -71,13 +79,20 @@ export function subscribeToOperatingExpenses(businessId, callback) {
 
   const expensesQuery = query(
     operatingExpensesCollection,
-    where("business_id", "==", businessId),
-    orderBy("expense_date", "desc")
+    where("business_id", "==", businessId)
   );
 
   return onSnapshot(expensesQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  });
+    callback(
+      sortOperatingExpenses(
+        snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+      )
+    );
+  }, createSubscriptionErrorHandler({
+    scope: "operating_expenses:subscribeToOperatingExpenses",
+    callback,
+    emptyValue: [],
+  }));
 }
 
 export async function createOperatingExpense(expense) {
@@ -103,14 +118,23 @@ export async function updateOperatingExpense(expenseId, updates = {}) {
 
   if (typeof updates.concept !== "undefined") {
     payload.concept = String(updates.concept || "").trim();
+    if (!payload.concept) {
+      throw new Error("El concepto del gasto es obligatorio.");
+    }
   }
 
   if (typeof updates.category !== "undefined") {
     payload.category = String(updates.category || "").trim();
+    if (!payload.category) {
+      throw new Error("La categoria del gasto es obligatoria.");
+    }
   }
 
   if (typeof updates.expenseDate !== "undefined") {
     payload.expense_date = String(updates.expenseDate || "").trim();
+    if (!payload.expense_date) {
+      throw new Error("La fecha del gasto es obligatoria.");
+    }
   }
 
   if (typeof updates.paymentMethod !== "undefined") {
@@ -126,7 +150,10 @@ export async function updateOperatingExpense(expenseId, updates = {}) {
   }
 
   const nextAmount = Number(updates.amount);
-  if (Number.isFinite(nextAmount) && nextAmount >= 0) {
+  if (typeof updates.amount !== "undefined") {
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      throw new Error("Debes ingresar un valor valido para el gasto.");
+    }
     payload.amount = nextAmount;
     payload.total = nextAmount;
   }

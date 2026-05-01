@@ -7,25 +7,39 @@ import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 import { SUPPLY_UNITS } from "../utils/resourceOptions";
 
-const EMPTY_HEADER = {
-  supplierId: "",
-  invoiceNumber: "",
-  purchaseDate: new Date().toISOString().slice(0, 10),
-};
+function createEmptyHeader() {
+  return {
+    supplierId: "",
+    invoiceNumber: "",
+    purchaseDate: new Date().toISOString().slice(0, 10),
+  };
+}
 
-const EMPTY_ITEM = {
-  ingredientId: "",
-  manualName: "",
-  category: "",
-  quantity: "",
-  unit: "g",
-  lineTotal: "",
-  applyIva: false,
-  ivaPct: "19",
-};
+function createEmptyItem() {
+  return {
+    ingredientId: "",
+    manualName: "",
+    category: "",
+    quantity: "",
+    unit: "g",
+    lineTotal: "",
+    applyIva: false,
+    ivaPct: "19",
+  };
+}
 
 function buildSupplyMap(supplies) {
   return new Map(supplies.map((supply) => [supply.id, supply]));
+}
+
+function getPurchaseDateValue(value) {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = new Date(value);
+  const timestamp = parsed.getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function getEstimatedUnitCost(item) {
@@ -63,6 +77,20 @@ function getPurchaseItemStatus(item) {
   };
 }
 
+function buildSupplierOptionLabel(supplier) {
+  const name = String(supplier?.name || "Proveedor sin nombre").trim();
+  const nit = String(supplier?.nit || "").trim();
+  const contact = String(supplier?.contact_name || "").trim();
+  const paymentTerms = String(
+    supplier?.payment_terms || supplier?.paymentTerms || "Contado"
+  ).trim();
+
+  const identity = nit || contact;
+  return identity
+    ? `${name} - ${identity} (${paymentTerms})`
+    : `${name} (${paymentTerms})`;
+}
+
 export default function PurchaseManager({
   businessId,
   suppliers,
@@ -74,8 +102,8 @@ export default function PurchaseManager({
 }) {
   const [step, setStep] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [header, setHeader] = useState(EMPTY_HEADER);
-  const [items, setItems] = useState([EMPTY_ITEM]);
+  const [header, setHeader] = useState(createEmptyHeader);
+  const [items, setItems] = useState(() => [createEmptyItem()]);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [isSaving, setIsSaving] = useState(false);
   const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
@@ -136,8 +164,8 @@ export default function PurchaseManager({
   const closeModal = () => {
     setIsModalOpen(false);
     setStep(1);
-    setHeader(EMPTY_HEADER);
-    setItems([EMPTY_ITEM]);
+    setHeader(createEmptyHeader());
+    setItems([createEmptyItem()]);
     setFeedback({ type: "", message: "" });
   };
 
@@ -148,7 +176,7 @@ export default function PurchaseManager({
   };
 
   const addItemRow = () => {
-    setItems((current) => [...current, EMPTY_ITEM]);
+    setItems((current) => [...current, createEmptyItem()]);
   };
 
   const updateItemRow = (index, patch) => {
@@ -173,7 +201,13 @@ export default function PurchaseManager({
   };
 
   const removeItemRow = (index) => {
-    setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setItems((current) => {
+      if (current.length === 1) {
+        return [createEmptyItem()];
+      }
+
+      return current.filter((_, itemIndex) => itemIndex !== index);
+    });
   };
 
   const selectedSupplier = safeSuppliers.find((item) => item.id === header.supplierId);
@@ -190,10 +224,16 @@ export default function PurchaseManager({
       (purchase) => purchase.supplier_id === header.supplierId
     );
 
+    const lastPurchaseDate = linkedPurchases.reduce((latest, purchase) => {
+      return getPurchaseDateValue(purchase.purchase_date) > getPurchaseDateValue(latest)
+        ? purchase.purchase_date
+        : latest;
+    }, "");
+
     return {
       purchasesCount: linkedPurchases.length,
       totalBought: linkedPurchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0),
-      lastPurchaseDate: linkedPurchases[0]?.purchase_date || "",
+      lastPurchaseDate,
     };
   }, [header.supplierId, safePurchases]);
   const purchaseFlowInsights = useMemo(() => {
@@ -276,6 +316,51 @@ export default function PurchaseManager({
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    const normalizedItems = items
+      .map((item) => {
+        const ingredient = supplyMap.get(item.ingredientId);
+        return {
+          ingredient_id: item.ingredientId,
+          ingredient_name: ingredient?.name || item.manualName,
+          manual_name: item.manualName,
+          category: item.category || ingredient?.category || "",
+          quantity: Number(item.quantity),
+          line_total: Number(item.lineTotal),
+          apply_iva: item.applyIva,
+          iva_pct: Number(item.ivaPct),
+          unit: item.unit || ingredient?.unit || "und",
+        };
+      })
+      .filter((item) => item.ingredient_id || String(item.manual_name || "").trim());
+
+    if (!header.supplierId) {
+      setFeedback({
+        type: "error",
+        message: "Selecciona un proveedor antes de guardar la compra.",
+      });
+      return;
+    }
+
+    if (!normalizedItems.length) {
+      setFeedback({
+        type: "error",
+        message: "Agrega al menos un item valido para registrar la compra.",
+      });
+      return;
+    }
+
+    const hasInvalidItems = normalizedItems.some(
+      (item) => !Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.line_total) || item.line_total <= 0
+    );
+
+    if (hasInvalidItems) {
+      setFeedback({
+        type: "error",
+        message: "Cada item debe tener cantidad y valor total mayores a cero.",
+      });
+      return;
+    }
+
     setIsSaving(true);
     setFeedback({ type: "", message: "" });
 
@@ -288,20 +373,7 @@ export default function PurchaseManager({
           selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado",
         invoice_number: header.invoiceNumber,
         purchase_date: header.purchaseDate,
-        items: items.map((item) => {
-          const ingredient = supplyMap.get(item.ingredientId);
-          return {
-            ingredient_id: item.ingredientId,
-            ingredient_name: ingredient?.name || item.manualName,
-            manual_name: item.manualName,
-            category: item.category || ingredient?.category || "",
-            quantity: Number(item.quantity),
-            line_total: Number(item.lineTotal),
-            apply_iva: item.applyIva,
-            iva_pct: Number(item.ivaPct),
-            unit: item.unit || ingredient?.unit || "und",
-          };
-        }),
+        items: normalizedItems,
       });
 
       closeModal();
@@ -452,16 +524,39 @@ export default function PurchaseManager({
               {safePurchases.map((purchase) => (
                 <tr key={purchase.id} className="border-b border-slate-100 text-slate-700">
                   <td className="py-3 pr-4 font-semibold text-slate-900">
-                    {purchase.invoice_number}
+                    {purchase.invoice_number || "Sin consecutivo"}
                   </td>
-                  <td className="py-3 pr-4">{purchase.supplier_name}</td>
+                  <td className="py-3 pr-4">
+                    <div>
+                      <p className="font-medium text-slate-900">{purchase.supplier_name || "Sin proveedor"}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {String(
+                          purchase.supplier_payment_terms || purchase.payment_method || "Contado"
+                        ).trim()}
+                      </p>
+                    </div>
+                  </td>
                   <td className="py-3 pr-4">{purchase.purchase_date}</td>
-                  <td className="py-3 pr-4">{purchase.items?.length || 0}</td>
+                  <td className="py-3 pr-4">
+                    <div>
+                      <p className="font-medium text-slate-900">{purchase.items?.length || 0}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {(purchase.items || []).slice(0, 2).map((item) => item.ingredient_name || item.manual_name).filter(Boolean).join(", ") || "Sin detalle"}
+                      </p>
+                    </div>
+                  </td>
                   <td className="py-3 pr-4 text-right font-semibold text-slate-900">
                     {formatCOP(purchase.total || 0)}
                   </td>
                 </tr>
               ))}
+              {safePurchases.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-sm text-slate-500">
+                    Aun no hay compras registradas. Carga la primera factura para alimentar inventario, costo y caja.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
@@ -496,7 +591,7 @@ export default function PurchaseManager({
                 <option value="">Seleccionar proveedor</option>
                 {safeSuppliers.map((supplier) => (
                   <option key={supplier.id} value={supplier.id}>
-                    {supplier.name}
+                    {buildSupplierOptionLabel(supplier)}
                   </option>
                 ))}
               </FormSelect>
@@ -535,6 +630,11 @@ export default function PurchaseManager({
                       <p className="mt-1 text-sm text-slate-500">
                         Plazo: {selectedSupplier.payment_terms || selectedSupplier.paymentTerms || "Contado"}
                       </p>
+                      {selectedSupplier.nit || selectedSupplier.contact_name ? (
+                        <p className="mt-1 text-sm text-slate-500">
+                          {[selectedSupplier.nit, selectedSupplier.contact_name].filter(Boolean).join(" | ")}
+                        </p>
+                      ) : null}
                     </div>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
@@ -579,8 +679,9 @@ export default function PurchaseManager({
                 </div>
                 <button
                   type="button"
-                  onClick={onManageCategories}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => onManageCategories?.()}
+                  disabled={!onManageCategories}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Settings2 size={16} />
                   Categorias de insumo
