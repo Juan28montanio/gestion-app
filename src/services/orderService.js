@@ -62,18 +62,6 @@ function normalizeOrderItems(items) {
       category: String(item?.category || "").trim(),
       product_type: String(item?.product_type || item?.productType || "standard").trim(),
       recipe_mode: String(item?.recipe_mode || item?.recipeMode || "direct").trim(),
-      preparation_items: Array.isArray(item?.preparation_items || item?.preparationItems)
-        ? (item.preparation_items || item.preparationItems).map((entry) => ({
-            preparation_id: String(
-              entry?.preparation_id || entry?.preparationId || ""
-            ).trim(),
-            preparation_name: String(
-              entry?.preparation_name || entry?.preparationName || ""
-            ).trim(),
-            output_unit: String(entry?.output_unit || entry?.outputUnit || "").trim(),
-            quantity: Number(entry?.quantity || 0),
-          }))
-        : [],
       ticket_units: Number(item?.ticket_units || item?.ticketUnits || 0),
       ticket_validity_days: Number(item?.ticket_validity_days || item?.ticketValidityDays || 30),
       ticket_eligible: Boolean(item?.ticket_eligible),

@@ -1,4 +1,3 @@
-import PreparationManager from "../../../components/PreparationManager";
 import PurchaseManager from "../../../components/PurchaseManager";
 import RecipeBookManager from "../../../components/RecipeBookManager";
 import SupplierManager from "../../../components/SupplierManager";
@@ -12,7 +11,6 @@ export default function ResourceSectionRouter({
   recipeBooks,
   ingredientCategoryOptions,
   supplierCategoryOptions,
-  preparations,
   products,
   focusedRecipeProductId,
   onFocusHandled,
@@ -41,16 +39,6 @@ export default function ResourceSectionRouter({
         recipeBooks={recipeBooks}
         categoryOptions={ingredientCategoryOptions}
         onManageCategories={onManageIngredientCategories}
-      />
-    );
-  }
-
-  if (activeTab === "preparations") {
-    return (
-      <PreparationManager
-        businessId={businessId}
-        supplies={supplies}
-        preparations={preparations}
       />
     );
   }

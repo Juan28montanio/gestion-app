@@ -1,6 +1,6 @@
 import { LayoutGrid, List, PackagePlus, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { formatCOP } from "../../../utils/formatters";
-import { getProfitabilityClasses, isComposedRecipeMode } from "../recipes/recipeCostingShared";
+import { getProfitabilityClasses } from "../recipes/recipeCostingShared";
 
 export default function ResourceProductsPanel({
   isCatalogMode,
@@ -75,7 +75,7 @@ export default function ResourceProductsPanel({
                 </p>
                 <div className="mt-3 space-y-3 text-sm text-slate-600">
                   <p>1. Define nombre, categoria y precio de venta.</p>
-                  <p>2. Si aplica, conecta la ficha tecnica o las preparaciones base.</p>
+                  <p>2. Si aplica, conecta la ficha tecnica.</p>
                   <p>3. Cuando el catalogo exista, el POS quedara listo para vender.</p>
                 </div>
               </div>
@@ -85,7 +85,6 @@ export default function ResourceProductsPanel({
         {products.map((product) => {
           const recipeBook = productRecipeMap[product.id];
           const margin = Number(recipeBook?.current_margin_pct || 0);
-          const recipeMode = product.recipe_mode || "direct";
           const flowSummary = getProductFlowSummary({ product, recipeBook });
           const semaforoClasses = getProfitabilityClasses(recipeBook?.profitability_status);
 
@@ -102,9 +101,7 @@ export default function ResourceProductsPanel({
                   <h3 className="mt-2 text-lg font-semibold text-slate-900">{product.name}</h3>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span
-                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
-                        isComposedRecipeMode(recipeMode) ? "bg-[#fff7df] text-[#946200]" : "bg-slate-200 text-slate-600"
-                      }`}
+                      className="rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600"
                     >
                       {flowSummary.badge}
                     </span>
@@ -161,7 +158,7 @@ export default function ResourceProductsPanel({
                     className="flex items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20"
                   >
                     <Sparkles size={16} />
-                    {isComposedRecipeMode(recipeMode) ? "Preparaciones" : "Ficha"}
+                    Ficha
                   </button>
                 ) : null}
                 <button

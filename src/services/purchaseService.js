@@ -10,7 +10,6 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
-import { refreshPreparationsForIngredients } from "./preparationService";
 import { refreshRecipeBooksForIngredients } from "./recipeBookService";
 import { buildSupplySearchKey, listSupplies } from "./supplyService";
 import { resolvePurchasePaymentMethod } from "../utils/payments";
@@ -315,10 +314,7 @@ export async function createPurchase(purchase) {
     return createdPurchaseRef.id;
   });
 
-  await Promise.all([
-    refreshRecipeBooksForIngredients(payload.business_id, touchedIngredientIds),
-    refreshPreparationsForIngredients(payload.business_id, touchedIngredientIds),
-  ]);
+  await refreshRecipeBooksForIngredients(payload.business_id, touchedIngredientIds);
   return createdPurchaseId;
 }
 

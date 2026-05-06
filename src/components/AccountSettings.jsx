@@ -493,7 +493,7 @@ export default function AccountSettings({
                 <h3 className="text-lg font-semibold text-slate-950">Reiniciar espacio de trabajo</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   Esta accion borra ventas, compras, clientes, mesas, catalogo, insumos,
-                  preparaciones, fichas, gastos, cierres y configuraciones operativas del negocio
+                  fichas tecnicas, gastos, cierres y configuraciones operativas del negocio
                   actual. Tu acceso a la cuenta se conserva.
                 </p>
                 <button
@@ -541,7 +541,7 @@ export default function AccountSettings({
         <div className="grid gap-5">
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm leading-6 text-rose-700">
             Se eliminaran mesas, pedidos, ventas, productos, proveedores, insumos, compras,
-            preparaciones, fichas tecnicas, clientes, ticketeras, gastos operativos, cierres y
+            fichas tecnicas, clientes, ticketeras, gastos operativos, cierres y
             categorias operativas del negocio actual.
           </div>
 

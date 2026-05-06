@@ -1,4 +1,4 @@
-import { BookOpenText, Boxes, ClipboardList, Factory, Package, Sparkles } from "lucide-react";
+import { Boxes, ClipboardList, Factory, Package, Sparkles } from "lucide-react";
 import { formatCOP } from "../../../utils/formatters";
 import { buildRecipeCostSnapshot } from "../recipes/recipeCostingShared";
 
@@ -9,8 +9,6 @@ export function createProductForm() {
     price: "",
     stock: "",
     productType: "standard",
-    recipeMode: "direct",
-    preparationItems: [],
     ticketEligible: false,
     ticketUnits: "10",
     ticketValidityDays: "30",
@@ -34,7 +32,6 @@ export const RESOURCE_TABS = [
   "suppliers",
   "ingredients",
   "purchases",
-  "preparations",
   "recipes",
   "products",
 ];
@@ -43,7 +40,6 @@ export const TABS = [
   { id: "suppliers", label: "Proveedores", icon: Factory },
   { id: "ingredients", label: "Insumos", icon: Boxes },
   { id: "purchases", label: "Compras", icon: ClipboardList },
-  { id: "preparations", label: "Preparaciones", icon: BookOpenText },
   { id: "recipes", label: "Fichas Tecnicas", icon: Sparkles },
   { id: "products", label: "Catalogo", icon: Package },
 ];
@@ -59,15 +55,6 @@ export function buildProductForm(product) {
     price: String(product.price ?? ""),
     stock: String(product.stock ?? ""),
     productType: product.product_type || "standard",
-    recipeMode: product.recipe_mode || "direct",
-    preparationItems: Array.isArray(product.preparation_items)
-      ? product.preparation_items.map((item) => ({
-          preparationId: item.preparation_id || "",
-          preparationName: item.preparation_name || "",
-          outputUnit: item.output_unit || "",
-          quantity: String(item.quantity ?? ""),
-        }))
-      : [],
     ticketEligible: Boolean(product.ticket_eligible),
     ticketUnits: String(product.ticket_units ?? 10),
     ticketValidityDays: String(product.ticket_validity_days ?? 30),
@@ -111,7 +98,7 @@ export function getSupplyHealth(supply) {
   return { label: "Saludable", classes: "bg-emerald-100 text-emerald-700 ring-emerald-200" };
 }
 
-export function buildResourceStats({ purchases, preparations, recipeBooks, supplies }) {
+export function buildResourceStats({ purchases, recipeBooks, supplies }) {
   const lowStockCount = supplies.filter((supply) => {
     const stock = Number(supply.stock || 0);
     const min = Number(supply.stock_min_alert || 0);
@@ -127,10 +114,6 @@ export function buildResourceStats({ purchases, preparations, recipeBooks, suppl
         ) / recipeBooks.length
       : 0;
 
-  const readyPreparations = preparations.filter(
-    (preparation) => preparation.readiness_status === "ready"
-  ).length;
-
   return [
     {
       id: "ingredients",
@@ -145,12 +128,6 @@ export function buildResourceStats({ purchases, preparations, recipeBooks, suppl
       hint: "Ultima carga",
     },
     {
-      id: "preparations",
-      label: "Preparaciones",
-      value: `${readyPreparations} listas`,
-      hint: "Base de cocina",
-    },
-    {
       id: "recipes",
       label: "Fichas tecnicas",
       value: `${averageMargin.toFixed(0)}% de margen`,
@@ -161,7 +138,6 @@ export function buildResourceStats({ purchases, preparations, recipeBooks, suppl
 
 export function buildResourceFlowInsights({
   purchases,
-  preparations,
   recipeBooks,
   spendByCategory,
   suppliers,
@@ -184,11 +160,6 @@ export function buildResourceFlowInsights({
       criticalSupplyIds.has(ingredient.ingredient_id)
     )
   ).length;
-  const preparationsAtRisk = preparations.filter((preparation) =>
-    (preparation.ingredients || []).some((ingredient) =>
-      criticalSupplyIds.has(ingredient.ingredient_id)
-    )
-  ).length;
   const biggestSpendCategory = spendByCategory[0];
 
   return [
@@ -196,7 +167,7 @@ export function buildResourceFlowInsights({
       title: "Abastecimiento a revisar",
       body:
         criticalSupplies.length > 0
-          ? `${criticalSupplies.length} insumo(s) critico(s) ya pueden afectar ${preparationsAtRisk} preparacion(es) y ${recipesAtRisk} ficha(s) tecnica(s). Conviene comprar antes de tocar precios o prometer disponibilidad.`
+          ? `${criticalSupplies.length} insumo(s) critico(s) ya pueden afectar ${recipesAtRisk} ficha(s) tecnica(s). Conviene comprar antes de tocar precios o prometer disponibilidad.`
           : "No hay insumos criticos en este momento. La operacion puede sostener ventas sin presion inmediata de reposicion.",
     },
     {

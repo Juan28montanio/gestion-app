@@ -20,17 +20,13 @@ export default function ResourceWorkspaceHeader({
       title: "Registro de compras",
       body: "Carga facturas con contexto comercial para que inventario, caja y costeo queden alineados.",
     },
-    preparations: {
-      title: "Preparaciones base",
-      body: "Define bases de cocina reutilizables para costear mejor platos compuestos y estandarizar la operacion.",
-    },
     recipes: {
       title: "Fichas tecnicas",
       body: "Convierte costos e insumos en una lectura clara de rentabilidad y consistencia de produccion.",
     },
     products: {
       title: "Catalogo conectado",
-      body: "Cruza el producto vendido con inventario, preparaciones y margen antes de tocar precios.",
+      body: "Cruza el producto vendido con inventario, fichas tecnicas y margen antes de tocar precios.",
     },
   }[activeTab] || {
     title: "Centro de recursos",

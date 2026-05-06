@@ -34,54 +34,14 @@ import {
   PAYMENT_OPTIONS,
 } from "../features/pos/posHelpers";
 
-function getPreparationSummary(items = []) {
-  return items
-    .map((item) => {
-      const name = String(item?.preparation_name || item?.preparationName || "").trim();
-      const quantity = Number(item?.quantity || 0);
-      const unit = String(item?.output_unit || item?.outputUnit || "").trim();
-
-      if (!name || !Number.isFinite(quantity) || quantity <= 0) {
-        return null;
-      }
-
-      return `${quantity} ${unit || "porcion"} de ${name}`;
-    })
-    .filter(Boolean);
-}
-
 function getProductOperationalCopy(product) {
-  const recipeMode = String(product?.recipe_mode || product?.recipeMode || "direct").trim();
-  const preparationSummary = getPreparationSummary(
-    product?.preparation_items || product?.preparationItems || []
-  );
-
-  if (recipeMode === "composed") {
-    return {
-      badge: "Compuesto",
-      detail:
-        preparationSummary.length > 0
-          ? preparationSummary.slice(0, 2).join(" · ")
-          : "Usa preparaciones base ya costeadas.",
-    };
-  }
-
   return {
-    badge: "Directo",
-    detail: "Producto con ficha tecnica directa.",
+    badge: product?.recipe_mode === "direct" ? "Ficha" : "Producto",
+    detail: "Producto conectado a fichas tecnicas.",
   };
 }
 
-function getCompactProductOperationalCopy(product) {
-  const recipeMode = String(product?.recipe_mode || product?.recipeMode || "direct").trim();
-  const preparationSummary = getPreparationSummary(
-    product?.preparation_items || product?.preparationItems || []
-  );
-
-  if (recipeMode === "composed") {
-    return preparationSummary.length > 0 ? `${preparationSummary.length} base(s)` : "Preparaciones";
-  }
-
+function getCompactProductOperationalCopy() {
   return "Ficha directa";
 }
 

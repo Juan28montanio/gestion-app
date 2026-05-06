@@ -21,7 +21,7 @@ const START_STEPS = [
     id: "inventory",
     title: "3. Crea productos de venta",
     description:
-      "Primero define lo que vas a vender. Luego conecta cada producto con ficha tecnica directa o con preparaciones base.",
+      "Primero define lo que vas a vender. Luego conecta cada producto con su ficha tecnica.",
     action: "Ir a Productos",
     icon: Store,
   },
@@ -47,13 +47,13 @@ const DAILY_FLOW = [
   "Abre caja antes del primer cobro.",
   "Registra compras el mismo dia para que el costo conectado no se atrase.",
   "Crea fichas tecnicas solo despues de tener insumos y compras reales.",
-  "Usa preparaciones base para platos compuestos como almuerzos, combos o menus del dia.",
+  "Usa fichas tecnicas base para platos compuestos como almuerzos, combos o menus del dia.",
   "Revisa caja y finanzas al final de la jornada, no solo cuando haya un problema.",
 ];
 
 const COMMON_MISTAKES = [
   "Crear productos antes de tener insumos y compras.",
-  "Usar fichas tecnicas directas para platos compuestos que en realidad dependen de preparaciones base.",
+  "No reutilizar fichas tecnicas base cuando un plato compuesto comparte salsas, bases o producciones.",
   "Cobrar sin caja abierta y luego intentar cuadrar al final.",
   "Dejar clientes, ticketeras o deudas sin nombre claro.",
 ];

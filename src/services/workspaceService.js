@@ -18,7 +18,6 @@ const RESETTABLE_COLLECTIONS = [
   "ingredients",
   "suppliers",
   "purchases",
-  "preparations",
   "recipeBooks",
   "customers",
   "sales_history",

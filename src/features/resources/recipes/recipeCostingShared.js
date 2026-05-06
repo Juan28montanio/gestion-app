@@ -12,14 +12,6 @@ export const STATUS_LABELS = {
   critical: "Margen critico",
 };
 
-export function getRecipeMode(value) {
-  return String(value || "direct").trim().toLowerCase();
-}
-
-export function isComposedRecipeMode(value) {
-  return getRecipeMode(value) === "composed";
-}
-
 export function getProfitabilityClasses(status) {
   return STATUS_META[status] || STATUS_META.warning;
 }
@@ -59,25 +51,6 @@ export function getSuggestedDeltaLabel(currentPrice, suggestedPrice) {
 }
 
 export function buildProductFlowSummary({ product, recipeBook }) {
-  const recipeMode = getRecipeMode(product?.recipe_mode);
-  const preparationCount = Array.isArray(product?.preparation_items)
-    ? product.preparation_items.length
-    : 0;
-
-  if (recipeMode === "composed") {
-    return {
-      compact:
-        preparationCount > 0
-          ? `${preparationCount} preparacion(es) conectada(s)`
-          : "Producto compuesto pendiente de bases",
-      detail:
-        preparationCount > 0
-          ? `Producto compuesto con ${preparationCount} preparacion(es) conectada(s).`
-          : "Producto compuesto aun sin preparaciones conectadas.",
-      badge: "Compuesto",
-    };
-  }
-
   return {
     compact: recipeBook ? "Ficha conectada" : "Sin ficha conectada",
     detail: recipeBook
@@ -93,8 +66,7 @@ export function buildRecipeCostSnapshot(recipeBook, fallbackPrice = 0) {
       realCost: 0,
       currentMarginPct: 0,
       suggestedPrice: Number(fallbackPrice || 0),
-      preparationCount: 0,
-      ingredientsCount: 0,
+    ingredientsCount: 0,
       profitabilityStatus: "warning",
     };
   }
@@ -103,9 +75,6 @@ export function buildRecipeCostSnapshot(recipeBook, fallbackPrice = 0) {
     realCost: Number(recipeBook.real_cost || 0),
     currentMarginPct: Number(recipeBook.current_margin_pct || 0),
     suggestedPrice: Number(recipeBook.suggested_price || fallbackPrice || 0),
-    preparationCount: Array.isArray(recipeBook.preparation_items)
-      ? recipeBook.preparation_items.length
-      : 0,
     ingredientsCount: Array.isArray(recipeBook.ingredients) ? recipeBook.ingredients.length : 0,
     profitabilityStatus: recipeBook.profitability_status || "warning",
   };

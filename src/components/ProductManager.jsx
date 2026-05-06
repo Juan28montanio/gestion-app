@@ -21,7 +21,6 @@ import {
   subscribeToRecipeBooks,
   updateRecipeBook,
 } from "../services/recipeBookService";
-import { subscribeToPreparations } from "../services/preparationService";
 import { subscribeToPurchases } from "../services/purchaseService";
 import ConfirmModal from "./ConfirmModal";
 import TaxonomyManagerModal from "./TaxonomyManagerModal";
@@ -52,7 +51,7 @@ import {
   buildProductRecipeMap,
   buildUsageCountBySupply,
 } from "../features/resources/shared/resourceDerivedData";
-import { buildProductFlowSummary, isComposedRecipeMode } from "../features/resources/recipes/recipeCostingShared";
+import { buildProductFlowSummary } from "../features/resources/recipes/recipeCostingShared";
 import ProductEditorModal from "../features/resources/catalog/ProductEditorModal";
 import ResourceInventoryPanel from "../features/resources/inventory/ResourceInventoryPanel";
 import ResourceProductsPanel from "../features/resources/catalog/ResourceProductsPanel";
@@ -68,17 +67,18 @@ function normalizeComparableValue(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-export default function ProductManager({ businessId, mode = "resources" }) {
+export default function ProductManager({ businessId, mode = "resources", initialTab }) {
   const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const [products, setProducts] = useState([]);
   const [supplies, setSupplies] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [purchases, setPurchases] = useState([]);
-  const [preparations, setPreparations] = useState([]);
   const [recipeBooks, setRecipeBooks] = useState([]);
   const [supplierCategories, setSupplierCategories] = useState([]);
   const [ingredientCategories, setIngredientCategories] = useState([]);
-  const [activeTab, setActiveTab] = useState(mode === "catalog" ? "products" : "suppliers");
+  const [activeTab, setActiveTab] = useState(
+    mode === "catalog" ? "products" : initialTab || "suppliers"
+  );
   const [productForm, setProductForm] = useState(createProductForm);
   const [supplyForm, setSupplyForm] = useState(createSupplyForm);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -97,35 +97,15 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     () => recipeBooks.find((recipeBook) => recipeBook.product_id === editingProductId) || null,
     [editingProductId, recipeBooks]
   );
-  const preparationOptions = useMemo(
-    () =>
-      preparations.map((preparation) => ({
-        value: preparation.id,
-        label: `${preparation.name} - ${Number(preparation.yield_quantity || 0)} ${
-          preparation.output_unit || "porcion"
-        }`,
-      })),
-    [preparations]
-  );
-  const preparationMap = useMemo(
-    () =>
-      preparations.reduce((acc, preparation) => {
-        acc[preparation.id] = preparation;
-        return acc;
-      }, {}),
-    [preparations]
-  );
-
   useEffect(() => {
-    setActiveTab(mode === "catalog" ? "products" : "suppliers");
-  }, [mode]);
+    setActiveTab(mode === "catalog" ? "products" : initialTab || "suppliers");
+  }, [initialTab, mode]);
 
   useEffect(() => {
     const unsubscribeProducts = subscribeToProducts(businessId, setProducts);
     const unsubscribeSupplies = subscribeToSupplies(businessId, setSupplies);
     const unsubscribeSuppliers = subscribeToSuppliers(businessId, setSuppliers);
     const unsubscribePurchases = subscribeToPurchases(businessId, setPurchases);
-    const unsubscribePreparations = subscribeToPreparations(businessId, setPreparations);
     const unsubscribeRecipeBooks = subscribeToRecipeBooks(businessId, setRecipeBooks);
 
     return () => {
@@ -133,7 +113,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       unsubscribeSupplies();
       unsubscribeSuppliers();
       unsubscribePurchases();
-      unsubscribePreparations();
       unsubscribeRecipeBooks();
     };
   }, [businessId]);
@@ -165,11 +144,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
 
   const productRecipeMap = useMemo(() => buildProductRecipeMap(recipeBooks), [recipeBooks]);
   const recipeImpactBySupply = useMemo(() => buildUsageCountBySupply(recipeBooks), [recipeBooks]);
-  const preparationImpactBySupply = useMemo(
-    () => buildUsageCountBySupply(preparations),
-    [preparations]
-  );
-
   const productCategories = useMemo(() => buildProductCategories(products), [products]);
   const supplierCategoryOptions = useMemo(
     () =>
@@ -192,20 +166,19 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     [purchases]
   );
   const resourceStats = useMemo(
-    () => buildResourceStats({ purchases, preparations, recipeBooks, supplies }),
-    [preparations, purchases, recipeBooks, supplies]
+    () => buildResourceStats({ purchases, recipeBooks, supplies }),
+    [purchases, recipeBooks, supplies]
   );
   const resourceFlowInsights = useMemo(
     () =>
       buildResourceFlowInsights({
         purchases,
-        preparations,
         recipeBooks,
         spendByCategory,
         suppliers,
         supplies,
       }),
-    [preparations, purchases, recipeBooks, spendByCategory, suppliers, supplies]
+    [purchases, recipeBooks, spendByCategory, suppliers, supplies]
   );
   const resourceActionQueue = useMemo(
     () => buildResourceActionQueue({ purchases, recipeBooks, supplies }),
@@ -251,14 +224,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     const normalizedCategory = String(productForm.category || "").trim();
     const normalizedPrice = Number(productForm.price);
     const normalizedStock = Number(productForm.stock);
-    const composedRows =
-      productForm.recipeMode === "composed" ? productForm.preparationItems : [];
-    const hasValidPreparations =
-      productForm.recipeMode !== "composed" ||
-      (composedRows.length > 0 &&
-        composedRows.every(
-          (item) => item.preparationId && Number(item.quantity) > 0
-        ));
     const hasValidTicketConfig =
       productForm.productType !== "ticket_wallet" ||
       (Number(productForm.ticketUnits) > 0 &&
@@ -271,7 +236,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       normalizedPrice >= 0 &&
       Number.isFinite(normalizedStock) &&
       normalizedStock >= 0 &&
-      hasValidPreparations &&
       hasValidTicketConfig
     );
   }, [productForm]);
@@ -325,10 +289,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     setFocusedRecipeProductId(productId);
     setActiveTab("recipes");
   };
-  const openPreparationContext = () => {
-    setActiveTab("preparations");
-    setIsProductModalOpen(false);
-  };
 
   const openCreateSupplyModal = () => {
     setEditingSupplyId(null);
@@ -357,11 +317,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
   };
 
   const openProductCostingContext = (product) => {
-    if (isComposedRecipeMode(product.recipe_mode)) {
-      setActiveTab("preparations");
-      return;
-    }
-
     openRecipeContext(product.id);
   };
 
@@ -408,17 +363,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
       const normalizedStock = Number(productForm.stock);
       const normalizedTicketUnits = Number(productForm.ticketUnits);
       const normalizedTicketValidityDays = Number(productForm.ticketValidityDays);
-      const normalizedPreparationItems =
-        productForm.recipeMode === "composed"
-          ? productForm.preparationItems.map((item) => ({
-              preparation_id: item.preparationId,
-              preparation_name:
-                preparationMap[item.preparationId]?.name || item.preparationName || "",
-              output_unit:
-                preparationMap[item.preparationId]?.output_unit || item.outputUnit || "",
-              quantity: Number(item.quantity),
-            }))
-          : [];
 
       if (!normalizedName || !normalizedCategory) {
         throw new Error("Completa nombre y categoria antes de guardar el producto.");
@@ -457,28 +401,12 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         price: normalizedPrice,
         stock: normalizedStock,
         productType: productForm.productType,
-        recipeMode: productForm.recipeMode,
-        preparationItems: normalizedPreparationItems,
+        recipeMode: "direct",
         ticketEligible:
           productForm.productType === "ticket_wallet" ? true : productForm.ticketEligible,
         ticketUnits: normalizedTicketUnits,
         ticketValidityDays: normalizedTicketValidityDays,
       };
-
-      if (payload.recipeMode === "composed" && payload.preparationItems.length === 0) {
-        throw new Error("Agrega al menos una preparacion para guardar un producto compuesto.");
-      }
-
-      if (
-        payload.recipeMode === "composed" &&
-        payload.preparationItems.some(
-          (item) => !item.preparation_id || !Number.isFinite(item.quantity) || item.quantity <= 0
-        )
-      ) {
-        throw new Error(
-          "Cada preparacion del producto compuesto debe tener una base seleccionada y una cantidad valida."
-        );
-      }
 
       let productId = editingProductId;
       if (editingProductId) {
@@ -495,11 +423,7 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           product_id: productId,
           product_name: payload.name,
           recipe_mode: payload.recipeMode,
-          preparation_items: payload.preparationItems,
-          direct_ingredients:
-            payload.recipeMode === "direct"
-              ? existingRecipeBook.direct_ingredients || existingRecipeBook.ingredients || []
-              : [],
+          direct_ingredients: existingRecipeBook.direct_ingredients || existingRecipeBook.ingredients || [],
           sale_price: payload.price,
         });
       } else {
@@ -508,7 +432,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           product_id: productId,
           product_name: payload.name,
           recipe_mode: payload.recipeMode,
-          preparation_items: payload.preparationItems,
           sale_price: payload.price,
           waste_pct: 0,
           target_margin_pct: 30,
@@ -527,29 +450,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const addPreparationRow = () => {
-    setProductForm((current) => ({
-      ...current,
-      preparationItems: [...current.preparationItems, { preparationId: "", quantity: "" }],
-    }));
-  };
-
-  const updatePreparationRow = (index, field, value) => {
-    setProductForm((current) => ({
-      ...current,
-      preparationItems: current.preparationItems.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, [field]: value } : item
-      ),
-    }));
-  };
-
-  const removePreparationRow = (index) => {
-    setProductForm((current) => ({
-      ...current,
-      preparationItems: current.preparationItems.filter((_, itemIndex) => itemIndex !== index),
-    }));
   };
 
   const handleSupplySubmit = async (event) => {
@@ -626,7 +526,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           recipeBooks={recipeBooks}
           ingredientCategoryOptions={ingredientCategoryOptions}
           supplierCategoryOptions={supplierCategoryOptions}
-          preparations={preparations}
           products={products}
           focusedRecipeProductId={focusedRecipeProductId}
           onFocusHandled={() => setFocusedRecipeProductId("")}
@@ -643,7 +542,6 @@ export default function ProductManager({ businessId, mode = "resources" }) {
           supplySummary={supplySummary}
           priceHistoryBySupply={priceHistoryBySupply}
           recipeImpactBySupply={recipeImpactBySupply}
-          preparationImpactBySupply={preparationImpactBySupply}
           spendByCategory={spendByCategory}
           onCreateSupply={openCreateSupplyModal}
           onEditSupply={openEditSupplyModal}
@@ -681,23 +579,13 @@ export default function ProductManager({ businessId, mode = "resources" }) {
         setProductForm={setProductForm}
         productCategories={productCategories}
         productModalMetrics={productModalMetrics}
-        preparationOptions={preparationOptions}
-        preparationMap={preparationMap}
-        addPreparationRow={addPreparationRow}
-        updatePreparationRow={updatePreparationRow}
-        removePreparationRow={removePreparationRow}
-        onOpenPreparations={openPreparationContext}
         onOpenRecipe={() => {
           if (isCatalogMode) {
             return;
           }
 
           closeProductModal();
-          if (productForm.recipeMode === "composed") {
-            setActiveTab("preparations");
-          } else {
-            openRecipeContext(editingProductId || "");
-          }
+          openRecipeContext(editingProductId || "");
         }}
         feedbackMessage={feedback.message}
         isCatalogMode={isCatalogMode}

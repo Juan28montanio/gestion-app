@@ -8,7 +8,6 @@ export default function ResourceInventoryPanel({
   supplySummary,
   priceHistoryBySupply,
   recipeImpactBySupply,
-  preparationImpactBySupply,
   spendByCategory,
   onCreateSupply,
   onEditSupply,
@@ -119,7 +118,6 @@ export default function ResourceInventoryPanel({
                     const missing = Math.max(min - stock, 0);
                     const latestPurchase = (priceHistoryBySupply[supply.id] || [])[0];
                     const linkedRecipes = recipeImpactBySupply[supply.id] || 0;
-                    const linkedPreparations = preparationImpactBySupply[supply.id] || 0;
 
                     return (
                       <article key={supply.id} className="rounded-[24px] bg-white p-5 shadow-lg ring-1 ring-slate-200">
@@ -135,9 +133,9 @@ export default function ResourceInventoryPanel({
                                 : "Revisa el nivel actual para evitar quiebres de stock."}
                             </p>
                             <p className="mt-2 text-sm text-slate-500">
-                              {linkedPreparations + linkedRecipes > 0
-                                ? `${linkedPreparations} preparacion(es) y ${linkedRecipes} ficha(s) dependen de este insumo.`
-                                : "Aun no impacta preparaciones ni fichas tecnicas conectadas."}
+                              {linkedRecipes > 0
+                                ? `${linkedRecipes} ficha(s) tecnica(s) dependen de este insumo.`
+                                : "Aun no impacta fichas tecnicas conectadas."}
                             </p>
                           </div>
                           <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${status.classes}`}>
@@ -175,7 +173,6 @@ export default function ResourceInventoryPanel({
                   const min = Number(supply.stock_min_alert || 0);
                   const missing = Math.max(min - stock, 0);
                   const linkedRecipes = recipeImpactBySupply[supply.id] || 0;
-                  const linkedPreparations = preparationImpactBySupply[supply.id] || 0;
 
                   return (
                     <article
@@ -214,9 +211,9 @@ export default function ResourceInventoryPanel({
                         <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200 sm:col-span-3">
                           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Uso en recetas</p>
                           <p className="mt-2 font-semibold text-slate-900">
-                            {linkedPreparations + linkedRecipes > 0
-                              ? `${linkedPreparations} preparacion(es) y ${linkedRecipes} ficha(s) dependen de este insumo`
-                              : "Todavia no afecta preparaciones ni fichas tecnicas conectadas"}
+                            {linkedRecipes > 0
+                              ? `${linkedRecipes} ficha(s) tecnica(s) dependen de este insumo`
+                              : "Todavia no afecta fichas tecnicas conectadas"}
                           </p>
                         </div>
                       </div>

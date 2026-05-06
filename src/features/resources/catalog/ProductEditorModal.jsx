@@ -1,4 +1,4 @@
-import { PackagePlus, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { PackagePlus, Plus, Sparkles, X } from "lucide-react";
 import ModalWrapper from "../../../components/ModalWrapper";
 import FormInput from "../../../components/FormInput";
 import FormSelect from "../../../components/FormSelect";
@@ -16,12 +16,6 @@ export default function ProductEditorModal({
   setProductForm,
   productCategories,
   productModalMetrics,
-  preparationOptions,
-  preparationMap,
-  addPreparationRow,
-  updatePreparationRow,
-  removePreparationRow,
-  onOpenPreparations,
   onOpenRecipe,
   feedbackMessage,
   isCatalogMode,
@@ -175,127 +169,6 @@ export default function ProductEditorModal({
               />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormSelect
-                label="Modo de costeo"
-                labelNote="Flujo"
-                value={productForm.recipeMode}
-                onChange={(event) =>
-                  setProductForm((current) => ({
-                    ...current,
-                    recipeMode: event.target.value,
-                    preparationItems:
-                      event.target.value === "composed" ? current.preparationItems : [],
-                  }))
-                }
-                options={[
-                  { value: "direct", label: "Ficha tecnica directa" },
-                  { value: "composed", label: "Producto compuesto por preparaciones" },
-                ]}
-                hint="Usa ficha directa para productos simples y preparaciones para platos armados."
-              />
-              <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
-                <p className="text-sm font-semibold text-slate-800">
-                  {productForm.recipeMode === "composed"
-                    ? "Este producto tomara su costo desde preparaciones base."
-                    : "Este producto seguira usando una ficha tecnica editable por insumos."}
-                </p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">
-                  {productForm.recipeMode === "composed"
-                    ? "Ideal para almuerzos, combos o platos que mezclan varias bases ya preparadas."
-                    : "Ideal para productos simples como galletas, bebidas directas o recetas sin armado compuesto."}
-                </p>
-              </div>
-            </div>
-
-            {productForm.recipeMode === "composed" ? (
-              <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-white p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 className="text-base font-semibold text-slate-900">
-                      Preparaciones que componen el producto
-                    </h4>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Define cuantas porciones o unidades de cada preparacion usa este plato.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={addPreparationRow}
-                      className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Agregar preparacion
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onOpenPreparations}
-                      className="rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-2 text-sm font-semibold text-[#946200] transition hover:brightness-95"
-                    >
-                      Ir a preparaciones base
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid gap-3">
-                  {productForm.preparationItems.length > 0 ? (
-                    productForm.preparationItems.map((item, index) => {
-                      const linkedPreparation = preparationMap[item.preparationId];
-
-                      return (
-                        <div
-                          key={`product-preparation-${index}`}
-                          className="grid gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 lg:grid-cols-[minmax(0,1.6fr)_minmax(160px,0.8fr)_auto]"
-                        >
-                          <FormSelect
-                            label={`Preparacion ${index + 1}`}
-                            labelNote="Base"
-                            value={item.preparationId}
-                            onChange={(event) =>
-                              updatePreparationRow(index, "preparationId", event.target.value)
-                            }
-                            className="min-w-0"
-                          >
-                            <option value="">Seleccionar preparacion</option>
-                            {preparationOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </FormSelect>
-                          <FormInput
-                            label="Cantidad usada"
-                            labelNote={linkedPreparation?.output_unit || "porcion"}
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.quantity}
-                            onChange={(event) =>
-                              updatePreparationRow(index, "quantity", event.target.value)
-                            }
-                            className="min-w-0"
-                          />
-                          <div className="flex items-end">
-                            <button
-                              type="button"
-                              onClick={() => removePreparationRow(index)}
-                              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-600 transition hover:bg-rose-100"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                      Agrega las preparaciones base que componen este producto.
-                    </div>
-                  )}
-                </div>
-              </section>
-            ) : null}
-
             <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
               <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
                 <div>
@@ -362,17 +235,13 @@ export default function ProductEditorModal({
             </p>
             <h4 className="mt-3 text-lg font-semibold text-slate-900">
               {currentProductRecipe
-                ? productForm.recipeMode === "composed"
-                  ? "Costeo compuesto enlazado"
-                  : "Costeo enlazado"
+                ? "Costeo enlazado"
                 : "Aun sin costeo"}
             </h4>
             <p className="mt-2 text-sm leading-6 text-slate-500">
               {currentProductRecipe
-                ? productForm.recipeMode === "composed"
-                  ? "Este panel se alimenta desde las preparaciones conectadas y recalcula costo, margen y precio sugerido."
-                  : "Este panel se alimenta automaticamente desde la receta estandar y el costo vigente de insumos."
-                : "Conecta este producto con una ficha tecnica o con preparaciones para medir costo real, margen y precio recomendado."}
+                ? "Este panel se alimenta automaticamente desde la ficha tecnica y el costo vigente de insumos."
+                : "Conecta este producto con una ficha tecnica para medir costo real, margen y precio recomendado."}
             </p>
           </div>
 
@@ -395,33 +264,19 @@ export default function ProductEditorModal({
             {currentProductRecipe ? (
               <div className="space-y-3">
                 <p className="text-sm font-semibold text-slate-800">
-                  {productForm.recipeMode === "composed"
-                    ? `${productModalMetrics.preparationCount} preparacion(es) y ${productModalMetrics.ingredientsCount} insumo(s) derivados`
-                    : `${productModalMetrics.ingredientsCount} insumos conectados`}
+                  {`${productModalMetrics.ingredientsCount} insumos conectados`}
                 </p>
                 <p className="text-sm text-slate-500">
-                  {productForm.recipeMode === "composed"
-                    ? "El precio sugerido responde a la suma de preparaciones base y al margen objetivo activo."
-                    : "El precio sugerido responde al margen objetivo configurado en la ficha."}
+                  El precio sugerido responde al margen objetivo configurado en la ficha.
                 </p>
                 {!isCatalogMode ? (
-                  productForm.recipeMode === "composed" ? (
-                    <button
-                      type="button"
-                      onClick={onOpenPreparations}
-                      className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Abrir preparaciones
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={onOpenRecipe}
-                      className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Abrir ficha tecnica
-                    </button>
-                  )
+                  <button
+                    type="button"
+                    onClick={onOpenRecipe}
+                    className="inline-flex rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Abrir ficha tecnica
+                  </button>
                 ) : null}
               </div>
             ) : (
@@ -436,16 +291,12 @@ export default function ProductEditorModal({
                 </button>
                 <div>
                   <p className="text-sm font-semibold text-slate-800">
-                    {productForm.recipeMode === "composed"
-                      ? "Conecta preparaciones base"
-                      : "Agrega una ficha tecnica"}
+                    Agrega una ficha tecnica
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
                     {isCatalogMode
                       ? "Crea la receta desde Centro de Recursos para activar costos y rentabilidad."
-                      : productForm.recipeMode === "composed"
-                        ? "Compone el producto con preparaciones ya costeadas para calcular su rentabilidad."
-                        : "Enlaza receta, merma y margen objetivo desde el modulo de fichas tecnicas."}
+                      : "Enlaza receta, merma y margen objetivo desde el modulo de fichas tecnicas."}
                   </p>
                 </div>
               </div>

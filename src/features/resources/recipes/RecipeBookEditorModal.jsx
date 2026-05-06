@@ -1,14 +1,31 @@
-import { BookOpenText, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { BookOpenText, Plus, Trash2, Upload, X } from "lucide-react";
 import FormInput from "../../../components/FormInput";
 import FormSelect from "../../../components/FormSelect";
 import ModalWrapper from "../../../components/ModalWrapper";
 import { formatCOP } from "../../../utils/formatters";
-import { MODAL_TABS } from "./recipeBookHelpers";
 import {
-  getProfitabilityLabel,
-  getRecipeAction,
-  getSuggestedDeltaLabel,
-} from "./recipeCostingShared";
+  MENU_CLASSIFICATIONS,
+  MODAL_TABS,
+  TECHNICAL_SHEET_STATUSES,
+  TECHNICAL_SHEET_TYPES,
+  YIELD_UNITS,
+} from "./recipeBookHelpers";
+
+const LEVEL_OPTIONS = [
+  { value: "", label: "Sin definir" },
+  { value: "high", label: "Alta" },
+  { value: "medium", label: "Media" },
+  { value: "low", label: "Baja" },
+];
+
+function MetricCard({ label, value, tone = "bg-white text-slate-950 ring-slate-200" }) {
+  return (
+    <article className={`rounded-2xl p-4 ring-1 ${tone}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</p>
+      <p className="mt-2 text-xl font-black">{value}</p>
+    </article>
+  );
+}
 
 export default function RecipeBookEditorModal({
   open,
@@ -19,54 +36,47 @@ export default function RecipeBookEditorModal({
   onModalTabChange,
   form,
   setForm,
-  availableProducts,
-  recipeReadiness,
-  previewMetrics,
-  selectedProduct,
-  safeSupplies,
-  supplyReferenceMap,
-  addIngredientRow,
-  updateIngredientRow,
-  removeIngredientRow,
+  products,
+  sourceOptions,
+  sourceMap,
+  previewCosting,
+  addComponentRow,
+  updateComponentRow,
+  removeComponentRow,
   isUploadingImage,
   onImageUpload,
   feedbackMessage,
   isSaving,
   canSaveRecipe,
-  recipeDuplicate,
 }) {
-  const isRecipeSubmitBlocked = isSaving || !canSaveRecipe || Boolean(recipeDuplicate);
+  const isRecipeSubmitBlocked = isSaving || !canSaveRecipe;
+
+  const applySourceToComponent = (index, sourceKey) => {
+    const source = sourceMap[sourceKey];
+    updateComponentRow(index, "sourceKey", sourceKey);
+
+    if (!source) {
+      updateComponentRow(index, "sourceId", "");
+      return;
+    }
+
+    updateComponentRow(index, "sourceType", source.sourceType);
+    updateComponentRow(index, "sourceId", source.id);
+    updateComponentRow(index, "name", source.name);
+    updateComponentRow(index, "unit", source.unit);
+    updateComponentRow(index, "unitCost", String(source.unitCost || 0));
+  };
 
   return (
     <ModalWrapper
       open={open}
       onClose={onClose}
-      maxWidthClass="max-w-6xl"
+      maxWidthClass="max-w-7xl"
       icon={{ main: <BookOpenText size={20} />, close: <X size={18} /> }}
       title={editingId ? "Editar ficha tecnica" : "Nueva ficha tecnica"}
-      description="Costea el plato, revisa su rentabilidad y documenta la operacion desde una sola ficha."
+      description="Construye fichas por niveles con rendimiento, componentes, montaje y lectura financiera."
     >
       <form onSubmit={onSubmit} className="grid gap-6">
-        <section className="grid gap-3 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-            Flujo recomendado
-          </p>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-              <p className="text-sm font-semibold text-slate-900">1. Conecta el producto</p>
-              <p className="mt-1 text-sm text-slate-500">Define merma y margen antes de discutir precio.</p>
-            </div>
-            <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-              <p className="text-sm font-semibold text-slate-900">2. Carga la receta real</p>
-              <p className="mt-1 text-sm text-slate-500">Usa cantidades operativas, no estimaciones bonitas.</p>
-            </div>
-            <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-              <p className="text-sm font-semibold text-slate-900">3. Deja lista la ejecucion</p>
-              <p className="mt-1 text-sm text-slate-500">Tiempo, imagen y pasos convierten la ficha en guia real.</p>
-            </div>
-          </div>
-        </section>
-
         <div className="flex flex-wrap gap-2">
           {MODAL_TABS.map((tab) => (
             <button
@@ -75,7 +85,7 @@ export default function RecipeBookEditorModal({
               onClick={() => onModalTabChange(tab.id)}
               className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                 activeModalTab === tab.id
-                  ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-900/20"
+                  ? "bg-slate-950 text-white shadow-md shadow-slate-900/15"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
@@ -84,362 +94,433 @@ export default function RecipeBookEditorModal({
           ))}
         </div>
 
-        {activeModalTab === "costing" ? (
-          <>
-            <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200 2xl:grid-cols-[1.15fr_0.85fr]">
-              <div className="min-w-0 grid gap-4">
-                <div className="rounded-[20px] bg-slate-950 px-4 py-4 text-white ring-1 ring-slate-900/10">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Decision guiada
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-200">
-                    Ajusta merma y margen objetivo para ver si el precio actual resiste o si conviene corregirlo.
-                  </p>
-                </div>
-
-                <FormSelect
-                  label="Producto"
-                  labelNote="Base"
-                  className="min-w-0"
-                  value={form.productId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, productId: event.target.value }))
-                  }
-                  hint="Selecciona el plato cuyo precio quieres contrastar con el costo real."
-                >
-                  <option value="">Seleccionar producto</option>
-                  {availableProducts.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name}
-                    </option>
-                  ))}
-                </FormSelect>
-
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <FormInput
-                    label="Merma %"
-                    labelNote="Costo"
-                    className="min-w-0"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.wastePct}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, wastePct: event.target.value }))
-                    }
-                  />
-                  <FormInput
-                    label="Margen objetivo %"
-                    labelNote="Objetivo"
-                    className="min-w-0"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={form.targetMarginPct}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, targetMarginPct: event.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-
-              <aside className="min-w-0 grid gap-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4 shadow-inner">
-                <div className="rounded-[20px] border border-slate-200 bg-white px-4 py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Estado de la ficha
-                  </p>
-                  <p className="mt-2 text-base font-semibold text-slate-900">
-                    {recipeReadiness.title}
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">
-                    {recipeReadiness.body}
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo base</p>
-                    <p className="mt-2 text-lg font-bold text-slate-950">
-                      {formatCOP(previewMetrics.baseCost)}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Costo conectado</p>
-                    <p className="mt-2 text-lg font-bold text-slate-950">
-                      {formatCOP(previewMetrics.realCost)}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-slate-200">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Margen estimado</p>
-                    <p className="mt-2 text-lg font-bold text-slate-950">
-                      {previewMetrics.currentMarginPct.toFixed(1)}%
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-[#fff7df] px-4 py-4 ring-1 ring-[#d4a72c]/20">
-                    <p className="text-xs uppercase tracking-[0.18em] text-[#946200]">Precio recomendado</p>
-                    <p className="mt-2 text-lg font-bold text-slate-950">
-                      {formatCOP(previewMetrics.suggestedPrice)}
-                    </p>
-                  </div>
-                </div>
-              </aside>
-            </section>
-
-            <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-              <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Recomendacion inmediata</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">
-                  {getRecipeAction({
-                    profitability_status: previewMetrics.profitabilityStatus,
-                  })}
-                </p>
-              </article>
-              <article className="rounded-[24px] bg-[#fff7df] p-4 ring-1 ring-[#d4a72c]/20">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-[#946200]">Impacto en precio</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">
-                  {getSuggestedDeltaLabel(
-                    Number(selectedProduct?.price || 0),
-                    previewMetrics.suggestedPrice
-                  )}
-                </p>
-              </article>
-            </section>
-
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Tu precio actual</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {formatCOP(Number(selectedProduct?.price || 0))}
-                </p>
-              </article>
-              <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Costo conectado</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {formatCOP(previewMetrics.realCost)}
-                </p>
-              </article>
-              <article className="rounded-[24px] bg-[#fff7df] p-4 ring-1 ring-[#d4a72c]/20">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-[#946200]">
-                  Precio recomendado
-                </p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {formatCOP(previewMetrics.suggestedPrice)}
-                </p>
-              </article>
-              <article className="rounded-[24px] bg-white p-4 ring-1 ring-slate-200">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Estado del margen</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {getProfitabilityLabel(previewMetrics.profitabilityStatus)}
-                </p>
-              </article>
-            </section>
-
-            <section className="space-y-4 rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h4 className="text-lg font-semibold text-slate-900">Receta estandar</h4>
-                  <p className="text-sm text-slate-500">
-                    El costo del plato se recalcula cuando cambian los insumos o cantidades.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={addIngredientRow}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
-                >
-                  <Plus size={16} />
-                  Agregar insumo
-                </button>
-              </div>
-
-              <div className="grid gap-4">
-                {form.ingredients.map((ingredient, index) => {
-                  const linkedSupply = supplyReferenceMap[ingredient.ingredientId];
-
-                  return (
-                    <article
-                      key={`recipe-row-${index}`}
-                      className="min-w-0 rounded-[24px] bg-white p-4 ring-1 ring-slate-200"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                            Insumo {index + 1}
-                          </p>
-                          <p className="mt-1 text-sm text-slate-500">
-                            Selecciona el insumo, define la cantidad real y valida su contexto de inventario.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeIngredientRow(index)}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-
-                      <div className="mt-4 grid gap-4 2xl:grid-cols-[1.05fr_0.7fr_0.95fr]">
-                        <FormSelect
-                          label="Insumo"
-                          labelNote="Inventario"
-                          className="min-w-0"
-                          value={ingredient.ingredientId}
-                          onChange={(event) =>
-                            updateIngredientRow(index, "ingredientId", event.target.value)
-                          }
-                          hint="Elige un insumo ya creado para heredar costo y unidad de referencia."
-                        >
-                          <option value="">Seleccionar insumo</option>
-                          {safeSupplies.map((supply) => (
-                            <option key={supply.id} value={supply.id}>
-                              {supply.name} ({supply.unit})
-                            </option>
-                          ))}
-                        </FormSelect>
-
-                        <FormInput
-                          label="Cantidad"
-                          labelNote="Receta"
-                          className="min-w-0"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={ingredient.quantity}
-                          onChange={(event) =>
-                            updateIngredientRow(index, "quantity", event.target.value)
-                          }
-                          hint={linkedSupply ? `Unidad base: ${linkedSupply.unit || "und"}` : "Usa la unidad base del insumo."}
-                        />
-
-                        <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                            Referencia actual
-                          </p>
-                          {linkedSupply ? (
-                            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                              <div>
-                                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Stock</p>
-                                <p className="mt-1 font-semibold text-slate-900">
-                                  {Number(linkedSupply.stock || 0)} {linkedSupply.unit || "und"}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-xs uppercase tracking-[0.14em] text-slate-400">CPP</p>
-                                <p className="mt-1 font-semibold text-slate-900">
-                                  {formatCOP(linkedSupply.average_cost || linkedSupply.last_purchase_cost || 0)}
-                                </p>
-                              </div>
-                            </div>
-                          ) : (
-                            <p className="mt-2 text-sm text-slate-500">
-                              Selecciona un insumo para ver stock y costo conectado.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-
-                {form.ingredients.length === 0 ? (
-                  <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/70 px-4 py-6 text-sm text-slate-500">
-                    Agrega el primer insumo para empezar a costear la receta.
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          </>
-        ) : (
-          <section className="grid gap-6">
-            <section className="grid gap-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Bloque operativo
-              </p>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                  <p className="text-sm font-semibold text-slate-900">Tiempo</p>
-                  <p className="mt-1 text-sm text-slate-500">Define cuanto tarda realmente el plato.</p>
-                </div>
-                <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                  <p className="text-sm font-semibold text-slate-900">Imagen</p>
-                  <p className="mt-1 text-sm text-slate-500">Aporta referencia visual para servicio y estandar.</p>
-                </div>
-                <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                  <p className="text-sm font-semibold text-slate-900">Pasos</p>
-                  <p className="mt-1 text-sm text-slate-500">Deja una secuencia util para ejecutar, no solo recordar.</p>
-                </div>
-              </div>
-            </section>
-
-            <div className="grid gap-4 2xl:grid-cols-[0.75fr_1.25fr]">
-              <section className="min-w-0 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-                <FormInput
-                  label="Tiempo estimado (min)"
-                  labelNote="Servicio"
-                  className="min-w-0"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={form.prepTimeMinutes}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, prepTimeMinutes: event.target.value }))
-                  }
-                  hint="Usa el tiempo promedio real, no el ideal."
-                />
-              </section>
-
-              <section className="min-w-0 grid gap-3 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-                <FormInput
-                  label="Imagen del plato (URL)"
-                  labelNote="Visual"
-                  className="min-w-0"
-                  value={form.platingPhotoUrl}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, platingPhotoUrl: event.target.value }))
-                  }
-                  hint="Tambien puedes subir una imagen y SmartProfit llenara la URL automaticamente."
-                />
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50">
-                  <Upload size={16} />
-                  {isUploadingImage ? "Subiendo imagen..." : "Subir a Firebase Storage"}
-                  <input type="file" accept="image/*" className="hidden" onChange={onImageUpload} />
-                </label>
-              </section>
-            </div>
-
-            <section className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+        {activeModalTab === "general" ? (
+          <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <FormInput
-                label="Pasos de preparacion"
-                labelNote="Operacion"
-                className="min-w-0"
-                multiline
-                rows={10}
-                value={form.preparationSteps}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, preparationSteps: event.target.value }))
-                }
-                hint="Separa los pasos por linea para que SmartProfit los guarde como una secuencia operativa."
+                label="Nombre"
+                required
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               />
-            </section>
-
-            {form.platingPhotoUrl ? (
-              <div className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
-                <p className="text-sm font-semibold text-slate-700">Vista previa</p>
-                <img
-                  src={form.platingPhotoUrl}
-                  alt="Foto del plato"
-                  className="mt-3 h-56 w-full rounded-[20px] object-cover"
-                />
-              </div>
-            ) : null}
+              <FormInput
+                label="Codigo interno"
+                value={form.code}
+                onChange={(event) => setForm((current) => ({ ...current, code: event.target.value }))}
+              />
+              <FormSelect
+                label="Tipo de ficha"
+                required
+                value={form.type}
+                onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}
+                options={TECHNICAL_SHEET_TYPES}
+              />
+              <FormSelect
+                label="Estado"
+                value={form.status}
+                onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+                options={TECHNICAL_SHEET_STATUSES}
+              />
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <FormInput
+                label="Categoria"
+                required
+                value={form.category}
+                onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+                hint="Usa la categoria existente del negocio cuando aplique."
+              />
+              <FormInput
+                label="Responsable"
+                value={form.responsible}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, responsible: event.target.value }))
+                }
+              />
+              <FormSelect
+                label="Producto de venta vinculado"
+                value={form.productId}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, productId: event.target.value }))
+                }
+              >
+                <option value="">Sin producto vinculado</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </FormSelect>
+            </div>
+            <FormInput
+              label="Descripcion"
+              multiline
+              rows={4}
+              value={form.description}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, description: event.target.value }))
+              }
+            />
           </section>
-        )}
+        ) : null}
 
-        {recipeDuplicate ? (
-          <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-            Este producto ya tiene una ficha tecnica registrada. Abre la ficha existente y actualizala para no fragmentar el costeo.
-          </div>
+        {activeModalTab === "yield" ? (
+          <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <FormInput
+                label="Cantidad producida"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.yieldQuantity}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, yieldQuantity: event.target.value }))
+                }
+              />
+              <FormSelect
+                label="Unidad de rendimiento"
+                value={form.yieldUnit}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, yieldUnit: event.target.value }))
+                }
+                options={YIELD_UNITS}
+              />
+              <FormInput
+                label="Numero de porciones"
+                required
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={form.portions}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, portions: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Merma"
+                labelNote="%"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={form.wastePercent}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, wastePercent: event.target.value }))
+                }
+              />
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <FormInput
+                label="Tamano de porcion"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.portionSize}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, portionSize: event.target.value }))
+                }
+              />
+              <FormSelect
+                label="Unidad por porcion"
+                value={form.portionUnit}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, portionUnit: event.target.value }))
+                }
+                options={YIELD_UNITS}
+              />
+              <FormInput
+                label="Rendimiento util"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.usefulYield}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, usefulYield: event.target.value }))
+                }
+                hint="Puede quedar vacio para calcularlo desde cantidad y merma."
+              />
+              <FormInput
+                label="Vida util"
+                value={form.shelfLife}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, shelfLife: event.target.value }))
+                }
+              />
+            </div>
+            <FormInput
+              label="Condiciones de conservacion"
+              multiline
+              rows={3}
+              value={form.storageConditions}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, storageConditions: event.target.value }))
+              }
+            />
+          </section>
+        ) : null}
+
+        {activeModalTab === "components" ? (
+          <section className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h4 className="text-lg font-semibold text-slate-900">Ingredientes y componentes</h4>
+                <p className="text-sm text-slate-500">
+                  Combina insumos crudos con fichas base ya registradas.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={addComponentRow}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
+              >
+                <Plus size={16} />
+                Agregar componente
+              </button>
+            </div>
+            <div className="grid gap-3">
+              {form.components.map((component, index) => {
+                const sourceKey = `${component.sourceType}:${component.sourceId}`;
+                return (
+                  <article
+                    key={component.id}
+                    className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 xl:grid-cols-[1.35fr_0.6fr_0.5fr_0.65fr_0.65fr_auto]"
+                  >
+                    <FormSelect
+                      label={`Origen ${index + 1}`}
+                      value={sourceKey}
+                      onChange={(event) => applySourceToComponent(index, event.target.value)}
+                    >
+                      <option value="">Seleccionar origen</option>
+                      {sourceOptions.map((option) => (
+                        <option
+                          key={`${option.sourceType}:${option.id}`}
+                          value={`${option.sourceType}:${option.id}`}
+                        >
+                          {option.label}
+                        </option>
+                      ))}
+                    </FormSelect>
+                    <FormInput
+                      label="Cantidad"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={component.quantity}
+                      onChange={(event) => updateComponentRow(index, "quantity", event.target.value)}
+                    />
+                    <FormInput
+                      label="Unidad"
+                      value={component.unit}
+                      onChange={(event) => updateComponentRow(index, "unit", event.target.value)}
+                    />
+                    <FormInput
+                      label="Costo unitario"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={component.unitCost}
+                      onChange={(event) => updateComponentRow(index, "unitCost", event.target.value)}
+                    />
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Costo
+                      </p>
+                      <p className="mt-2 font-semibold text-slate-900">
+                        {formatCOP(component.totalCost)}
+                      </p>
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => removeComponentRow(index)}
+                        className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 ring-1 ring-rose-200 transition hover:bg-rose-100"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <FormInput
+                      label="Observaciones"
+                      className="xl:col-span-6"
+                      value={component.notes}
+                      onChange={(event) => updateComponentRow(index, "notes", event.target.value)}
+                    />
+                  </article>
+                );
+              })}
+              {form.components.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                  Agrega componentes para activar el costeo automatico.
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {activeModalTab === "procedure" ? (
+          <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div className="grid gap-4 md:grid-cols-3">
+              <FormInput
+                label="Tiempo estimado"
+                labelNote="min"
+                type="number"
+                min="0"
+                step="1"
+                value={form.estimatedTime}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, estimatedTime: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Temperatura"
+                value={form.temperature}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, temperature: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Equipos requeridos"
+                value={form.equipment}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, equipment: event.target.value }))
+                }
+              />
+            </div>
+            <FormInput
+              label="Pasos ordenados"
+              multiline
+              rows={8}
+              value={form.procedureSteps}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, procedureSteps: event.target.value }))
+              }
+              hint="Un paso por linea."
+            />
+            <FormInput
+              label="Observaciones de preparacion"
+              multiline
+              rows={3}
+              value={form.procedureNotes}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, procedureNotes: event.target.value }))
+              }
+            />
+          </section>
+        ) : null}
+
+        {activeModalTab === "plating" ? (
+          <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div className="grid gap-4 md:grid-cols-3">
+              <FormInput
+                label="Vajilla o empaque"
+                value={form.plateware}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, plateware: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Decoracion"
+                value={form.decoration}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, decoration: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Imagen futura / URL"
+                value={form.imageUrl}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, imageUrl: event.target.value }))
+                }
+              />
+            </div>
+            <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50">
+              <Upload size={16} />
+              {isUploadingImage ? "Subiendo imagen..." : "Subir imagen"}
+              <input type="file" accept="image/*" className="hidden" onChange={onImageUpload} />
+            </label>
+            <FormInput
+              label="Instrucciones de emplatado"
+              multiline
+              rows={4}
+              value={form.platingInstructions}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, platingInstructions: event.target.value }))
+              }
+            />
+            <FormInput
+              label="Notas visuales"
+              multiline
+              rows={3}
+              value={form.visualNotes}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, visualNotes: event.target.value }))
+              }
+            />
+          </section>
+        ) : null}
+
+        {activeModalTab === "costing" ? (
+          <section className="grid gap-5 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <FormInput
+                label="Precio venta actual"
+                type="number"
+                min="0"
+                step="1"
+                value={form.currentSalePrice}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, currentSalePrice: event.target.value }))
+                }
+              />
+              <FormInput
+                label="Food cost objetivo"
+                labelNote="%"
+                type="number"
+                min="0.01"
+                max="100"
+                step="0.01"
+                value={form.targetFoodCost}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, targetFoodCost: event.target.value }))
+                }
+              />
+              <FormSelect
+                label="Popularidad"
+                value={form.popularity}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, popularity: event.target.value }))
+                }
+                options={LEVEL_OPTIONS}
+              />
+              <FormSelect
+                label="Rentabilidad BI"
+                value={form.profitability}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, profitability: event.target.value }))
+                }
+                options={LEVEL_OPTIONS}
+              />
+            </div>
+            <FormSelect
+              label="Clasificacion menu"
+              value={form.menuClassification}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, menuClassification: event.target.value }))
+              }
+              options={MENU_CLASSIFICATIONS}
+            />
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard label="Costo total" value={formatCOP(previewCosting.totalCost)} />
+              <MetricCard label="Costo por porcion" value={formatCOP(previewCosting.costPerPortion)} />
+              <MetricCard
+                label="Precio sugerido"
+                value={formatCOP(previewCosting.suggestedPrice)}
+                tone="bg-[#fff7df] text-slate-950 ring-[#d4a72c]/25"
+              />
+              <MetricCard label="Food cost" value={`${previewCosting.foodCostPercent.toFixed(1)}%`} />
+              <MetricCard label="Margen unitario" value={formatCOP(previewCosting.grossMargin)} />
+              <MetricCard label="Margen %" value={`${previewCosting.grossMarginPercent.toFixed(1)}%`} />
+            </div>
+          </section>
         ) : null}
 
         {feedbackMessage ? (
@@ -459,7 +540,7 @@ export default function RecipeBookEditorModal({
           <button
             type="submit"
             disabled={isRecipeSubmitBlocked}
-            className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
+            className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isSaving ? "Guardando..." : editingId ? "Actualizar ficha" : "Crear ficha"}
           </button>

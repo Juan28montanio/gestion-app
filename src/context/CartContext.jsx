@@ -19,7 +19,6 @@ const buildCartItem = (product, modifiers = [], note = "") => ({
   price: Number(product.price) || 0,
   product_type: product.product_type || "standard",
   recipe_mode: product.recipe_mode || "direct",
-  preparation_items: Array.isArray(product.preparation_items) ? product.preparation_items : [],
   ticket_units: Number(product.ticket_units || 0),
   ticket_validity_days: Number(product.ticket_validity_days || 30),
   ticket_eligible:

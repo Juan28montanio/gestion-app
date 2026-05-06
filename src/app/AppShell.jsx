@@ -55,6 +55,7 @@ function AppShellContent() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   const [toasts, setToasts] = useState([]);
   const [activeSection, setActiveSection] = useState("salon");
+  const [resourceInitialTab, setResourceInitialTab] = useState("");
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -98,6 +99,21 @@ function AppShellContent() {
     const unsubscribe = subscribeToOpenCashSession(businessId, setOpenCashSession);
     return () => unsubscribe();
   }, [businessId, currentUser]);
+
+  useEffect(() => {
+    if (/^\/preparaciones(\/|$)/i.test(pathname)) {
+      window.history.replaceState({}, "", "/fichas-tecnicas");
+      setPathname("/fichas-tecnicas");
+      setActiveSection("resources");
+      setResourceInitialTab("recipes");
+      return;
+    }
+
+    if (/^\/fichas-tecnicas(\/|$)/i.test(pathname)) {
+      setActiveSection("resources");
+      setResourceInitialTab("recipes");
+    }
+  }, [pathname]);
 
   const notify = (message) => {
     const toast = {
@@ -364,7 +380,11 @@ function AppShellContent() {
                     ) : null}
 
                     {activeSection === "resources" ? (
-                      <ProductManager businessId={businessId} mode="resources" />
+                      <ProductManager
+                        businessId={businessId}
+                        mode="resources"
+                        initialTab={resourceInitialTab}
+                      />
                     ) : null}
 
                     {activeSection === "ticketing" ? (
