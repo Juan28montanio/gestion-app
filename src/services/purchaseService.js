@@ -1149,7 +1149,10 @@ export async function getIngredientPriceHistory(businessId, ingredientId) {
   const snapshot = await getDocs(purchasesQuery);
 
   return sortPurchases(snapshot.docs.map((purchaseDoc) => ({ id: purchaseDoc.id, ...purchaseDoc.data() })))
-    .filter((purchase) => purchase.status !== PURCHASE_STATUS.CANCELED)
+    .filter((purchase) => {
+      const status = normalizeText(purchase.status).toLowerCase();
+      return ![PURCHASE_STATUS.CANCELED, "cancelada", "canceled", "cancelled"].includes(status);
+    })
     .flatMap((purchase) =>
       (purchase.items || [])
         .filter((item) => (item.inventoryItemId || item.ingredient_id) === normalizedIngredientId)

@@ -275,6 +275,11 @@ export function getMovementVisual(movement) {
   };
 }
 
+function isActivePurchase(purchase) {
+  const status = String(purchase?.status || "confirmada").trim().toLowerCase();
+  return !["anulada", "cancelada", "canceled", "cancelled"].includes(status);
+}
+
 export function buildExecutiveInsights({
   balance,
   filteredSummary,
@@ -420,9 +425,10 @@ export function buildCashActionItems({
 }
 
 export function buildSupplyChainInsights(purchases, filteredSummary) {
-  const purchaseCount = purchases.length;
-  const totalPurchases = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
-  const topSupplierMap = purchases.reduce((accumulator, purchase) => {
+  const activePurchases = purchases.filter(isActivePurchase);
+  const purchaseCount = activePurchases.length;
+  const totalPurchases = activePurchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
+  const topSupplierMap = activePurchases.reduce((accumulator, purchase) => {
     const key = purchase.supplier_name || "Sin proveedor";
     accumulator[key] = (accumulator[key] || 0) + Number(purchase.total || 0);
     return accumulator;
@@ -461,9 +467,10 @@ export function buildSupplyChainInsights(purchases, filteredSummary) {
 }
 
 export function buildCashPressureQueue({ purchases, receivableTotal, receivableCount, lockInfo }) {
-  const purchaseCount = purchases.length;
-  const purchaseTotal = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
-  const creditPurchases = purchases.filter((purchase) => {
+  const activePurchases = purchases.filter(isActivePurchase);
+  const purchaseCount = activePurchases.length;
+  const purchaseTotal = activePurchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
+  const creditPurchases = activePurchases.filter((purchase) => {
     return resolvePurchasePaymentMethod(
       purchase.payment_method || purchase.raw?.payment_method,
       purchase.supplier_payment_terms || purchase.raw?.supplier_payment_terms

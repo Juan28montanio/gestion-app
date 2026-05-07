@@ -74,6 +74,11 @@ function buildClosingCode(closedAt = new Date(), sequence = 1) {
   return `CIERRE-${month}${day}${year}-${String(sequence || 1).padStart(3, "0")}`;
 }
 
+function isActivePurchase(purchase) {
+  const status = String(purchase?.status || "confirmada").trim().toLowerCase();
+  return !["anulada", "cancelada", "canceled", "cancelled"].includes(status);
+}
+
 function buildPurchaseSummary(purchases, salesTotal) {
   const total = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
   const supplierTotals = purchases.reduce((accumulator, purchase) => {
@@ -337,7 +342,7 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
     .filter((purchase) => {
       const purchaseDate = normalizeDate(purchase.purchase_date);
-      return purchaseDate && purchaseDate >= openedAt && purchaseDate <= now;
+      return isActivePurchase(purchase) && purchaseDate && purchaseDate >= openedAt && purchaseDate <= now;
     });
 
   const relevantOperatingExpenses = operatingExpensesSnapshot.docs

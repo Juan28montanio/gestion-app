@@ -67,6 +67,11 @@ import {
   summarizeMovements,
 } from "../features/finance/dashboardHelpers";
 
+function isActivePurchase(purchase) {
+  const status = String(purchase?.status || "confirmada").trim().toLowerCase();
+  return !["anulada", "cancelada", "canceled", "cancelled"].includes(status);
+}
+
 function openPrintableReport(report) {
   const html = buildCashClosingReportHtml(report);
   const reportWindow = window.open("", "_blank", "width=960,height=720");
@@ -190,18 +195,20 @@ export default function AdminDashboard({
       source: "sale",
     }));
 
-    const purchaseMovements = purchases.map((purchase) => ({
-      id: `purchase-${purchase.id}`,
-      type: "expense",
-      date: normalizeDate(purchase.purchase_date),
-      concept: purchase.concept || purchase.supplier_name || purchase.invoice_number || "Compra",
-      category: [...new Set((purchase.items || []).map((item) => item.category).filter(Boolean))].join(", "),
-      details: (purchase.items || []).map((item) => `${item.quantity}x ${item.ingredient_name}`).join(", "),
-      amount: Number(purchase.total || 0),
-      paymentMethod: purchase.payment_method || "cash",
-      raw: purchase,
-      source: "purchase",
-    }));
+    const purchaseMovements = purchases
+      .filter(isActivePurchase)
+      .map((purchase) => ({
+        id: `purchase-${purchase.id}`,
+        type: "expense",
+        date: normalizeDate(purchase.purchase_date),
+        concept: purchase.concept || purchase.supplier_name || purchase.invoice_number || "Compra",
+        category: [...new Set((purchase.items || []).map((item) => item.category).filter(Boolean))].join(", "),
+        details: (purchase.items || []).map((item) => `${item.quantity}x ${item.ingredient_name}`).join(", "),
+        amount: Number(purchase.total || 0),
+        paymentMethod: purchase.payment_method || "cash",
+        raw: purchase,
+        source: "purchase",
+      }));
 
     const operatingExpenseMovements = operatingExpenses.map((expense) => ({
       id: `expense-${expense.id}`,
@@ -395,8 +402,10 @@ export default function AdminDashboard({
   );
   const filteredPurchases = useMemo(
     () =>
-      purchases.filter((purchase) =>
-        isInRange(normalizeDate(purchase.purchase_date), selectedRange, selectedDate)
+      purchases.filter(
+        (purchase) =>
+          isActivePurchase(purchase) &&
+          isInRange(normalizeDate(purchase.purchase_date), selectedRange, selectedDate)
       ),
     [purchases, selectedDate, selectedRange]
   );

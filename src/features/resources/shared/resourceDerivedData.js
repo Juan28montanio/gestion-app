@@ -31,10 +31,15 @@ export function buildProductCategories(products = []) {
   return [...new Set(products.map((product) => product.category).filter(Boolean))].sort();
 }
 
+function isActivePurchase(purchase) {
+  const status = String(purchase?.status || "confirmada").trim().toLowerCase();
+  return !["anulada", "cancelada", "canceled", "cancelled"].includes(status);
+}
+
 export function buildLatestSupplyReferenceByName(purchases = []) {
   const map = new Map();
 
-  purchases.forEach((purchase) => {
+  purchases.filter(isActivePurchase).forEach((purchase) => {
     (purchase.items || []).forEach((item) => {
       const searchName = String(item.ingredient_name || "").trim().toLocaleLowerCase("es");
       if (!searchName || map.has(searchName)) {
@@ -53,7 +58,7 @@ export function buildLatestSupplyReferenceByName(purchases = []) {
 }
 
 export function buildPriceHistoryBySupply(purchases = []) {
-  return purchases.reduce((accumulator, purchase) => {
+  return purchases.filter(isActivePurchase).reduce((accumulator, purchase) => {
     (purchase.items || []).forEach((item) => {
       const ingredientId = item.ingredient_id;
       if (!ingredientId) {

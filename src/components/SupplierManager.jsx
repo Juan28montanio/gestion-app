@@ -56,6 +56,11 @@ function buildSupplierForm(supplier) {
   };
 }
 
+function isActivePurchase(purchase) {
+  const status = String(purchase?.status || "confirmada").trim().toLowerCase();
+  return !["anulada", "cancelada", "canceled", "cancelled"].includes(status);
+}
+
 export default function SupplierManager({
   businessId,
   suppliers,
@@ -71,7 +76,7 @@ export default function SupplierManager({
   const [isSaving, setIsSaving] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState(null);
   const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
-  const safePurchases = Array.isArray(purchases) ? purchases : [];
+  const safePurchases = Array.isArray(purchases) ? purchases.filter(isActivePurchase) : [];
   const safeCategoryOptions = Array.isArray(categoryOptions) ? categoryOptions : [];
   const supplierSummary = useMemo(() => {
     const supplierIdsWithPurchases = new Set(

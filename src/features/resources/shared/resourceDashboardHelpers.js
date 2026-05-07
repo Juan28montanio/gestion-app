@@ -74,6 +74,11 @@ export const TABS = [
   { id: "products", label: "Catalogo", icon: Package },
 ];
 
+function isActivePurchase(purchase) {
+  const status = String(purchase?.status || "confirmada").trim().toLowerCase();
+  return !["anulada", "cancelada", "canceled", "cancelled"].includes(status);
+}
+
 export function buildProductForm(product) {
   if (!product) {
     return createProductForm();
@@ -138,12 +143,13 @@ export function getSupplyHealth(supply) {
 }
 
 export function buildResourceStats({ purchases, recipeBooks, supplies }) {
+  const activePurchases = purchases.filter(isActivePurchase);
   const lowStockCount = supplies.filter((supply) => {
     const stock = Number(supply.stock || 0);
     const min = Number(supply.stock_min_alert || 0);
     return stock <= 0 || stock <= min || stock <= min * 1.15;
   }).length;
-  const latestPurchase = purchases[0];
+  const latestPurchase = activePurchases[0];
   const latestPurchaseLabel = latestPurchase?.purchase_date ? latestPurchase.purchase_date : "Sin cargas";
   const averageMargin =
     recipeBooks.length > 0
@@ -182,7 +188,8 @@ export function buildResourceFlowInsights({
   suppliers,
   supplies,
 }) {
-  const recentPurchases = purchases.slice(0, 12);
+  const activePurchases = purchases.filter(isActivePurchase);
+  const recentPurchases = activePurchases.slice(0, 12);
   const supplierIdsWithPurchases = new Set(
     recentPurchases.map((purchase) => purchase.supplier_id).filter(Boolean)
   );
@@ -226,6 +233,7 @@ export function buildResourceFlowInsights({
 }
 
 export function buildResourceActionQueue({ purchases, recipeBooks, supplies }) {
+  const activePurchases = purchases.filter(isActivePurchase);
   const criticalSupplies = supplies.filter((supply) => {
     const health = getSupplyHealth(supply).label;
     return health === "Critico" || health === "Agotado";
@@ -240,7 +248,7 @@ export function buildResourceActionQueue({ purchases, recipeBooks, supplies }) {
     const margin = Number(recipeBook.current_margin_pct || 0);
     return margin > 0 && margin < 30;
   }).length;
-  const purchasesThisWeek = purchases.filter((purchase) => {
+  const purchasesThisWeek = activePurchases.filter((purchase) => {
     const purchaseDate = purchase.purchase_date ? new Date(`${purchase.purchase_date}T00:00:00`) : null;
     if (!purchaseDate || Number.isNaN(purchaseDate.getTime())) {
       return false;
@@ -367,7 +375,7 @@ export function summarizeProducts(products, productRecipeMap) {
 }
 
 export function buildSpendByCategory(purchases) {
-  const totals = purchases.reduce((acc, purchase) => {
+  const totals = purchases.filter(isActivePurchase).reduce((acc, purchase) => {
     (purchase.items || []).forEach((item) => {
       const key = item.category || "Sin categoria";
       acc[key] =
