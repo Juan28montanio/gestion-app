@@ -1,6 +1,13 @@
 import { Boxes, ClipboardList, Factory, Package, Sparkles } from "lucide-react";
 import { formatCOP } from "../../../utils/formatters";
 import { buildRecipeCostSnapshot } from "../recipes/recipeCostingShared";
+import {
+  calculateStockStatus,
+  getSupplyBaseUnit,
+  getSupplyCurrentStock,
+  getSupplyMinimumStock,
+  getSupplyReorderPoint,
+} from "../inventory/supplyCalculations";
 
 export function createProductForm() {
   return {
@@ -18,11 +25,34 @@ export function createProductForm() {
 export function createSupplyForm() {
   return {
     name: "",
+    code: "",
     category: "",
+    subcategory: "",
+    description: "",
+    type: "raw_material",
+    status: "active",
     unit: "g",
+    purchaseUnit: "kg",
+    purchaseQuantity: "1",
+    conversionFactor: "1000",
+    currentCost: "",
+    lastCost: "",
+    averageCost: "",
     stock: "",
     stockMinAlert: "",
-    averageCost: "",
+    idealStock: "",
+    reorderPoint: "",
+    inventoryUnit: "g",
+    location: "",
+    wastePercent: "0",
+    usefulYield: "",
+    wasteNotes: "",
+    storageType: "",
+    shelfLifeClosed: "",
+    shelfLifeOpened: "",
+    timeUnit: "days",
+    supplierName: "",
+    notes: "",
   };
 }
 
@@ -68,34 +98,43 @@ export function buildSupplyForm(supply) {
 
   return {
     name: supply.name || "",
+    code: supply.code || "",
     category: supply.category || "",
-    unit: supply.unit || "g",
-    stock: String(supply.stock ?? ""),
-    stockMinAlert: String(supply.stock_min_alert ?? supply.stockMinAlert ?? ""),
-    averageCost: String(
-      supply.last_purchase_cost ?? supply.average_cost ?? supply.cost_per_unit ?? ""
-    ),
+    subcategory: supply.subcategory || "",
+    description: supply.description || "",
+    type: supply.type || "raw_material",
+    status: supply.status || "active",
+    unit: getSupplyBaseUnit(supply),
+    purchaseUnit: supply.conversion?.purchaseUnit || supply.unit || getSupplyBaseUnit(supply),
+    purchaseQuantity: String(supply.conversion?.purchaseQuantity ?? 1),
+    conversionFactor: String(supply.conversion?.conversionFactor ?? 1),
+    currentCost: String(supply.costs?.currentCost ?? supply.average_cost ?? ""),
+    lastCost: String(supply.costs?.lastCost ?? supply.last_purchase_cost ?? ""),
+    averageCost: String(supply.costs?.averageCost ?? supply.average_cost ?? ""),
+    stock: String(getSupplyCurrentStock(supply) ?? ""),
+    stockMinAlert: String(getSupplyMinimumStock(supply) ?? ""),
+    idealStock: String(supply.inventory?.idealStock ?? ""),
+    reorderPoint: String(supply.inventory?.reorderPoint ?? ""),
+    inventoryUnit: supply.inventory?.inventoryUnit || getSupplyBaseUnit(supply),
+    location: supply.inventory?.location || "",
+    wastePercent: String(supply.waste?.wastePercent ?? supply.waste_percent ?? 0),
+    usefulYield: String(supply.waste?.usefulYield ?? supply.useful_yield ?? ""),
+    wasteNotes: supply.waste?.notes || "",
+    storageType: supply.storage?.type || "",
+    shelfLifeClosed: String(supply.storage?.shelfLifeClosed ?? ""),
+    shelfLifeOpened: String(supply.storage?.shelfLifeOpened ?? ""),
+    timeUnit: supply.storage?.timeUnit || "days",
+    supplierName: supply.supplier?.supplierName || supply.supplier_name || "",
+    notes: supply.notes || "",
   };
 }
 
 export function getSupplyHealth(supply) {
-  const stock = Number(supply.stock || 0);
-  const min = Number(supply.stock_min_alert || 0);
-  const ratio = min > 0 ? stock / min : Number.POSITIVE_INFINITY;
-
-  if (stock <= 0) {
-    return { label: "Agotado", classes: "bg-rose-100 text-rose-700 ring-rose-200" };
-  }
-
-  if (stock <= min) {
-    return { label: "Critico", classes: "bg-rose-100 text-rose-700 ring-rose-200" };
-  }
-
-  if (ratio <= 1.35) {
-    return { label: "Atencion", classes: "bg-amber-100 text-amber-700 ring-amber-200" };
-  }
-
-  return { label: "Saludable", classes: "bg-emerald-100 text-emerald-700 ring-emerald-200" };
+  return calculateStockStatus({
+    currentStock: getSupplyCurrentStock(supply),
+    minimumStock: getSupplyMinimumStock(supply),
+    reorderPoint: getSupplyReorderPoint(supply),
+  });
 }
 
 export function buildResourceStats({ purchases, recipeBooks, supplies }) {

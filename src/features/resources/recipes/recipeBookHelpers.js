@@ -2,6 +2,10 @@ import {
   calculateTechnicalSheetCosting,
   calculateUsefulYield,
 } from "./technicalSheetCalculations";
+import {
+  getSupplyBaseUnit,
+  getSupplyCostPerBaseUnit,
+} from "../inventory/supplyCalculations";
 
 export const TECHNICAL_SHEET_TYPES = [
   { value: "base", label: "Insumo base / produccion base" },
@@ -292,10 +296,10 @@ export function buildComponentSourceOptions({ supplies = [], recipeBooks = [], e
     ...supplies.map((supply) => ({
       id: supply.id,
       sourceType: "raw_item",
-      label: `${supply.name} (${supply.unit || "und"})`,
+      label: `${supply.name} (${getSupplyBaseUnit(supply)})`,
       name: supply.name || "",
-      unit: supply.unit || "und",
-      unitCost: Number(supply.average_cost || supply.last_purchase_cost || supply.cost_per_unit || 0),
+      unit: getSupplyBaseUnit(supply),
+      unitCost: getSupplyCostPerBaseUnit(supply),
     })),
     ...recipeBooks
       .filter((recipeBook) => recipeBook.id !== editingId && getTechnicalSheetStatus(recipeBook) !== "inactive")

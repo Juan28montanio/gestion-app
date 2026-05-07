@@ -7,7 +7,6 @@ import {
 } from "../services/productService";
 import {
   createSupply,
-  deleteSupply,
   subscribeToSupplies,
   updateSupply,
 } from "../services/supplyService";
@@ -85,7 +84,6 @@ export default function ProductManager({ businessId, mode = "resources", initial
   const [editingSupplyId, setEditingSupplyId] = useState(null);
   const [focusedRecipeProductId, setFocusedRecipeProductId] = useState("");
   const [productView, setProductView] = useState("grid");
-  const [ingredientView, setIngredientView] = useState("grid");
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
@@ -342,7 +340,10 @@ export default function ProductManager({ businessId, mode = "resources", initial
         current.unit && current.unit !== createSupplyForm().unit
           ? current.unit
           : latestReference.unit || current.unit || "und",
+      purchaseUnit: current.purchaseUnit || latestReference.unit || current.purchaseUnit,
+      inventoryUnit: current.inventoryUnit || latestReference.unit || current.inventoryUnit,
       averageCost: current.averageCost || latestReference.averageCost,
+      currentCost: current.currentCost || latestReference.averageCost,
     }));
   }, [
     editingSupplyId,
@@ -460,10 +461,34 @@ export default function ProductManager({ businessId, mode = "resources", initial
     try {
       const payload = {
         name: supplyForm.name.trim(),
+        code: supplyForm.code.trim(),
         category: supplyForm.category.trim(),
+        subcategory: supplyForm.subcategory.trim(),
+        description: supplyForm.description.trim(),
+        type: supplyForm.type,
+        status: supplyForm.status,
+        baseUnit: supplyForm.unit,
         unit: supplyForm.unit,
+        purchaseUnit: supplyForm.purchaseUnit,
+        purchaseQuantity: Number(supplyForm.purchaseQuantity),
+        conversionFactor: Number(supplyForm.conversionFactor),
+        currentCost: Number(supplyForm.currentCost || supplyForm.averageCost || 0),
+        lastPurchaseCost: Number(supplyForm.lastCost || supplyForm.currentCost || supplyForm.averageCost || 0),
         stock: Number(supplyForm.stock),
         stockMinAlert: Number(supplyForm.stockMinAlert),
+        idealStock: Number(supplyForm.idealStock || 0),
+        reorderPoint: Number(supplyForm.reorderPoint || 0),
+        inventoryUnit: supplyForm.inventoryUnit || supplyForm.unit,
+        location: supplyForm.location.trim(),
+        wastePercent: Number(supplyForm.wastePercent || 0),
+        usefulYield: Number(supplyForm.usefulYield || 0),
+        wasteNotes: supplyForm.wasteNotes.trim(),
+        storageType: supplyForm.storageType,
+        shelfLifeClosed: Number(supplyForm.shelfLifeClosed || 0),
+        shelfLifeOpened: Number(supplyForm.shelfLifeOpened || 0),
+        timeUnit: supplyForm.timeUnit,
+        supplierName: supplyForm.supplierName.trim(),
+        notes: supplyForm.notes.trim(),
         averageCost: Number(supplyForm.averageCost),
       };
 
@@ -493,7 +518,10 @@ export default function ProductManager({ businessId, mode = "resources", initial
       if (itemToDelete.type === "product") {
         await deleteProduct(itemToDelete.id);
       } else {
-        await deleteSupply(itemToDelete.id);
+        await updateSupply(itemToDelete.id, businessId, {
+          ...itemToDelete,
+          status: "inactive",
+        });
       }
     } finally {
       setItemToDelete(null);
@@ -537,15 +565,15 @@ export default function ProductManager({ businessId, mode = "resources", initial
       {activeTab === "ingredients" && !isCatalogMode ? (
         <ResourceInventoryPanel
           supplies={supplies}
-          ingredientView={ingredientView}
-          onIngredientViewChange={setIngredientView}
           supplySummary={supplySummary}
           priceHistoryBySupply={priceHistoryBySupply}
           recipeImpactBySupply={recipeImpactBySupply}
           spendByCategory={spendByCategory}
           onCreateSupply={openCreateSupplyModal}
           onEditSupply={openEditSupplyModal}
-          onDeleteSupply={(supply) => setItemToDelete({ id: supply.id, type: "supply", name: supply.name })}
+          onDeleteSupply={(supply) =>
+            setItemToDelete({ ...supply, type: "supply", name: supply.name })
+          }
           getSupplyHealth={getSupplyHealth}
         />
       ) : null}
@@ -608,9 +636,15 @@ export default function ProductManager({ businessId, mode = "resources", initial
 
       <ConfirmModal
         open={Boolean(itemToDelete)}
-        title={itemToDelete?.type === "product" ? "Eliminar producto" : "Eliminar insumo"}
-        description={itemToDelete ? `Se eliminara ${itemToDelete.name} de SmartProfit.` : ""}
-        confirmLabel="Eliminar"
+        title={itemToDelete?.type === "product" ? "Eliminar producto" : "Desactivar insumo"}
+        description={
+          itemToDelete
+            ? itemToDelete.type === "product"
+              ? `Se eliminara ${itemToDelete.name} de SmartProfit.`
+              : `${itemToDelete.name} quedara inactivo sin borrar historial ni romper fichas tecnicas.`
+            : ""
+        }
+        confirmLabel={itemToDelete?.type === "product" ? "Eliminar" : "Desactivar"}
         onConfirm={confirmDelete}
         onCancel={() => setItemToDelete(null)}
       />

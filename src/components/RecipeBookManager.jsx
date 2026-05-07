@@ -34,6 +34,10 @@ import {
   calculateUsefulYield,
 } from "../features/resources/recipes/technicalSheetCalculations";
 import RecipeBookEditorModal from "../features/resources/recipes/RecipeBookEditorModal";
+import {
+  getSupplyBaseUnit,
+  getSupplyCostPerBaseUnit,
+} from "../features/resources/inventory/supplyCalculations";
 
 function normalizeComparableValue(value) {
   return String(value || "")
@@ -243,9 +247,13 @@ export default function RecipeBookManager({
       const fallbackUnitCost =
         component.sourceType === "technical_sheet"
           ? Number(sourceCosting?.totalCost || 0) / Math.max(usefulYield, 0.0001)
-          : Number(source?.average_cost || source?.last_purchase_cost || source?.cost_per_unit || 0);
+          : getSupplyCostPerBaseUnit(source);
       const normalized = {
         ...component,
+        unit:
+          component.sourceType === "technical_sheet"
+            ? component.unit
+            : component.unit || getSupplyBaseUnit(source),
         unitCost: component.unitCost === "" ? String(fallbackUnitCost || 0) : component.unitCost,
       };
 

@@ -16,6 +16,10 @@ import {
   calculateTechnicalSheetCosting,
   calculateUsefulYield,
 } from "../features/resources/recipes/technicalSheetCalculations";
+import {
+  getSupplyBaseUnit,
+  getSupplyCostPerBaseUnit,
+} from "../features/resources/inventory/supplyCalculations";
 
 const recipeBooksCollection = collection(db, "recipeBooks");
 const ingredientsCollection = collection(db, "ingredients");
@@ -100,7 +104,7 @@ function normalizeLegacyComponents(recipeBook, inventory) {
     const supply = inventory.find((item) => item.id === sourceId);
     const quantity = normalizeNumber(ingredient.quantity, 0);
     const unitCost = normalizeNumber(
-      ingredient.unitCost ?? ingredient.unit_cost ?? supply?.average_cost ?? supply?.last_purchase_cost,
+      ingredient.unitCost ?? ingredient.unit_cost ?? getSupplyCostPerBaseUnit(supply),
       0
     );
 
@@ -110,7 +114,7 @@ function normalizeLegacyComponents(recipeBook, inventory) {
       sourceId,
       name: normalizeText(ingredient.name || ingredient.ingredient_name || supply?.name),
       quantity,
-      unit: normalizeText(ingredient.unit || supply?.unit) || "und",
+      unit: normalizeText(ingredient.unit || getSupplyBaseUnit(supply)) || "und",
       unitCost,
       totalCost: normalizeNumber(ingredient.totalCost ?? ingredient.total_cost, quantity * unitCost),
       wastePercent: normalizeNumber(ingredient.wastePercent ?? ingredient.waste_percent, 0),
@@ -144,7 +148,7 @@ function normalizeComponents(recipeBook, inventory, existingRecipeBooks) {
       const fallbackUnitCost =
         sourceType === "technical_sheet"
           ? sourceTotalCost / Math.max(sourceUsefulYield, 0.0001)
-          : normalizeNumber(source?.average_cost ?? source?.last_purchase_cost ?? source?.cost_per_unit, 0);
+          : getSupplyCostPerBaseUnit(source);
       const unitCost = normalizeNumber(component.unitCost ?? component.unit_cost, fallbackUnitCost);
       const normalized = {
         id: normalizeText(component.id) || `component-${index}`,
@@ -152,7 +156,10 @@ function normalizeComponents(recipeBook, inventory, existingRecipeBooks) {
         sourceId,
         name: normalizeText(component.name || source?.name || source?.product_name),
         quantity,
-        unit: normalizeText(component.unit || source?.unit || sourceYield?.unit) || "und",
+        unit: normalizeText(
+          component.unit ||
+            (sourceType === "technical_sheet" ? sourceYield?.unit : getSupplyBaseUnit(source))
+        ) || "und",
         unitCost,
         totalCost: normalizeNumber(component.totalCost ?? component.total_cost, 0),
         wastePercent: normalizeNumber(component.wastePercent ?? component.waste_percent, 0),

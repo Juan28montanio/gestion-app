@@ -125,7 +125,15 @@ service cloud.firestore {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() &&
+        resource.data.status == "borrador";
+    }
+
+    match /inventoryMovements/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if false;
+      allow delete: if false;
     }
 
     match /preparations/{documentId} {

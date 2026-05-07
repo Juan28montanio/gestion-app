@@ -15,6 +15,14 @@ export function buildUsageCountBySupply(items = [], collectionKey = "ingredients
       accumulator[ingredient.ingredient_id] = (accumulator[ingredient.ingredient_id] || 0) + 1;
     });
 
+    (entry.components || []).forEach((component) => {
+      if (component.sourceType !== "raw_item" || !component.sourceId) {
+        return;
+      }
+
+      accumulator[component.sourceId] = (accumulator[component.sourceId] || 0) + 1;
+    });
+
     return accumulator;
   }, {});
 }

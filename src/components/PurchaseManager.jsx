@@ -1,30 +1,78 @@
-﻿import { useMemo, useState } from "react";
-import { ClipboardList, Plus, Settings2, Trash2, X } from "lucide-react";
-import { createPurchase } from "../services/purchaseService";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Ban,
+  CheckCircle2,
+  ClipboardList,
+  Eye,
+  FileClock,
+  PackageCheck,
+  Plus,
+  RotateCcw,
+  Save,
+  Search,
+  Settings2,
+  X,
+} from "lucide-react";
+import {
+  cancelPurchase,
+  confirmPurchase,
+  createPurchase,
+  PURCHASE_STATUS,
+  registerPurchaseReturn,
+  subscribeToInventoryMovements,
+  updatePurchase,
+} from "../services/purchaseService";
 import FormInput from "./FormInput";
 import FormSelect from "./FormSelect";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
 import { SUPPLY_UNITS } from "../utils/resourceOptions";
 
+const STATUS_META = {
+  [PURCHASE_STATUS.DRAFT]: {
+    label: "Borrador",
+    classes: "bg-slate-100 text-slate-700 ring-slate-200",
+  },
+  [PURCHASE_STATUS.CONFIRMED]: {
+    label: "Confirmada",
+    classes: "bg-emerald-100 text-emerald-700 ring-emerald-200",
+  },
+  [PURCHASE_STATUS.CANCELED]: {
+    label: "Anulada",
+    classes: "bg-rose-100 text-rose-700 ring-rose-200",
+  },
+  [PURCHASE_STATUS.PARTIAL]: {
+    label: "Parcial",
+    classes: "bg-amber-100 text-amber-700 ring-amber-200",
+  },
+  [PURCHASE_STATUS.RETURNED]: {
+    label: "Devuelta",
+    classes: "bg-sky-100 text-sky-700 ring-sky-200",
+  },
+};
+
 function createEmptyHeader() {
   return {
     supplierId: "",
-    invoiceNumber: "",
+    purchaseNumber: "",
     purchaseDate: new Date().toISOString().slice(0, 10),
+    notes: "",
   };
 }
 
 function createEmptyItem() {
   return {
-    ingredientId: "",
+    inventoryItemId: "",
     manualName: "",
     category: "",
     quantity: "",
     unit: "g",
-    lineTotal: "",
+    unitCost: "",
     applyIva: false,
     ivaPct: "19",
+    batch: "",
+    expirationDate: "",
+    notes: "",
   };
 }
 
@@ -32,63 +80,119 @@ function buildSupplyMap(supplies) {
   return new Map(supplies.map((supply) => [supply.id, supply]));
 }
 
-function getPurchaseDateValue(value) {
-  if (!value) {
-    return 0;
-  }
-
-  const parsed = new Date(value);
-  const timestamp = parsed.getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
+function normalizeText(value) {
+  return String(value || "").trim();
 }
 
-function getEstimatedUnitCost(item) {
+function getPurchaseNumber(purchase) {
+  return purchase.purchaseNumber || purchase.purchase_number || purchase.invoice_number || purchase.id;
+}
+
+function getPurchaseSupplierId(purchase) {
+  return purchase.supplierId || purchase.supplier_id || purchase.supplier?.supplierId || "";
+}
+
+function getPurchaseSupplierName(purchase) {
+  return purchase.supplierName || purchase.supplier_name || purchase.supplier?.supplierName || "Proveedor";
+}
+
+function getPurchaseDate(purchase) {
+  return purchase.purchaseDate || purchase.purchase_date || "";
+}
+
+function getPurchaseStatus(purchase) {
+  return purchase.status || PURCHASE_STATUS.DRAFT;
+}
+
+function getPurchaseUser(purchase) {
+  return (
+    purchase.audit?.createdBy ||
+    purchase.userId ||
+    purchase.user_id ||
+    purchase.created_by ||
+    "Sistema"
+  );
+}
+
+function calculateItemSubtotal(item) {
   const quantity = Number(item.quantity || 0);
-  const lineTotal = Number(item.lineTotal || 0);
+  const unitCost = Number(item.unitCost || 0);
+  return quantity * unitCost;
+}
 
-  if (!quantity || !lineTotal) {
+function calculateItemTaxes(item) {
+  if (!item.applyIva) {
     return 0;
   }
-
-  return lineTotal / quantity;
+  return calculateItemSubtotal(item) * (Number(item.ivaPct || 0) / 100);
 }
 
-function getPurchaseItemHeading(item) {
-  if (item.ingredientId) {
-    return "Insumo vinculado al inventario";
-  }
-
-  if (item.manualName) {
-    return "Nuevo insumo por crear";
-  }
-
-  return "Define el insumo de esta linea";
+function calculateFormTotals(items) {
+  return items.reduce(
+    (totals, item) => {
+      const subtotal = calculateItemSubtotal(item);
+      const taxes = calculateItemTaxes(item);
+      return {
+        subtotal: totals.subtotal + subtotal,
+        taxes: totals.taxes + taxes,
+        total: totals.total + subtotal + taxes,
+      };
+    },
+    { subtotal: 0, taxes: 0, total: 0 }
+  );
 }
 
-function getPurchaseItemStatus(item) {
-  const hasIdentity = Boolean(item.ingredientId || String(item.manualName || "").trim());
-  const hasCoreData = Number(item.quantity || 0) > 0 && Number(item.lineTotal || 0) > 0;
+function formatDate(value) {
+  if (!value) {
+    return "Sin fecha";
+  }
+  return String(value).slice(0, 10);
+}
 
+function getTimestampLabel(value) {
+  if (!value) {
+    return "Pendiente";
+  }
+  if (typeof value === "string") {
+    return value.slice(0, 16).replace("T", " ");
+  }
+  if (value?.seconds) {
+    return new Date(value.seconds * 1000).toLocaleString("es-CO");
+  }
+  return "Registrado";
+}
+
+function toFormFromPurchase(purchase) {
   return {
-    title: hasIdentity ? "Linea identificada" : "Falta definir insumo",
-    body: hasCoreData
-      ? "Ya tiene datos suficientes para impactar inventario y costo."
-      : "Completa cantidad y valor para dejar la linea lista.",
+    header: {
+      supplierId: getPurchaseSupplierId(purchase),
+      purchaseNumber: getPurchaseNumber(purchase),
+      purchaseDate: getPurchaseDate(purchase),
+      notes: purchase.notes || "",
+    },
+    items: (purchase.items || []).map((item) => ({
+      inventoryItemId: item.inventoryItemId || item.ingredient_id || "",
+      manualName: item.inventoryItemName || item.ingredient_name || "",
+      category: item.category || "",
+      quantity: String(item.quantity || ""),
+      unit: item.unit || "und",
+      unitCost: String(item.unitCost ?? item.unit_cost ?? item.unit_price ?? ""),
+      applyIva: Boolean(item.apply_iva),
+      ivaPct: String(item.iva_pct || 19),
+      batch: item.batch || "",
+      expirationDate: item.expirationDate || item.expiration_date || "",
+      notes: item.notes || "",
+    })),
   };
 }
 
-function buildSupplierOptionLabel(supplier) {
-  const name = String(supplier?.name || "Proveedor sin nombre").trim();
-  const nit = String(supplier?.nit || "").trim();
-  const contact = String(supplier?.contact_name || "").trim();
-  const paymentTerms = String(
-    supplier?.payment_terms || supplier?.paymentTerms || "Contado"
-  ).trim();
-
-  const identity = nit || contact;
-  return identity
-    ? `${name} - ${identity} (${paymentTerms})`
-    : `${name} (${paymentTerms})`;
+function PurchaseStatusBadge({ status }) {
+  const meta = STATUS_META[status] || STATUS_META[PURCHASE_STATUS.DRAFT];
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${meta.classes}`}>
+      {meta.label}
+    </span>
+  );
 }
 
 export default function PurchaseManager({
@@ -100,83 +204,121 @@ export default function PurchaseManager({
   categoryOptions,
   onManageCategories,
 }) {
-  const [step, setStep] = useState(1);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState(null);
+  const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [returnTarget, setReturnTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [returnReason, setReturnReason] = useState("");
   const [header, setHeader] = useState(createEmptyHeader);
   const [items, setItems] = useState(() => [createEmptyItem()]);
+  const [filters, setFilters] = useState({
+    status: "all",
+    supplierId: "all",
+    dateFrom: "",
+    dateTo: "",
+    search: "",
+  });
+  const [inventoryMovements, setInventoryMovements] = useState([]);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [isSaving, setIsSaving] = useState(false);
+
   const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
   const safeSupplies = Array.isArray(supplies) ? supplies : [];
   const safePurchases = Array.isArray(purchases) ? purchases : [];
   const safeRecipeBooks = Array.isArray(recipeBooks) ? recipeBooks : [];
   const safeCategoryOptions = Array.isArray(categoryOptions) ? categoryOptions : [];
   const supplyMap = useMemo(() => buildSupplyMap(safeSupplies), [safeSupplies]);
+  const totals = useMemo(() => calculateFormTotals(items), [items]);
 
-  const total = useMemo(
-    () =>
-      items.reduce((sum, item) => {
-        const lineTotal = Number(item.lineTotal);
-        return sum + (Number.isFinite(lineTotal) ? lineTotal : 0);
-      }, 0),
-    [items]
-  );
+  useEffect(() => subscribeToInventoryMovements(businessId, setInventoryMovements), [businessId]);
+
+  const selectedSupplier = safeSuppliers.find((supplier) => supplier.id === header.supplierId);
+
+  const filteredPurchases = useMemo(() => {
+    const search = normalizeText(filters.search).toLowerCase();
+    return safePurchases.filter((purchase) => {
+      const status = getPurchaseStatus(purchase);
+      const supplierId = getPurchaseSupplierId(purchase);
+      const date = getPurchaseDate(purchase);
+      const text = `${getPurchaseNumber(purchase)} ${getPurchaseSupplierName(purchase)} ${purchase.notes || ""}`.toLowerCase();
+
+      if (filters.status !== "all" && status !== filters.status) {
+        return false;
+      }
+      if (filters.supplierId !== "all" && supplierId !== filters.supplierId) {
+        return false;
+      }
+      if (filters.dateFrom && date < filters.dateFrom) {
+        return false;
+      }
+      if (filters.dateTo && date > filters.dateTo) {
+        return false;
+      }
+      return !search || text.includes(search);
+    });
+  }, [filters, safePurchases]);
 
   const purchaseStats = useMemo(() => {
-    const totalPurchases = safePurchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
-    const averageTicket = safePurchases.length ? totalPurchases / safePurchases.length : 0;
-    const uniqueSuppliers = new Set(
-      safePurchases.map((purchase) => purchase.supplier_id).filter(Boolean)
-    ).size;
-
+    const confirmed = safePurchases.filter(
+      (purchase) => getPurchaseStatus(purchase) === PURCHASE_STATUS.CONFIRMED
+    );
+    const drafts = safePurchases.filter((purchase) => getPurchaseStatus(purchase) === PURCHASE_STATUS.DRAFT);
+    const canceled = safePurchases.filter(
+      (purchase) => getPurchaseStatus(purchase) === PURCHASE_STATUS.CANCELED
+    );
+    const confirmedTotal = confirmed.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
     return {
-      totalPurchases,
-      averageTicket,
-      uniqueSuppliers,
-      count: safePurchases.length,
+      confirmedTotal,
+      drafts: drafts.length,
+      canceled: canceled.length,
+      confirmed: confirmed.length,
     };
   }, [safePurchases]);
 
-  const draftImpact = useMemo(() => {
-    const normalizedItems = items.filter((item) => Number(item.quantity || 0) > 0);
-    const linkedSupplyIds = normalizedItems.map((item) => item.ingredientId).filter(Boolean);
-    const newSupplies = normalizedItems.filter(
-      (item) => !item.ingredientId && String(item.manualName || "").trim()
-    ).length;
-    const generatedStock = normalizedItems.reduce(
-      (sum, item) => sum + Number(item.quantity || 0),
-      0
+  const selectedMovements = useMemo(() => {
+    if (!selectedPurchase?.id) {
+      return [];
+    }
+    return inventoryMovements.filter(
+      (movement) =>
+        (movement.sourceId || movement.source_id) === selectedPurchase.id &&
+        (movement.sourceType || movement.source_type) === "purchase"
     );
-    const affectedRecipeCount = safeRecipeBooks.filter((recipeBook) =>
-      (recipeBook.ingredients || []).some((ingredient) =>
-        linkedSupplyIds.includes(ingredient.ingredient_id)
-      )
-    ).length;
+  }, [inventoryMovements, selectedPurchase]);
 
-    return {
-      lineCount: normalizedItems.length,
-      newSupplies,
-      generatedStock,
-      affectedRecipeCount,
-    };
+  const affectedRecipeCount = useMemo(() => {
+    const ids = items.map((item) => item.inventoryItemId).filter(Boolean);
+    return safeRecipeBooks.filter((recipeBook) =>
+      (recipeBook.ingredients || []).some((ingredient) => ids.includes(ingredient.ingredient_id))
+    ).length;
   }, [items, safeRecipeBooks]);
 
-  const closeModal = () => {
-    setIsModalOpen(false);
-    setStep(1);
+  const resetForm = () => {
     setHeader(createEmptyHeader());
     setItems([createEmptyItem()]);
+    setEditingPurchase(null);
     setFeedback({ type: "", message: "" });
   };
 
-  const openModal = () => {
-    setStep(1);
-    setFeedback({ type: "", message: "" });
-    setIsModalOpen(true);
+  const openCreateForm = () => {
+    resetForm();
+    setIsFormOpen(true);
   };
 
-  const addItemRow = () => {
-    setItems((current) => [...current, createEmptyItem()]);
+  const openEditForm = (purchase) => {
+    const form = toFormFromPurchase(purchase);
+    setEditingPurchase(purchase);
+    setHeader(form.header);
+    setItems(form.items.length ? form.items : [createEmptyItem()]);
+    setFeedback({ type: "", message: "" });
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    setIsFormOpen(false);
+    resetForm();
   };
 
   const updateItemRow = (index, patch) => {
@@ -185,202 +327,147 @@ export default function PurchaseManager({
         if (itemIndex !== index) {
           return item;
         }
-
         const nextItem = { ...item, ...patch };
-        const linkedSupply = nextItem.ingredientId ? supplyMap.get(nextItem.ingredientId) : null;
-
+        const linkedSupply = nextItem.inventoryItemId ? supplyMap.get(nextItem.inventoryItemId) : null;
         if (linkedSupply) {
-          nextItem.manualName = "";
+          nextItem.manualName = linkedSupply.name || "";
           nextItem.category = patch.category ?? nextItem.category ?? linkedSupply.category ?? "";
           nextItem.unit = patch.unit ?? nextItem.unit ?? linkedSupply.unit ?? "und";
+          nextItem.unitCost =
+            patch.unitCost ?? nextItem.unitCost ?? linkedSupply.last_purchase_cost ?? linkedSupply.average_cost ?? "";
         }
-
         return nextItem;
       })
     );
   };
 
-  const removeItemRow = (index) => {
-    setItems((current) => {
-      if (current.length === 1) {
-        return [createEmptyItem()];
-      }
-
-      return current.filter((_, itemIndex) => itemIndex !== index);
-    });
-  };
-
-  const selectedSupplier = safeSuppliers.find((item) => item.id === header.supplierId);
-  const supplierPurchaseHistory = useMemo(() => {
-    if (!header.supplierId) {
-      return {
-        purchasesCount: 0,
-        totalBought: 0,
-        lastPurchaseDate: "",
-      };
-    }
-
-    const linkedPurchases = safePurchases.filter(
-      (purchase) => purchase.supplier_id === header.supplierId
-    );
-
-    const lastPurchaseDate = linkedPurchases.reduce((latest, purchase) => {
-      return getPurchaseDateValue(purchase.purchase_date) > getPurchaseDateValue(latest)
-        ? purchase.purchase_date
-        : latest;
-    }, "");
-
-    return {
-      purchasesCount: linkedPurchases.length,
-      totalBought: linkedPurchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0),
-      lastPurchaseDate,
-    };
-  }, [header.supplierId, safePurchases]);
-  const purchaseFlowInsights = useMemo(() => {
-    const paymentTerm = String(
-      selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado"
-    ).trim();
-
-    return [
-      {
-        title: "Impacto en abastecimiento",
-        body:
-          draftImpact.newSupplies > 0
-            ? `Esta compra crearia ${draftImpact.newSupplies} insumo(s) nuevo(s) y actualizaria stock inmediato para ${draftImpact.lineCount} linea(s).`
-            : `Esta compra reforzaria stock en ${draftImpact.lineCount} linea(s) ya conectadas al inventario.`,
-      },
-      {
-        title: "Impacto en costeo",
-        body:
-          draftImpact.affectedRecipeCount > 0
-            ? `${draftImpact.affectedRecipeCount} ficha(s) tecnica(s) quedarian expuestas a nuevo costo promedio despues del registro.`
-            : "No hay fichas tecnicas conectadas a estos insumos todavia. El siguiente paso deberia ser costear esa relacion.",
-      },
-      {
-        title: "Impacto en caja",
-        body:
-          paymentTerm.toLowerCase() === "credito"
-            ? "El proveedor opera a credito. Registra la compra con disciplina porque el gasto afecta analisis del periodo aunque no salga efectivo hoy."
-            : "El proveedor opera de contado. Esta compra presiona caja desde el momento del registro y conviene cruzarla con el cierre del turno.",
-      },
-    ];
-  }, [draftImpact, selectedSupplier]);
-  const purchaseRecommendations = useMemo(() => {
-    return safeSupplies
-      .map((supply) => {
-        const stock = Number(supply.stock || 0);
-        const min = Number(supply.stock_min_alert || 0);
-        const deficit = Math.max(min - stock, 0);
-        const linkedRecipes = safeRecipeBooks.filter((recipeBook) =>
-          (recipeBook.ingredients || []).some((ingredient) => ingredient.ingredient_id === supply.id)
-        ).length;
-        const urgency = stock <= 0 ? 3 : stock <= min ? 2 : stock <= min * 1.15 ? 1 : 0;
-
-        return {
-          id: supply.id,
-          name: supply.name || "Insumo sin nombre",
-          deficit,
-          unit: supply.unit || "und",
-          linkedRecipes,
-          urgency,
-          averageCost: Number(
-            supply.last_purchase_cost ?? supply.average_cost ?? supply.cost_per_unit ?? 0
-          ),
-        };
-      })
-      .filter((supply) => supply.urgency > 0)
-      .sort((a, b) => {
-        if (b.urgency !== a.urgency) {
-          return b.urgency - a.urgency;
-        }
-        if (b.linkedRecipes !== a.linkedRecipes) {
-          return b.linkedRecipes - a.linkedRecipes;
-        }
-        return b.deficit - a.deficit;
-      })
-      .slice(0, 4);
-  }, [safeRecipeBooks, safeSupplies]);
-
-  const handleNextStep = () => {
-    if (!header.supplierId) {
-      setFeedback({
-        type: "error",
-        message: "Debes seleccionar un proveedor antes de cargar items.",
-      });
-      return;
-    }
-
-    setFeedback({ type: "", message: "" });
-    setStep(2);
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const buildPayload = (status) => {
     const normalizedItems = items
       .map((item) => {
-        const ingredient = supplyMap.get(item.ingredientId);
+        const supply = supplyMap.get(item.inventoryItemId);
+        const subtotal = calculateItemSubtotal(item);
+        const taxes = calculateItemTaxes(item);
         return {
-          ingredient_id: item.ingredientId,
-          ingredient_name: ingredient?.name || item.manualName,
-          manual_name: item.manualName,
-          category: item.category || ingredient?.category || "",
+          inventoryItemId: item.inventoryItemId,
+          inventoryItemName: supply?.name || item.manualName,
+          ingredient_id: item.inventoryItemId,
+          ingredient_name: supply?.name || item.manualName,
+          category: item.category || supply?.category || "",
           quantity: Number(item.quantity),
-          line_total: Number(item.lineTotal),
+          unit: item.unit || supply?.unit || "und",
+          unitCost: Number(item.unitCost),
+          subtotal,
+          taxes,
           apply_iva: item.applyIva,
-          iva_pct: Number(item.ivaPct),
-          unit: item.unit || ingredient?.unit || "und",
+          iva_pct: Number(item.ivaPct || 0),
+          batch: item.batch,
+          expirationDate: item.expirationDate,
+          notes: item.notes,
         };
       })
-      .filter((item) => item.ingredient_id || String(item.manual_name || "").trim());
+      .filter((item) => item.inventoryItemId || normalizeText(item.inventoryItemName));
 
+    return {
+      business_id: businessId,
+      supplier_id: header.supplierId,
+      supplier_name: selectedSupplier?.name || "",
+      supplier_payment_terms: selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado",
+      purchaseNumber: header.purchaseNumber,
+      purchase_date: header.purchaseDate,
+      notes: header.notes,
+      status,
+      items: normalizedItems,
+    };
+  };
+
+  const validateForm = () => {
     if (!header.supplierId) {
-      setFeedback({
-        type: "error",
-        message: "Selecciona un proveedor antes de guardar la compra.",
-      });
-      return;
+      throw new Error("Selecciona un proveedor.");
     }
-
-    if (!normalizedItems.length) {
-      setFeedback({
-        type: "error",
-        message: "Agrega al menos un item valido para registrar la compra.",
-      });
-      return;
+    if (!items.some((item) => item.inventoryItemId || normalizeText(item.manualName))) {
+      throw new Error("Agrega al menos un producto comprado.");
     }
-
-    const hasInvalidItems = normalizedItems.some(
-      (item) => !Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.line_total) || item.line_total <= 0
-    );
-
-    if (hasInvalidItems) {
-      setFeedback({
-        type: "error",
-        message: "Cada item debe tener cantidad y valor total mayores a cero.",
-      });
-      return;
+    const invalidItem = items.find((item) => {
+      const hasIdentity = item.inventoryItemId || normalizeText(item.manualName);
+      return (
+        hasIdentity &&
+        (!Number.isFinite(Number(item.quantity)) ||
+          Number(item.quantity) <= 0 ||
+          !Number.isFinite(Number(item.unitCost)) ||
+          Number(item.unitCost) < 0)
+      );
+    });
+    if (invalidItem) {
+      throw new Error("Cada linea debe tener cantidad mayor a cero y costo unitario valido.");
     }
+  };
 
+  const savePurchase = async (status) => {
     setIsSaving(true);
     setFeedback({ type: "", message: "" });
-
     try {
-      await createPurchase({
-        business_id: businessId,
-        supplier_id: header.supplierId,
-        supplier_name: selectedSupplier?.name || "",
-        supplier_payment_terms:
-          selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado",
-        invoice_number: header.invoiceNumber,
-        purchase_date: header.purchaseDate,
-        items: normalizedItems,
-      });
-
-      closeModal();
+      validateForm();
+      const payload = buildPayload(status);
+      if (editingPurchase?.id) {
+        await updatePurchase(editingPurchase.id, payload, "Edicion operativa desde modulo de compras");
+        if (status === PURCHASE_STATUS.CONFIRMED && getPurchaseStatus(editingPurchase) !== PURCHASE_STATUS.CONFIRMED) {
+          await confirmPurchase(editingPurchase.id);
+        }
+      } else {
+        await createPurchase(payload);
+      }
+      closeForm();
     } catch (error) {
       setFeedback({
         type: "error",
-        message: error instanceof Error ? error.message : "No fue posible registrar la compra.",
+        message: error instanceof Error ? error.message : "No fue posible guardar la compra.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleConfirmPurchase = async (purchase) => {
+    setIsSaving(true);
+    setFeedback({ type: "", message: "" });
+    try {
+      await confirmPurchase(purchase.id);
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: error instanceof Error ? error.message : "No fue posible confirmar la compra.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelPurchase = async () => {
+    setIsSaving(true);
+    try {
+      await cancelPurchase(cancelTarget.id, cancelReason);
+      setCancelTarget(null);
+      setCancelReason("");
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: error instanceof Error ? error.message : "No fue posible anular la compra.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRegisterReturn = async () => {
+    setIsSaving(true);
+    try {
+      await registerPurchaseReturn(returnTarget.id, returnTarget.items || [], returnReason);
+      setReturnTarget(null);
+      setReturnReason("");
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        message: error instanceof Error ? error.message : "No fue posible registrar la devolucion.",
       });
     } finally {
       setIsSaving(false);
@@ -388,649 +475,713 @@ export default function PurchaseManager({
   };
 
   return (
-    <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <section className="space-y-5 rounded-[24px] bg-white/90 p-5 shadow-lg ring-1 ring-slate-200/70 backdrop-blur">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">Compras</h2>
-          <p className="text-sm text-slate-500">
-            Registra facturas, crea insumos faltantes y actualiza stock con impacto en costeo.
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Abastecimiento auditable
+          </p>
+          <h2 className="mt-2 text-2xl font-bold text-slate-950">Compras</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+            Gestiona borradores, confirmaciones, anulaciones y devoluciones con impacto controlado en inventario, costos y fichas tecnicas.
           </p>
         </div>
-
         <button
           type="button"
-          onClick={openModal}
-          className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20"
+          onClick={openCreateForm}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
         >
           <Plus size={16} />
           Nueva compra
         </button>
       </div>
 
-      <div className="mb-6 grid gap-3 md:grid-cols-3">
-        <article className="rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
-          <p className="text-sm font-semibold text-slate-900">Primero proveedor, luego factura</p>
-          <p className="mt-1 text-sm text-slate-500">Esto evita cargar items sin contexto comercial ni plazo.</p>
-        </article>
-        <article className="rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
-          <p className="text-sm font-semibold text-slate-900">Usa insumo existente cuando ya exista</p>
-          <p className="mt-1 text-sm text-slate-500">Asi el stock y el costo promedio quedan conectados de inmediato.</p>
-        </article>
-        <article className="rounded-[22px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
-          <p className="text-sm font-semibold text-slate-900">Registra el valor final por item</p>
-          <p className="mt-1 text-sm text-slate-500">Es la base para presupuesto, costeo y cierres consistentes.</p>
-        </article>
+      {feedback.message ? (
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+          {feedback.message}
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Confirmadas</p>
+          <p className="mt-2 text-lg font-bold text-slate-950">{purchaseStats.confirmed}</p>
+        </div>
+        <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Total aplicado</p>
+          <p className="mt-2 text-lg font-bold text-slate-950">{formatCOP(purchaseStats.confirmedTotal)}</p>
+        </div>
+        <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Borradores</p>
+          <p className="mt-2 text-lg font-bold text-slate-950">{purchaseStats.drafts}</p>
+        </div>
+        <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Anuladas</p>
+          <p className="mt-2 text-lg font-bold text-slate-950">{purchaseStats.canceled}</p>
+        </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[0.7fr_1.3fr]">
-        <div className="rounded-[28px] bg-slate-50 p-5 ring-1 ring-slate-200">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
-            Resumen
-          </p>
-          <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(total)}</p>
-          <p className="mt-2 text-sm text-slate-500">Total estimado de la factura en edicion.</p>
+      <div className="grid gap-3 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200 lg:grid-cols-[1.1fr_0.9fr_0.7fr_0.7fr_1.2fr]">
+        <FormSelect
+          label="Estado"
+          value={filters.status}
+          onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
+        >
+          <option value="all">Todos</option>
+          {Object.values(PURCHASE_STATUS).map((status) => (
+            <option key={status} value={status}>
+              {STATUS_META[status]?.label || status}
+            </option>
+          ))}
+        </FormSelect>
+        <FormSelect
+          label="Proveedor"
+          value={filters.supplierId}
+          onChange={(event) => setFilters((current) => ({ ...current, supplierId: event.target.value }))}
+        >
+          <option value="all">Todos</option>
+          {safeSuppliers.map((supplier) => (
+            <option key={supplier.id} value={supplier.id}>
+              {supplier.name}
+            </option>
+          ))}
+        </FormSelect>
+        <FormInput
+          label="Desde"
+          type="date"
+          value={filters.dateFrom}
+          onChange={(event) => setFilters((current) => ({ ...current, dateFrom: event.target.value }))}
+        />
+        <FormInput
+          label="Hasta"
+          type="date"
+          value={filters.dateTo}
+          onChange={(event) => setFilters((current) => ({ ...current, dateTo: event.target.value }))}
+        />
+        <label className="grid gap-2 text-sm text-slate-700">
+          <span className="font-medium">Busqueda</span>
+          <span className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
+            <Search size={16} className="text-slate-400" />
+            <input
+              value={filters.search}
+              onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+              className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none"
+              placeholder="Numero, proveedor, nota"
+            />
+          </span>
+        </label>
+      </div>
 
-          <div className="mt-4 grid gap-3">
-            <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Compras registradas
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">{purchaseStats.count}</p>
-            </div>
-            <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Ticket promedio
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">
-                {formatCOP(purchaseStats.averageTicket)}
-              </p>
-            </div>
-            <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Proveedores activos
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">
-                {purchaseStats.uniqueSuppliers}
-              </p>
-            </div>
-          </div>
+      <div className="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-400">
+            <tr>
+              <th className="px-4 py-3">Numero</th>
+              <th className="px-4 py-3">Proveedor</th>
+              <th className="px-4 py-3">Fecha</th>
+              <th className="px-4 py-3">Estado</th>
+              <th className="px-4 py-3 text-right">Total</th>
+              <th className="px-4 py-3">Usuario</th>
+              <th className="px-4 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {filteredPurchases.map((purchase) => {
+              const status = getPurchaseStatus(purchase);
+              const canEdit = status !== PURCHASE_STATUS.CANCELED;
+              const canConfirm = status === PURCHASE_STATUS.DRAFT || status === PURCHASE_STATUS.PARTIAL;
+              const canCancel = status !== PURCHASE_STATUS.CANCELED;
+              const canReturn = status === PURCHASE_STATUS.CONFIRMED;
 
-          <div className="mt-4 rounded-[22px] bg-white px-4 py-4 ring-1 ring-slate-200">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-              Prioridades de reposicion
-            </p>
-            <div className="mt-3 space-y-3">
-              {purchaseRecommendations.length ? (
-                purchaseRecommendations.map((supply) => (
-                  <article
-                    key={supply.id}
-                    className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{supply.name}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {supply.linkedRecipes > 0
-                            ? `${supply.linkedRecipes} ficha(s) tecnica(s) dependen de este insumo.`
-                            : "Aun no esta conectado a fichas tecnicas."}
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
-                        Falta {supply.deficit > 0 ? `${supply.deficit} ${supply.unit}` : "stock"}
-                      </span>
+              return (
+                <tr key={purchase.id} className="text-slate-700">
+                  <td className="px-4 py-3 font-semibold text-slate-950">{getPurchaseNumber(purchase)}</td>
+                  <td className="px-4 py-3">{getPurchaseSupplierName(purchase)}</td>
+                  <td className="px-4 py-3">{formatDate(getPurchaseDate(purchase))}</td>
+                  <td className="px-4 py-3">
+                    <PurchaseStatusBadge status={status} />
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950">
+                    {formatCOP(Number(purchase.total || 0))}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{getPurchaseUser(purchase)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPurchase(purchase)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition hover:bg-slate-200"
+                        title="Ver detalle"
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditForm(purchase)}
+                        disabled={!canEdit}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Editar"
+                      >
+                        <FileClock size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmPurchase(purchase)}
+                        disabled={!canConfirm || isSaving}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Confirmar"
+                      >
+                        <CheckCircle2 size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCancelTarget(purchase)}
+                        disabled={!canCancel}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Anular"
+                      >
+                        <Ban size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReturnTarget(purchase)}
+                        disabled={!canReturn}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Registrar devolucion"
+                      >
+                        <RotateCcw size={16} />
+                      </button>
                     </div>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Ultimo costo de referencia: {formatCOP(supply.averageCost)}
-                    </p>
-                  </article>
-                ))
-              ) : (
-                <p className="text-sm leading-6 text-slate-500">
-                  No hay alertas inmediatas de reposicion. Puedes usar este espacio para validar si la siguiente compra sera preventiva o reactiva.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-4">
-          <div className="grid gap-4 xl:grid-cols-3">
-            {purchaseFlowInsights.map((insight) => (
-              <article
-                key={insight.title}
-                className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4"
-              >
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  Flujo de compra
-                </p>
-                <h3 className="mt-2 text-base font-semibold text-slate-900">{insight.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{insight.body}</p>
-              </article>
-            ))}
-          </div>
-
-          <div className="overflow-x-auto rounded-[28px] bg-slate-50 p-4 ring-1 ring-slate-200">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-slate-500">
+                  </td>
+                </tr>
+              );
+            })}
+            {!filteredPurchases.length ? (
               <tr>
-                <th className="py-3 pr-4">Factura</th>
-                <th className="py-3 pr-4">Proveedor</th>
-                <th className="py-3 pr-4">Fecha</th>
-                <th className="py-3 pr-4">Items</th>
-                <th className="py-3 pr-4 text-right">Total</th>
+                <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
+                  No hay compras con estos filtros.
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {safePurchases.map((purchase) => (
-                <tr key={purchase.id} className="border-b border-slate-100 text-slate-700">
-                  <td className="py-3 pr-4 font-semibold text-slate-900">
-                    {purchase.invoice_number || "Sin consecutivo"}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div>
-                      <p className="font-medium text-slate-900">{purchase.supplier_name || "Sin proveedor"}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {String(
-                          purchase.supplier_payment_terms || purchase.payment_method || "Contado"
-                        ).trim()}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4">{purchase.purchase_date}</td>
-                  <td className="py-3 pr-4">
-                    <div>
-                      <p className="font-medium text-slate-900">{purchase.items?.length || 0}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {(purchase.items || []).slice(0, 2).map((item) => item.ingredient_name || item.manual_name).filter(Boolean).join(", ") || "Sin detalle"}
-                      </p>
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4 text-right font-semibold text-slate-900">
-                    {formatCOP(purchase.total || 0)}
-                  </td>
-                </tr>
-              ))}
-              {safePurchases.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-sm text-slate-500">
-                    Aun no hay compras registradas. Carga la primera factura para alimentar inventario, costo y caja.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-        </div>
+            ) : null}
+          </tbody>
+        </table>
       </div>
 
-      <ModalWrapper
-        open={isModalOpen}
-        onClose={closeModal}
-        maxWidthClass="max-w-6xl"
-        icon={{ main: <ClipboardList size={20} />, close: <X size={18} /> }}
-        title="Registrar compra"
-        description={`Paso ${step} de 2: ${
-          step === 1
-            ? "Completa los datos generales de la compra."
-            : "Carga los items y revisa el impacto antes de guardar."
-        }`}
-      >
-        <form onSubmit={handleSubmit} className="grid gap-6">
-          {step === 1 ? (
-            <section className="grid gap-4 rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200 md:grid-cols-3">
-              <FormSelect
-                className="md:col-span-2"
-                label="Proveedor"
-                labelNote="Obligatorio"
-                value={header.supplierId}
-                onChange={(event) =>
-                  setHeader((current) => ({ ...current, supplierId: event.target.value }))
-                }
-                required
-              >
-                <option value="">Seleccionar proveedor</option>
-                {safeSuppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {buildSupplierOptionLabel(supplier)}
-                  </option>
-                ))}
-              </FormSelect>
+      <PurchaseFormModal
+        open={isFormOpen}
+        editingPurchase={editingPurchase}
+        header={header}
+        setHeader={setHeader}
+        items={items}
+        setItems={setItems}
+        updateItemRow={updateItemRow}
+        totals={totals}
+        suppliers={safeSuppliers}
+        supplies={safeSupplies}
+        categoryOptions={safeCategoryOptions}
+        onManageCategories={onManageCategories}
+        affectedRecipeCount={affectedRecipeCount}
+        feedback={feedback}
+        isSaving={isSaving}
+        onClose={closeForm}
+        onSaveDraft={() => savePurchase(PURCHASE_STATUS.DRAFT)}
+        onConfirm={() => savePurchase(PURCHASE_STATUS.CONFIRMED)}
+      />
 
-              <FormInput
-                label="Fecha"
-                labelNote="Periodo"
-                type="date"
-                value={header.purchaseDate}
-                onChange={(event) =>
-                  setHeader((current) => ({ ...current, purchaseDate: event.target.value }))
-                }
-              />
+      <PurchaseDetailModal
+        purchase={selectedPurchase}
+        movements={selectedMovements}
+        onClose={() => setSelectedPurchase(null)}
+      />
 
-              <FormInput
-                className="md:col-span-3"
-                label="No. factura"
-                labelNote="Control"
-                value={header.invoiceNumber}
-                onChange={(event) =>
-                  setHeader((current) => ({ ...current, invoiceNumber: event.target.value }))
-                }
-                hint="Dejalo vacio solo si compras sin documento formal."
-              />
+      <ReasonModal
+        open={Boolean(cancelTarget)}
+        title="Anular compra"
+        description="La compra no se elimina. Se registrara una reversa de inventario y quedara auditoria del motivo."
+        value={cancelReason}
+        onChange={setCancelReason}
+        confirmLabel="Anular compra"
+        confirmTone="danger"
+        isSaving={isSaving}
+        onConfirm={handleCancelPurchase}
+        onCancel={() => {
+          setCancelTarget(null);
+          setCancelReason("");
+        }}
+      />
 
-              {selectedSupplier ? (
-                <div className="md:col-span-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4">
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Proveedor seleccionado
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">
-                        {selectedSupplier.name}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Plazo: {selectedSupplier.payment_terms || selectedSupplier.paymentTerms || "Contado"}
-                      </p>
-                      {selectedSupplier.nit || selectedSupplier.contact_name ? (
-                        <p className="mt-1 text-sm text-slate-500">
-                          {[selectedSupplier.nit, selectedSupplier.contact_name].filter(Boolean).join(" | ")}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Historial con este proveedor
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">
-                        {supplierPurchaseHistory.purchasesCount} compra{supplierPurchaseHistory.purchasesCount === 1 ? "" : "s"}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Ultima: {supplierPurchaseHistory.lastPurchaseDate || "Sin historial"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Volumen historico
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">
-                        {formatCOP(supplierPurchaseHistory.totalBought)}
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Te ayuda a decidir si esta compra sostiene caja o credito.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          ) : (
-            <section className="grid gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] bg-slate-50 px-5 py-4 ring-1 ring-slate-200">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Proveedor activo
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900">
-                    {selectedSupplier?.name || "Sin proveedor"}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {selectedSupplier?.payment_terms || selectedSupplier?.paymentTerms || "Contado"} · Ultima compra{" "}
-                    {supplierPurchaseHistory.lastPurchaseDate || "sin historial"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onManageCategories?.()}
-                  disabled={!onManageCategories}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Settings2 size={16} />
-                  Categorias de insumo
-                </button>
-              </div>
-
-              <div className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Items de la compra
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Carga cada linea como una decision completa: que entra, en que unidad y cuanto impacta.
-                    </p>
-                  </div>
-                  <div className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
-                    {items.length} item{items.length === 1 ? "" : "s"} en edicion
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-4">
-                  {items.map((item, index) => {
-                    const itemStatus = getPurchaseItemStatus(item);
-
-                    return (
-                    <article
-                      key={`purchase-item-${index}`}
-                      className="min-w-0 rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-200"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                            Item {index + 1}
-                          </p>
-                          <h4 className="mt-1 break-words text-base font-semibold text-slate-900">
-                            {getPurchaseItemHeading(item)}
-                          </h4>
-                          <p className="mt-1 text-sm text-slate-500">
-                            Primero identifica el insumo, luego completa unidad, categoria y valor de factura.
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeItemRow(index)}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-
-                      <div className="mt-5 grid gap-4 2xl:grid-cols-[1.1fr_0.9fr]">
-                        <section className="min-w-0 grid gap-4 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                              Identificacion del insumo
-                            </p>
-                            <p className="mt-1 text-sm text-slate-500">
-                              Usa un insumo existente cuando ya exista. Crea uno nuevo solo si realmente falta.
-                            </p>
-                          </div>
-
-                          <div className="grid gap-4 lg:grid-cols-2">
-                            <FormSelect
-                              label="Insumo existente"
-                              labelNote="Recomendado"
-                              className="min-w-0"
-                              value={item.ingredientId}
-                              onChange={(event) =>
-                                updateItemRow(index, { ingredientId: event.target.value })
-                              }
-                              hint="Conecta stock y costo promedio desde el inventario."
-                            >
-                              <option value="">Seleccionar insumo</option>
-                              {safeSupplies.map((supply) => (
-                                <option key={supply.id} value={supply.id}>
-                                  {supply.name}
-                                </option>
-                              ))}
-                            </FormSelect>
-
-                            <FormInput
-                              label="Nuevo insumo"
-                              labelNote="Si falta"
-                              className="min-w-0"
-                              value={item.manualName}
-                              onChange={(event) =>
-                                updateItemRow(index, {
-                                  ingredientId: "",
-                                  manualName: event.target.value,
-                                })
-                              }
-                              hint="Si no existe, se crea automaticamente al guardar."
-                            />
-                          </div>
-                        </section>
-
-                        <section className="min-w-0 grid gap-4 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                              Detalle operativo
-                            </p>
-                            <p className="mt-1 text-sm text-slate-500">
-                              Define como entra el insumo para mantener compras, recetas e inventario alineados.
-                            </p>
-                          </div>
-
-                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            <FormInput
-                              label="Cantidad"
-                              labelNote="Base"
-                              className="min-w-0"
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={item.quantity}
-                              onChange={(event) => updateItemRow(index, { quantity: event.target.value })}
-                            />
-
-                            <FormSelect
-                              label="Unidad"
-                              labelNote="Consistente"
-                              className="min-w-0"
-                              value={item.unit}
-                              onChange={(event) => updateItemRow(index, { unit: event.target.value })}
-                            >
-                              {SUPPLY_UNITS.map((unit) => (
-                                <option key={unit} value={unit}>
-                                  {unit}
-                                </option>
-                              ))}
-                            </FormSelect>
-
-                            <FormSelect
-                              label="Categoria"
-                              labelNote="Lectura"
-                              className="min-w-0"
-                              value={item.category}
-                              onChange={(event) => updateItemRow(index, { category: event.target.value })}
-                              options={safeCategoryOptions}
-                            />
-                          </div>
-                        </section>
-                      </div>
-
-                      <div className="mt-4 grid gap-4 2xl:grid-cols-[0.95fr_0.6fr_0.45fr]">
-                        <section className="min-w-0 grid gap-4 rounded-[24px] bg-[#fffaf0] p-4 ring-1 ring-[#d4a72c]/20">
-                          <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#946200]">
-                              Validacion economica
-                            </p>
-                            <p className="mt-1 text-sm text-slate-500">
-                              Usa el valor final del documento y deja que el sistema calcule una referencia por unidad.
-                            </p>
-                          </div>
-
-                          <div className="grid gap-4 xl:grid-cols-2">
-                            <FormInput
-                              label="Valor total item"
-                              labelNote="Factura"
-                              className="min-w-0"
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={item.lineTotal}
-                              onChange={(event) => updateItemRow(index, { lineTotal: event.target.value })}
-                              hint="Usa el valor final que trae la factura."
-                            />
-
-                            <div className="rounded-2xl bg-white px-4 py-4 ring-1 ring-[#d4a72c]/20">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#946200]">
-                                Costo unitario estimado
-                              </p>
-                              <p className="mt-2 text-lg font-bold text-slate-950">
-                                {formatCOP(getEstimatedUnitCost(item))}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-500">
-                                Referencia rapida para validar si el valor quedo bien cargado.
-                              </p>
-                            </div>
-                          </div>
-                        </section>
-
-                        <section className="min-w-0 grid gap-3 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                            Impuesto
-                          </p>
-                          <label className="flex items-center gap-2 text-sm text-slate-600">
-                            <input
-                              type="checkbox"
-                              checked={item.applyIva}
-                              onChange={(event) => updateItemRow(index, { applyIva: event.target.checked })}
-                              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                            />
-                            IVA separado
-                          </label>
-
-                          {item.applyIva ? (
-                            <FormInput
-                              label="IVA %"
-                              labelNote="Opcional"
-                              className="min-w-0"
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={item.ivaPct}
-                              onChange={(event) => updateItemRow(index, { ivaPct: event.target.value })}
-                            />
-                          ) : (
-                            <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500 ring-1 ring-slate-200">
-                              Activalo solo si necesitas separar el impuesto del costo base del insumo.
-                            </div>
-                          )}
-                        </section>
-
-                        <section className="min-w-0 grid gap-3 rounded-[24px] bg-slate-50/80 p-4 ring-1 ring-slate-200">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                            Estado de la linea
-                          </p>
-                          <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                            <p className="text-sm font-semibold text-slate-900">
-                              {itemStatus.title}
-                            </p>
-                            <p className="mt-1 text-sm text-slate-500">
-                              {itemStatus.body}
-                            </p>
-                          </div>
-                        </section>
-                      </div>
-                    </article>
-                  )})}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={addItemRow}
-                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
-              >
-                <Plus size={16} />
-                Agregar item
-              </button>
-
-              <div className="rounded-[24px] border border-sky-200 bg-sky-50/80 p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                  Impacto de esta compra
-                </p>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-sky-100">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      Lineas cargadas
-                    </p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900">
-                      {draftImpact.lineCount}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-sky-100">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      Stock ingresado
-                    </p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900">
-                      {draftImpact.generatedStock}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-sky-100">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      Insumos nuevos
-                    </p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900">
-                      {draftImpact.newSupplies}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-sky-100">
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">
-                      Recetas afectadas
-                    </p>
-                    <p className="mt-2 text-lg font-semibold text-slate-900">
-                      {draftImpact.affectedRecipeCount}
-                    </p>
-                  </div>
-                </div>
-                <p className="mt-4 text-sm text-slate-600">
-                  Al guardar, SmartProfit actualizara el stock, recalculara el costo promedio y refrescara las fichas tecnicas conectadas a los insumos existentes.
-                </p>
-              </div>
-            </section>
-          )}
-
-          {feedback.message ? (
-            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
-              {feedback.message}
-            </div>
-          ) : null}
-
-          <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/70 px-5 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                  Total de factura
-                </p>
-                <p className="mt-1 text-2xl font-black text-slate-950">{formatCOP(total)}</p>
-              </div>
-              <p className="max-w-md text-sm text-slate-500">
-                El total se recalcula con el valor final de cada item. Si separas IVA, el sistema conserva el costo real del insumo y el total pagado en la factura.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {step === 1 ? (
-              <>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextStep}
-                  className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-                >
-                  Continuar
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setStep(1)}
-                  className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-                >
-                  Volver
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {isSaving ? "Guardando..." : "Guardar compra"}
-                </button>
-              </>
-            )}
-          </div>
-        </form>
-      </ModalWrapper>
+      <ReasonModal
+        open={Boolean(returnTarget)}
+        title="Registrar devolucion"
+        description="Esta version prepara la devolucion total con movimientos inversos. Luego puede evolucionar a seleccion parcial por linea."
+        value={returnReason}
+        onChange={setReturnReason}
+        confirmLabel="Registrar devolucion"
+        confirmTone="neutral"
+        isSaving={isSaving}
+        onConfirm={handleRegisterReturn}
+        onCancel={() => {
+          setReturnTarget(null);
+          setReturnReason("");
+        }}
+      />
     </section>
   );
 }
 
+function PurchaseFormModal({
+  open,
+  editingPurchase,
+  header,
+  setHeader,
+  items,
+  setItems,
+  updateItemRow,
+  totals,
+  suppliers,
+  supplies,
+  categoryOptions,
+  onManageCategories,
+  affectedRecipeCount,
+  feedback,
+  isSaving,
+  onClose,
+  onSaveDraft,
+  onConfirm,
+}) {
+  const addItemRow = () => setItems((current) => [...current, createEmptyItem()]);
+  const removeItemRow = (index) =>
+    setItems((current) => (current.length === 1 ? [createEmptyItem()] : current.filter((_, itemIndex) => itemIndex !== index)));
+  const isCanceled = getPurchaseStatus(editingPurchase || {}) === PURCHASE_STATUS.CANCELED;
+
+  return (
+    <ModalWrapper
+      open={open}
+      onClose={onClose}
+      maxWidthClass="max-w-6xl"
+      title={editingPurchase ? "Editar compra" : "Nueva compra"}
+      description="Guarda borradores sin impacto o confirma cuando la factura ya debe entrar a inventario y costos."
+    >
+      <form className="space-y-5" onSubmit={(event) => event.preventDefault()}>
+        <section className="grid gap-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200 lg:grid-cols-4">
+          <FormSelect
+            label="Proveedor"
+            required
+            value={header.supplierId}
+            onChange={(event) => setHeader((current) => ({ ...current, supplierId: event.target.value }))}
+          >
+            <option value="">Seleccionar proveedor</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </option>
+            ))}
+          </FormSelect>
+          <FormInput
+            label="Numero interno"
+            value={header.purchaseNumber}
+            onChange={(event) => setHeader((current) => ({ ...current, purchaseNumber: event.target.value }))}
+            placeholder="Auto si queda vacio"
+          />
+          <FormInput
+            label="Fecha compra"
+            type="date"
+            required
+            value={header.purchaseDate}
+            onChange={(event) => setHeader((current) => ({ ...current, purchaseDate: event.target.value }))}
+          />
+          <FormInput
+            label="Observaciones"
+            value={header.notes}
+            onChange={(event) => setHeader((current) => ({ ...current, notes: event.target.value }))}
+          />
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Detalle de productos comprados</p>
+              <p className="text-sm text-slate-500">
+                {affectedRecipeCount} ficha(s) tecnica(s) podrian actualizar su costo al confirmar.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onManageCategories?.()}
+              disabled={!onManageCategories}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
+            >
+              <Settings2 size={16} />
+              Categorias
+            </button>
+          </div>
+
+          {items.map((item, index) => {
+            const subtotal = calculateItemSubtotal(item);
+            const taxes = calculateItemTaxes(item);
+            return (
+              <article key={`purchase-item-${index}`} className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-950">Linea {index + 1}</p>
+                  <button
+                    type="button"
+                    onClick={() => removeItemRow(index)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-700"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="grid gap-4 xl:grid-cols-4">
+                  <FormSelect
+                    label="Insumo"
+                    value={item.inventoryItemId}
+                    onChange={(event) => updateItemRow(index, { inventoryItemId: event.target.value })}
+                  >
+                    <option value="">Crear nuevo / manual</option>
+                    {supplies.map((supply) => (
+                      <option key={supply.id} value={supply.id}>
+                        {supply.name}
+                      </option>
+                    ))}
+                  </FormSelect>
+                  <FormInput
+                    label="Nuevo insumo"
+                    value={item.manualName}
+                    onChange={(event) =>
+                      updateItemRow(index, { inventoryItemId: "", manualName: event.target.value })
+                    }
+                  />
+                  <FormInput
+                    label="Cantidad"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={item.quantity}
+                    onChange={(event) => updateItemRow(index, { quantity: event.target.value })}
+                  />
+                  <FormSelect
+                    label="Unidad"
+                    value={item.unit}
+                    onChange={(event) => updateItemRow(index, { unit: event.target.value })}
+                  >
+                    {SUPPLY_UNITS.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {unit}
+                      </option>
+                    ))}
+                  </FormSelect>
+                  <FormInput
+                    label="Costo unitario"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={item.unitCost}
+                    onChange={(event) => updateItemRow(index, { unitCost: event.target.value })}
+                  />
+                  <FormSelect
+                    label="Categoria"
+                    value={item.category}
+                    onChange={(event) => updateItemRow(index, { category: event.target.value })}
+                    options={categoryOptions}
+                  />
+                  <FormInput
+                    label="Lote"
+                    value={item.batch}
+                    onChange={(event) => updateItemRow(index, { batch: event.target.value })}
+                  />
+                  <FormInput
+                    label="Vencimiento"
+                    type="date"
+                    value={item.expirationDate}
+                    onChange={(event) => updateItemRow(index, { expirationDate: event.target.value })}
+                  />
+                </div>
+                <div className="mt-4 grid gap-4 lg:grid-cols-[0.7fr_1fr_1fr]">
+                  <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={item.applyIva}
+                      onChange={(event) => updateItemRow(index, { applyIva: event.target.checked })}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    IVA separado
+                  </label>
+                  <FormInput
+                    label="IVA %"
+                    type="number"
+                    min="0"
+                    step="1"
+                    disabled={!item.applyIva}
+                    value={item.ivaPct}
+                    onChange={(event) => updateItemRow(index, { ivaPct: event.target.value })}
+                  />
+                  <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm ring-1 ring-slate-200">
+                    <p className="font-semibold text-slate-950">{formatCOP(subtotal + taxes)}</p>
+                    <p className="text-slate-500">Subtotal {formatCOP(subtotal)} · Impuestos {formatCOP(taxes)}</p>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={addItemRow}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+          >
+            <Plus size={16} />
+            Agregar linea
+          </button>
+        </section>
+
+        <section className="grid gap-3 rounded-xl bg-slate-950 p-4 text-white md:grid-cols-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Subtotal</p>
+            <p className="mt-1 text-lg font-bold">{formatCOP(totals.subtotal)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Impuestos</p>
+            <p className="mt-1 text-lg font-bold">{formatCOP(totals.taxes)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-400">Total</p>
+            <p className="mt-1 text-lg font-bold">{formatCOP(totals.total)}</p>
+          </div>
+        </section>
+
+        {feedback.message ? (
+          <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+            {feedback.message}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onSaveDraft}
+            disabled={isSaving || isCanceled}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-800 ring-1 ring-slate-200 disabled:opacity-50"
+          >
+            <Save size={16} />
+            Guardar borrador
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isSaving || isCanceled}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            <PackageCheck size={16} />
+            Confirmar compra
+          </button>
+        </div>
+      </form>
+    </ModalWrapper>
+  );
+}
+
+function PurchaseDetailModal({ purchase, movements, onClose }) {
+  if (!purchase) {
+    return null;
+  }
+
+  const history = Array.isArray(purchase.history) ? purchase.history : [];
+  const audit = purchase.audit || {};
+
+  return (
+    <ModalWrapper
+      open={Boolean(purchase)}
+      onClose={onClose}
+      maxWidthClass="max-w-5xl"
+      title={`Compra ${getPurchaseNumber(purchase)}`}
+      description="Resumen operativo, productos, movimientos de inventario y auditoria."
+    >
+      <div className="space-y-5">
+        <section className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Estado</p>
+            <div className="mt-2">
+              <PurchaseStatusBadge status={getPurchaseStatus(purchase)} />
+            </div>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Proveedor</p>
+            <p className="mt-2 font-semibold text-slate-950">{getPurchaseSupplierName(purchase)}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Fecha</p>
+            <p className="mt-2 font-semibold text-slate-950">{formatDate(getPurchaseDate(purchase))}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Total</p>
+            <p className="mt-2 font-semibold text-slate-950">{formatCOP(Number(purchase.total || 0))}</p>
+          </div>
+        </section>
+
+        <DetailTable
+          title="Productos"
+          headers={["Insumo", "Cantidad", "Costo unitario", "Subtotal", "Lote"]}
+          rows={(purchase.items || []).map((item) => [
+            item.inventoryItemName || item.ingredient_name,
+            `${item.quantity || 0} ${item.unit || ""}`,
+            formatCOP(Number(item.unitCost ?? item.unit_cost ?? item.unit_price ?? 0)),
+            formatCOP(Number(item.subtotal ?? item.line_total ?? item.total_cost ?? 0)),
+            item.batch || "Sin lote",
+          ])}
+        />
+
+        <DetailTable
+          title="Movimientos inventario"
+          headers={["Tipo", "Insumo", "Cantidad", "Costo", "Fecha"]}
+          rows={movements.map((movement) => [
+            movement.movementType || movement.movement_type || movement.type,
+            movement.inventoryItemName || movement.inventory_item_id,
+            `${movement.direction === "out" ? "-" : "+"}${movement.quantity || 0} ${movement.unit || ""}`,
+            formatCOP(Number(movement.totalCost || 0)),
+            getTimestampLabel(movement.createdAt),
+          ])}
+          empty="Sin movimientos registrados para esta compra."
+        />
+
+        <section className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <p className="text-sm font-semibold text-slate-950">Auditoria</p>
+            <dl className="mt-3 grid gap-2 text-sm text-slate-600">
+              <div className="flex justify-between gap-4">
+                <dt>Creada por</dt>
+                <dd className="font-medium text-slate-900">{audit.createdBy || getPurchaseUser(purchase)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Confirmada por</dt>
+                <dd className="font-medium text-slate-900">{audit.confirmedBy || "Pendiente"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Anulada por</dt>
+                <dd className="font-medium text-slate-900">{audit.canceledBy || "No aplica"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt>Motivo anulacion</dt>
+                <dd className="max-w-xs text-right font-medium text-slate-900">{audit.cancelReason || "No aplica"}</dd>
+              </div>
+            </dl>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <p className="text-sm font-semibold text-slate-950">Historial</p>
+            <div className="mt-3 space-y-2">
+              {history.length ? (
+                history.map((event, index) => (
+                  <div key={`${event.type}-${index}`} className="rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200">
+                    <p className="font-semibold text-slate-900">{event.type || "evento"}</p>
+                    <p className="text-slate-500">
+                      {event.status || "sin estado"} · {event.reason || "sin motivo"} · {event.at || "fecha servidor"}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">Sin historial detallado.</p>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </ModalWrapper>
+  );
+}
+
+function DetailTable({ title, headers, rows, empty = "Sin datos." }) {
+  return (
+    <section className="rounded-xl bg-white ring-1 ring-slate-200">
+      <div className="border-b border-slate-100 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-950">{title}</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-[0.14em] text-slate-400">
+            <tr>
+              {headers.map((header) => (
+                <th key={header} className="px-4 py-3">
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.length ? (
+              rows.map((row, rowIndex) => (
+                <tr key={`detail-row-${rowIndex}`} className="text-slate-700">
+                  {row.map((cell, cellIndex) => (
+                    <td key={`detail-cell-${cellIndex}`} className="px-4 py-3">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={headers.length} className="px-4 py-6 text-center text-sm text-slate-500">
+                  {empty}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ReasonModal({
+  open,
+  title,
+  description,
+  value,
+  onChange,
+  confirmLabel,
+  confirmTone,
+  isSaving,
+  onConfirm,
+  onCancel,
+}) {
+  const isDanger = confirmTone === "danger";
+  return (
+    <ModalWrapper open={open} onClose={onCancel} maxWidthClass="max-w-lg" title={title} description={description}>
+      <div className="space-y-4">
+        <div className={`rounded-xl p-4 text-sm ring-1 ${isDanger ? "bg-rose-50 text-rose-700 ring-rose-200" : "bg-sky-50 text-sky-700 ring-sky-200"}`}>
+          Esta accion genera movimientos de inventario trazables y no elimina el documento original.
+        </div>
+        <FormInput
+          label="Motivo obligatorio"
+          multiline
+          rows={4}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Explica la causa operativa"
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isSaving || !normalizeText(value)}
+            className={`rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-50 ${isDanger ? "bg-rose-600" : "bg-sky-600"}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </ModalWrapper>
+  );
+}
