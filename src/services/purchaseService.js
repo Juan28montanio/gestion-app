@@ -836,6 +836,33 @@ export async function cancelPurchase(purchaseId, reason) {
       throw new Error("Esta compra ya fue anulada.");
     }
 
+    if (!purchase.inventoryImpact?.applied) {
+      transaction.update(purchaseRef, {
+        status: PURCHASE_STATUS.CANCELED,
+        inventoryImpact: {
+          ...(purchase.inventoryImpact || {}),
+          applied: false,
+          reversedAt: null,
+        },
+        audit: {
+          ...(purchase.audit || {}),
+          updatedBy: getCurrentUserId(),
+          canceledBy: getCurrentUserId(),
+          updatedAt: serverTimestamp(),
+          canceledAt: serverTimestamp(),
+          cancelReason,
+        },
+        history: appendHistory(purchase, {
+          type: "purchase_canceled",
+          status: PURCHASE_STATUS.CANCELED,
+          reason: cancelReason,
+          inventoryImpact: "not_applied",
+        }),
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
     const payload = buildPurchasePayload(purchase, normalizePurchaseItems(purchase.items));
     businessId = payload.business_id;
     const supplierRef = doc(db, "suppliers", payload.supplier_id);
@@ -1094,11 +1121,19 @@ export function subscribeToInventoryMovements(businessId, callback) {
     (snapshot) => {
       callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
     },
-    createSubscriptionErrorHandler({
-      scope: "inventoryMovements:subscribeToInventoryMovements",
-      callback,
-      emptyValue: [],
-    })
+    (error) => {
+      const code = String(error?.code || "").toLowerCase();
+      const message = String(error?.message || "").toLowerCase();
+      const isPermissionError =
+        code.includes("permission-denied") ||
+        message.includes("missing or insufficient permissions");
+
+      callback([]);
+
+      if (!isPermissionError) {
+        console.error("[inventoryMovements:subscribeToInventoryMovements]", error);
+      }
+    }
   );
 }
 
