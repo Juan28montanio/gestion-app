@@ -23,17 +23,47 @@ import CashLockOverlay from "./layout/CashLockOverlay";
 import { DecisionCenterProvider, useDecisionCenter } from "./decision-center/DecisionCenterContext";
 import DecisionCenterDrawer from "./decision-center/DecisionCenterDrawer";
 
-const POSOrder = lazy(() => import("../components/POSOrder"));
-const AdminDashboard = lazy(() => import("../components/AdminDashboard"));
-const CustomerManager = lazy(() => import("../components/CustomerManager"));
-const ProductManager = lazy(() => import("../components/ProductManager"));
-const TableManager = lazy(() => import("../components/TableManager"));
-const TicketWalletManager = lazy(() => import("../components/TicketWalletManager"));
-const CustomerMenu = lazy(() => import("../components/CustomerMenu"));
-const AccountSettings = lazy(() => import("../components/AccountSettings"));
-const UsageGuide = lazy(() => import("../components/UsageGuide"));
-const AuthScreen = lazy(() => import("../components/AuthScreen"));
-const AuditPinModal = lazy(() => import("../components/AuditPinModal"));
+const CHUNK_RELOAD_KEY = "smartprofit:chunk-reload";
+
+function isChunkLoadError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("failed to fetch dynamically imported module") ||
+    message.includes("failed to load resource") ||
+    message.includes("importing a module script failed")
+  );
+}
+
+function lazyWithChunkRecovery(importer) {
+  return lazy(() =>
+    importer()
+      .then((module) => {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+        return module;
+      })
+      .catch((error) => {
+        if (isChunkLoadError(error) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+          sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+          window.location.reload();
+          return new Promise(() => {});
+        }
+
+        throw error;
+      })
+  );
+}
+
+const POSOrder = lazyWithChunkRecovery(() => import("../components/POSOrder"));
+const AdminDashboard = lazyWithChunkRecovery(() => import("../components/AdminDashboard"));
+const CustomerManager = lazyWithChunkRecovery(() => import("../components/CustomerManager"));
+const ProductManager = lazyWithChunkRecovery(() => import("../components/ProductManager"));
+const TableManager = lazyWithChunkRecovery(() => import("../components/TableManager"));
+const TicketWalletManager = lazyWithChunkRecovery(() => import("../components/TicketWalletManager"));
+const CustomerMenu = lazyWithChunkRecovery(() => import("../components/CustomerMenu"));
+const AccountSettings = lazyWithChunkRecovery(() => import("../components/AccountSettings"));
+const UsageGuide = lazyWithChunkRecovery(() => import("../components/UsageGuide"));
+const AuthScreen = lazyWithChunkRecovery(() => import("../components/AuthScreen"));
+const AuditPinModal = lazyWithChunkRecovery(() => import("../components/AuditPinModal"));
 
 function AppShellContent() {
   const {
