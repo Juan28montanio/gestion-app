@@ -19,6 +19,7 @@ import {
 } from "../utils/payments";
 import { getPaymentMethodConfig, registerDebtPayment } from "../utils/posFinance";
 import { buildOperationalSaleItemDetail } from "../utils/sales";
+import { getSalesLedger } from "./salesLedgerService";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
 
 const cashClosingsCollection = collection(db, "cash_closings");
@@ -378,22 +379,21 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
   const openedAt = normalizeDate(closingData.opened_at || closingData.createdAt) || new Date();
   const now = new Date();
 
-  const [salesSnapshot, purchasesSnapshot, operatingExpensesSnapshot, ordersSnapshot] = await Promise.all([
-    getDocs(query(salesHistoryCollection, where("business_id", "==", normalizedBusinessId))),
+  const [salesLedger, purchasesSnapshot, operatingExpensesSnapshot, ordersSnapshot] = await Promise.all([
+    getSalesLedger(normalizedBusinessId),
     getDocs(query(purchasesCollection, where("business_id", "==", normalizedBusinessId))),
     getDocs(query(operatingExpensesCollection, where("business_id", "==", normalizedBusinessId))),
     getDocs(query(ordersCollection, where("business_id", "==", normalizedBusinessId))),
   ]);
 
-  const relevantSales = salesSnapshot.docs
-    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
+  const relevantSales = salesLedger
     .filter((sale) => {
       const saleDate = normalizeDate(sale.closed_at || sale.createdAt);
       if (!saleDate) {
         return false;
       }
 
-      const belongsToSession = sale.closing_id === normalizedClosingId;
+      const belongsToSession = sale.closing_id === normalizedClosingId || sale.cash_session_id === normalizedClosingId;
       const isOrphanSale = !sale.closing_id && saleDate >= openedAt && saleDate <= now;
       return sale.type === "income" && (belongsToSession || isOrphanSale);
     });
@@ -554,6 +554,15 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
   relevantSales
     .filter((sale) => !sale.closing_id)
     .forEach((sale) => {
+      if (sale.source === "canonical") {
+        batch.update(doc(db, "sales", sale.id), {
+          cashSessionId: normalizedClosingId,
+          cash_session_id: normalizedClosingId,
+          updatedAt: serverTimestamp(),
+        });
+        return;
+      }
+
       batch.update(doc(db, "sales_history", sale.id), {
         closing_id: normalizedClosingId,
         updatedAt: serverTimestamp(),

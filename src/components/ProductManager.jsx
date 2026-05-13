@@ -61,8 +61,8 @@ import {
 } from "../features/resources/shared/resourceDerivedData";
 import { buildProductFlowSummary } from "../features/resources/recipes/recipeCostingShared";
 import ProductEditorModal from "../features/resources/catalog/ProductEditorModal";
-import ResourceInventoryPanel from "../features/resources/inventory/ResourceInventoryPanel";
-import ResourceProductsPanel from "../features/resources/catalog/ResourceProductsPanel";
+import InventoryWorkspace from "../features/resources/inventory/InventoryWorkspace";
+import CatalogWorkspace from "../features/resources/catalog/CatalogWorkspace";
 import ResourceWorkspaceHeader from "../features/resources/shared/ResourceWorkspaceHeader";
 import ResourceSectionRouter from "../features/resources/shared/ResourceSectionRouter";
 import SupplyEditorModal from "../features/resources/inventory/SupplyEditorModal";
@@ -634,7 +634,7 @@ export default function ProductManager({ businessId, mode = "resources", initial
       ) : null}
 
       {activeTab === "ingredients" && !isCatalogMode ? (
-        <ResourceInventoryPanel
+        <InventoryWorkspace
           supplies={supplies}
           supplySummary={supplySummary}
           priceHistoryBySupply={priceHistoryBySupply}
@@ -650,7 +650,7 @@ export default function ProductManager({ businessId, mode = "resources", initial
       ) : null}
 
       {activeTab === "products" || isCatalogMode ? (
-        <ResourceProductsPanel
+        <CatalogWorkspace
           isCatalogMode={isCatalogMode}
           activeTab={activeTab}
           onSelectTab={setActiveTab}

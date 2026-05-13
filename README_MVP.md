@@ -1,3 +1,9 @@
+# SmartProfit
+
+La documentacion principal fue actualizada en [README.md](README.md).
+
+Este archivo queda como referencia historica del MVP inicial.
+
 # MVP Restaurante SPA
 
 ## Estructura sugerida

@@ -95,10 +95,10 @@ export const RESOURCE_TABS = [
 
 export const TABS = [
   { id: "suppliers", label: "Proveedores", icon: Factory },
-  { id: "ingredients", label: "Insumos", icon: Boxes },
-  { id: "purchases", label: "Compras", icon: ClipboardList },
-  { id: "recipes", label: "Fichas Tecnicas", icon: Sparkles },
-  { id: "products", label: "Catalogo", icon: Package },
+  { id: "ingredients", label: "Control de inventario", icon: Boxes },
+  { id: "purchases", label: "Comprar", icon: ClipboardList },
+  { id: "recipes", label: "Costear", icon: Sparkles },
+  { id: "products", label: "Gestionar catalogo", icon: Package },
 ];
 
 function isActivePurchase(purchase) {

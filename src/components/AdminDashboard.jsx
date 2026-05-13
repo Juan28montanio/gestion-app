@@ -232,7 +232,7 @@ export default function AdminDashboard({
   const [accountsPayable, setAccountsPayable] = useState([]);
   const [openSession, setOpenSession] = useState(null);
   const [activeFinanceTab, setActiveFinanceTab] = useState(() =>
-    moduleMode === "cash" ? "cash" : "receivables"
+    moduleMode === "cash" ? "cash" : "reports"
   );
   const [selectedRange, setSelectedRange] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(() => getLocalDateInputValue(getLocalDateKey));
@@ -285,7 +285,7 @@ export default function AdminDashboard({
   }, []);
 
   useEffect(() => {
-    setActiveFinanceTab(moduleMode === "cash" ? "cash" : "receivables");
+    setActiveFinanceTab(moduleMode === "cash" ? "cash" : "reports");
   }, [moduleMode]);
 
   const lockInfo = useMemo(() => getCashSessionLockInfo(openSession), [openSession]);
@@ -895,12 +895,13 @@ export default function AdminDashboard({
     { id: "closing", label: "Cierre de caja" },
   ];
   const financeTabs = [
-    { id: "receivables", label: "Cuentas por cobrar" },
-    { id: "payables", label: "Cuentas por pagar" },
-    { id: "expenses", label: "Gastos" },
-    { id: "reports", label: "Reportes" },
+    { id: "reports", label: "Resumen ejecutivo" },
+    { id: "receivables", label: "Por cobrar" },
+    { id: "payables", label: "Por pagar" },
+    { id: "expenses", label: "Gastos operativos" },
   ];
   const visibleTabs = moduleMode === "cash" ? cashTabs : financeTabs;
+  const showLegacyCashDashboard = activeFinanceTab === "__legacy_cash";
   const canSettlePayable =
     payableToSettle &&
     Number.isFinite(Number(payablePaymentAmount)) &&
@@ -1058,7 +1059,7 @@ export default function AdminDashboard({
                       </span>
                     ) : null}
                   </div>
-                  <h3 className="mt-4 text-3xl font-black text-slate-950">¿Mi turno cuadra?</h3>
+                  <h3 className="mt-4 text-3xl font-black text-slate-950">Cuadre del turno</h3>
                   <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
                     <span>Cajero: <strong className="text-slate-900">{cashierLabel}</strong></span>
                     <span>Inicio: <strong className="text-slate-900">{openedAtLabel ? openedAtLabel.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }) : "-"}</strong></span>
@@ -1240,7 +1241,7 @@ export default function AdminDashboard({
           </div>
         </section>
 
-        {moduleMode === "cash" && activeFinanceTab === "cash" ? (
+        {moduleMode === "cash" && showLegacyCashDashboard ? (
         <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>

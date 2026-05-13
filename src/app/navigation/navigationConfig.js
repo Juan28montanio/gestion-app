@@ -43,10 +43,10 @@ export const NAV_ITEMS = [
   },
   {
     id: "resources",
-    label: "Recursos",
+    label: "Insumos y costos",
     icon: Workflow,
     section: "Catalogo",
-    description: "Insumos, compras, proveedores y recetas.",
+    description: "Compras, insumos, costeo y control de inventario.",
   },
   {
     id: "ticketing",
@@ -120,11 +120,11 @@ export const SECTION_GUIDANCE = {
   },
   cash: {
     promise: "Controla el turno, los medios de pago y el arqueo sin mezclarlo con deuda o rentabilidad.",
-    workflow: "Abre caja, revisa movimientos, registra egresos y cierra con diferencia calculada.",
+    workflow: "Abre caja, revisa el dinero real, registra egresos y cierra con diferencia calculada.",
   },
   finance: {
-    promise: "Lee la salud economica del negocio desde cartera, proveedores, gastos y margen.",
-    workflow: "Revisa saldos por cobrar, obligaciones por pagar, gastos y reportes para decidir mejor.",
+    promise: "Entiende utilidad diaria, obligaciones y margen sin confundirlo con el arqueo de caja.",
+    workflow: "Revisa ingresos, egresos, cartera, proveedores y utilidad estimada para decidir mejor.",
   },
   account: {
     promise: "Mantiene identidad, responsables y datos del negocio en orden.",

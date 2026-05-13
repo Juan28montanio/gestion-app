@@ -1,10 +1,14 @@
 {
-  "name": "restaurant-os-mvp",
+  "name": "smartprofit",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:smoke": "node scripts/smoke.mjs",
+    "functions:lint": "npm --prefix functions run lint",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -15,12 +19,16 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.27",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
     "playwright": "^1.59.1",
     "postcss": "^8.5.9",
     "tailwindcss": "^4.2.2",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^4.1.6"
   }
 }

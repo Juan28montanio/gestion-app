@@ -22,6 +22,7 @@ import MobileSidebarDrawer from "./layout/MobileSidebarDrawer";
 import CashLockOverlay from "./layout/CashLockOverlay";
 import { DecisionCenterProvider, useDecisionCenter } from "./decision-center/DecisionCenterContext";
 import DecisionCenterDrawer from "./decision-center/DecisionCenterDrawer";
+import OnboardingChecklist from "../components/OnboardingChecklist";
 
 const CHUNK_RELOAD_KEY = "smartprofit:chunk-reload";
 const SECTION_ROUTES = {
@@ -402,6 +403,11 @@ function AppShellContent() {
               />
 
               <div className="flex-1 px-4 py-6 pb-36 md:px-6 xl:pb-28">
+                <OnboardingChecklist
+                  businessId={businessId}
+                  activeSection={activeSection}
+                  onNavigate={handleSelectSection}
+                />
                 <SectionErrorBoundary
                   key={`${activeSection}-${sectionRenderNonce}`}
                   resetKey={`${activeSection}-${sectionRenderNonce}`}
@@ -498,7 +504,7 @@ function AppShellContent() {
                         verifySessionPassword={verifySessionPassword}
                         onSaveBusiness={(values) => saveBusinessAccount(businessId, values)}
                         onSaveProfile={(values) => saveUserProfile(currentUser.uid, values)}
-                        onResetWorkspace={() => resetWorkspace(businessId)}
+                        onResetWorkspace={(options) => resetWorkspace(businessId, options)}
                         onGoGuide={() => handleSelectSection("guide")}
                         onLogout={logout}
                       />

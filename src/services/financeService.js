@@ -26,6 +26,8 @@ import {
   buildPosSaleDocuments,
   writePosSaleDocuments,
 } from "./posFinancialService";
+import { applySaleInventoryImpact } from "./inventoryService";
+import { subscribeToSalesLedger } from "./salesLedgerService";
 
 function getTicketProductGrant(items = []) {
   return items.reduce(
@@ -52,13 +54,13 @@ function getTicketConsumption(items = [], ticketConsumption = {}) {
   const units = items.reduce(
     (sum, item) =>
       sum +
-      (Boolean(item?.useTicket) ? Number(item?.quantity || 0) : 0),
+      (item?.useTicket ? Number(item?.quantity || 0) : 0),
     0
   );
   const coveredAmount = items.reduce(
     (sum, item) =>
       sum +
-      (Boolean(item?.useTicket)
+      (item?.useTicket
         ? Number(item?.price || 0) * Number(item?.quantity || 0)
         : 0),
     0
@@ -622,27 +624,35 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     businessIdForInventory = resolvedBusinessId;
   });
 
-  await handleStockReduction(businessIdForInventory, orderItemsForInventory, {
-    saleId: createdSaleId,
-    orderId: normalizedOrderId,
-  });
+  try {
+    await applySaleInventoryImpact(createdSaleId, {
+      businessId: businessIdForInventory,
+      saleItems: orderItemsForInventory.map((item) => ({
+        business_id: businessIdForInventory,
+        sale_id: createdSaleId,
+        product_id: item.productId || item.id || "",
+        product_name: item.name || "",
+        quantity: Number(item.quantity || 0),
+        technical_sheet_id: item.technicalSheetId || item.technical_sheet_id || null,
+        inventory_impact_mode: item.inventoryImpactMode || item.inventory_impact_mode || "",
+      })),
+    });
+  } catch (error) {
+    if (createdSaleId) {
+      await updateDoc(doc(db, "sales", createdSaleId), {
+        inventoryImpactStatus: "failed",
+        inventory_impact_status: "failed",
+        inventoryImpactError: error instanceof Error ? error.message : "No fue posible impactar inventario.",
+        inventory_impact_error: error instanceof Error ? error.message : "No fue posible impactar inventario.",
+        updatedAt: serverTimestamp(),
+      });
+    }
+    throw error;
+  }
 }
 
 export function subscribeToSalesHistory(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
-  const salesQuery = query(collection(db, "sales_history"), where("business_id", "==", businessId));
-
-  return onSnapshot(salesQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  }, createSubscriptionErrorHandler({
-    scope: "sales_history:subscribeToSalesHistory",
-    callback,
-    emptyValue: [],
-  }));
+  return subscribeToSalesLedger(businessId, callback);
 }
 
 export async function updateSaleHistoryEntry(saleId, updates = {}) {

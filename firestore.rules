@@ -26,6 +26,14 @@ service cloud.firestore {
       return businessUserExists() ? businessUserDoc().data.business_id : null;
     }
 
+    function currentRole() {
+      return businessUserExists() ? businessUserDoc().data.role : null;
+    }
+
+    function isOwnerOrAdmin() {
+      return isAuthenticated() && (currentRole() == "owner" || currentRole() == "admin");
+    }
+
     function belongsToCurrentBusiness(businessId) {
       return isAuthenticated() &&
         businessId != null &&
@@ -59,6 +67,35 @@ service cloud.firestore {
       return sameBusinessResource();
     }
 
+    function validBusinessCreate() {
+      return request.resource.data.business_id is string ||
+        request.resource.data.businessId is string;
+    }
+
+    function immutableBusinessId() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["business_id", "businessId"]);
+    }
+
+    function hasOnlyChanged(allowedKeys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedKeys);
+    }
+
+    function validSaleStatus(status) {
+      return status in ["pending", "partial", "paid", "canceled", "refunded"];
+    }
+
+    function validPaymentStatus(status) {
+      return status in ["pending", "completed", "partial", "canceled", "refunded"];
+    }
+
+    function validInventoryImpactStatus(status) {
+      return status in ["pending", "applied", "not_applicable", "failed", "reversed"];
+    }
+
+    function validCashMovementStatus(status) {
+      return status in ["valid", "reversed", "canceled"];
+    }
+
     function isCurrentUserDocument(userId) {
       return isAuthenticated() && currentUserId() == userId;
     }
@@ -83,23 +120,23 @@ service cloud.firestore {
 
     match /products/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
+      allow create: if sameBusinessCreate() && validBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /tables/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
+      allow create: if sameBusinessCreate() && validBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /orders/{documentId} {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if false;
     }
 
     match /tableSessions/{documentId} {
@@ -132,35 +169,111 @@ service cloud.firestore {
 
     match /sales_history/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.total is number;
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        hasOnlyChanged([
+          "concept",
+          "closing_id",
+          "closed_at",
+          "pending_debt_remaining",
+          "settled_amount",
+          "payment_status",
+          "updatedAt"
+        ]);
+      allow delete: if false;
     }
 
     match /sales/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.total is number &&
+        request.resource.data.total >= 0 &&
+        validSaleStatus(request.resource.data.status) &&
+        validInventoryImpactStatus(request.resource.data.inventoryImpactStatus);
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        hasOnlyChanged([
+          "status",
+          "cancelReason",
+          "cancel_reason",
+          "canceledBy",
+          "canceled_by",
+          "canceledAt",
+          "canceled_at",
+          "inventoryImpactStatus",
+          "inventory_impact_status",
+          "inventoryAppliedAt",
+          "inventory_applied_at",
+          "inventoryReversedAt",
+          "inventory_reversed_at",
+          "inventoryReverseReason",
+          "inventory_reverse_reason",
+          "inventoryImpactError",
+          "inventory_impact_error",
+          "cashSessionId",
+          "cash_session_id",
+          "updatedAt",
+          "updatedBy",
+          "updated_by"
+        ]) &&
+        (!request.resource.data.keys().hasAny(["status"]) || validSaleStatus(request.resource.data.status)) &&
+        (!request.resource.data.keys().hasAny(["inventoryImpactStatus"]) || validInventoryImpactStatus(request.resource.data.inventoryImpactStatus));
       allow delete: if false;
     }
 
     match /saleItems/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.sale_id is string &&
+        request.resource.data.quantity is number &&
+        request.resource.data.quantity > 0;
+      allow update: if false;
       allow delete: if false;
     }
 
     match /payments/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.sale_id is string &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount >= 0 &&
+        validPaymentStatus(request.resource.data.status);
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        hasOnlyChanged([
+          "status",
+          "cancelReason",
+          "cancel_reason",
+          "canceledBy",
+          "canceled_by",
+          "canceledAt",
+          "canceled_at",
+          "updatedAt"
+        ]) &&
+        validPaymentStatus(request.resource.data.status);
       allow delete: if false;
     }
 
     match /cashMovements/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount >= 0;
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        hasOnlyChanged([
+          "status",
+          "reverseReason",
+          "reverse_reason",
+          "reversedAt",
+          "reversed_at",
+          "reversedBy",
+          "reversed_by",
+          "updatedAt"
+        ]) &&
+        (!request.resource.data.keys().hasAny(["status"]) || validCashMovementStatus(request.resource.data.status));
       allow delete: if false;
     }
 
@@ -168,7 +281,7 @@ service cloud.firestore {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if false;
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /businessSettings/{businessId} {
@@ -176,6 +289,15 @@ service cloud.firestore {
       allow create: if sameBusinessCreate() || belongsToCurrentBusiness(businessId);
       allow update: if sameBusinessUpdate() || belongsToCurrentBusiness(businessId);
       allow delete: if false;
+    }
+
+    match /onboardingProgress/{businessId} {
+      allow read: if belongsToCurrentBusiness(businessId);
+      allow create: if belongsToCurrentBusiness(businessId) &&
+        request.resource.data.business_id == businessId;
+      allow update: if belongsToCurrentBusiness(businessId) &&
+        request.resource.data.business_id == resource.data.business_id;
+      allow delete: if belongsToCurrentBusiness(businessId) && isOwnerOrAdmin();
     }
 
     match /auditLogs/{documentId} {
@@ -187,8 +309,12 @@ service cloud.firestore {
 
     match /accountsReceivable/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.originalAmount is number &&
+        request.resource.data.pendingAmount is number;
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(["originalAmount", "original_amount", "saleId", "sale_id"]);
       allow delete: if false;
     }
 
@@ -201,8 +327,12 @@ service cloud.firestore {
 
     match /accountsPayable/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.originalAmount is number &&
+        request.resource.data.pendingAmount is number;
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(["originalAmount", "original_amount", "purchaseId", "purchase_id"]);
       allow delete: if false;
     }
 
@@ -217,7 +347,7 @@ service cloud.firestore {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /ticketPlans/{documentId} {
@@ -252,28 +382,40 @@ service cloud.firestore {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /ingredients/{documentId} {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /purchases/{documentId} {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete() &&
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin() &&
         resource.data.status == "borrador";
     }
 
     match /inventoryMovements/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if false;
+      allow create: if sameBusinessCreate() && validBusinessCreate() &&
+        request.resource.data.inventory_item_id is string &&
+        request.resource.data.quantity is number &&
+        request.resource.data.quantity > 0;
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        hasOnlyChanged([
+          "status",
+          "reversedAt",
+          "reversed_at",
+          "reverseReason",
+          "reverse_reason"
+        ]) &&
+        request.resource.data.status in ["reversed"];
       allow delete: if false;
     }
 
@@ -281,34 +423,37 @@ service cloud.firestore {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /recipeBooks/{documentId} {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /cash_closings/{documentId} {
       allow read: if sameBusinessResource();
-      allow create: if sameBusinessCreate();
-      allow update: if sameBusinessUpdate();
+      allow create: if sameBusinessCreate() && validBusinessCreate();
+      allow update: if sameBusinessUpdate() &&
+        immutableBusinessId() &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(["sales_total", "expected_cash", "opening_amount"]);
+      allow delete: if false;
     }
 
     match /operating_expenses/{documentId} {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
 
     match /resource_taxonomies/{documentId} {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
-      allow delete: if sameBusinessDelete();
+      allow delete: if sameBusinessDelete() && isOwnerOrAdmin();
     }
   }
 }

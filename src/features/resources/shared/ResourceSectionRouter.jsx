@@ -1,6 +1,6 @@
-import PurchaseManager from "../../../components/PurchaseManager";
-import RecipeBookManager from "../../../components/RecipeBookManager";
 import SupplierManager from "../../../components/SupplierManager";
+import CostingWorkspace from "../costing/CostingWorkspace";
+import PurchaseWorkspace from "../purchase/PurchaseWorkspace";
 
 export default function ResourceSectionRouter({
   activeTab,
@@ -33,7 +33,7 @@ export default function ResourceSectionRouter({
 
   if (activeTab === "purchases") {
     return (
-      <PurchaseManager
+      <PurchaseWorkspace
         businessId={businessId}
         suppliers={suppliers}
         supplies={supplies}
@@ -47,7 +47,7 @@ export default function ResourceSectionRouter({
 
   if (activeTab === "recipes") {
     return (
-      <RecipeBookManager
+      <CostingWorkspace
         businessId={businessId}
         products={products}
         supplies={supplies}

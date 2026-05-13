@@ -58,6 +58,51 @@ const COMMON_MISTAKES = [
   "Dejar clientes, ticketeras o deudas sin nombre claro.",
 ];
 
+const DEMO_FLOW = [
+  {
+    minute: "0:00",
+    title: "Negocio demo y promesa",
+    body: "SmartProfit ayuda a vender, controlar caja y entender utilidad diaria sin hojas sueltas.",
+    section: "account",
+  },
+  {
+    minute: "1:00",
+    title: "Caja abierta",
+    body: "Muestra base inicial, cajero, efectivo esperado y acciones del turno.",
+    section: "cash",
+  },
+  {
+    minute: "2:00",
+    title: "Venta rapida",
+    body: "Registra una venta de mostrador y confirma pagos, items vendidos y movimiento de caja.",
+    section: "pos",
+  },
+  {
+    minute: "4:00",
+    title: "Compra de insumos",
+    body: "Carga una compra y enseña como afecta inventario, costos y obligaciones.",
+    section: "resources",
+  },
+  {
+    minute: "6:00",
+    title: "Costo y margen",
+    body: "Abre costeo/catalogo para mostrar producto rentable o producto que necesita ajuste.",
+    section: "resources",
+  },
+  {
+    minute: "8:00",
+    title: "Cierre de caja",
+    body: "Valida efectivo esperado, contado, diferencia y reporte del turno.",
+    section: "cash",
+  },
+  {
+    minute: "9:30",
+    title: "Decision sugerida",
+    body: "Cierra en Finanzas: utilidad estimada, por cobrar, por pagar y proxima accion.",
+    section: "finance",
+  },
+];
+
 function GuideCard({ icon: Icon, title, description, actionLabel, onAction }) {
   return (
     <article className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -172,6 +217,40 @@ export default function UsageGuide({ business, onNavigate }) {
             ))}
           </div>
         </article>
+      </section>
+
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-950">Demo guiada de 10 minutos</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Usa esta ruta para mostrar la historia comercial completa: vende, controla caja y entiende tu utilidad diaria.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate("account")}
+            className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Preparar datos demo
+            <ArrowRight size={15} />
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3">
+          {DEMO_FLOW.map((step) => (
+            <button
+              key={`${step.minute}-${step.title}`}
+              type="button"
+              onClick={() => onNavigate(step.section)}
+              className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-white md:grid-cols-[80px_220px_1fr_auto] md:items-center"
+            >
+              <span className="font-mono text-sm font-bold text-slate-500">{step.minute}</span>
+              <span className="text-sm font-bold text-slate-950">{step.title}</span>
+              <span className="text-sm leading-5 text-slate-600">{step.body}</span>
+              <ArrowRight size={15} className="text-slate-400" />
+            </button>
+          ))}
+        </div>
       </section>
     </section>
   );

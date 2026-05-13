@@ -11,6 +11,10 @@ export default defineConfig({
             return undefined;
           }
 
+          if (id.includes("firebase/functions")) {
+            return "firebase-functions";
+          }
+
           if (id.includes("firebase/firestore")) {
             return "firebase-firestore";
           }
@@ -21,10 +25,6 @@ export default defineConfig({
 
           if (id.includes("firebase/storage")) {
             return "firebase-storage";
-          }
-
-          if (id.includes("firebase/app")) {
-            return "firebase-core";
           }
 
           if (id.includes("firebase")) {

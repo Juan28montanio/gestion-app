@@ -30,6 +30,7 @@ import {
   validateBusinessSettings,
 } from "../services/accountService";
 import { updateBusinessAccount } from "../services/businessService";
+import { cleanupDemoData, seedDemoData } from "../services/demoDataService";
 import {
   ACCOUNT_ACTIONS,
   ACCOUNT_MODULES,
@@ -354,7 +355,10 @@ export default function AccountSettings({
     setIsResettingWorkspace(true);
     try {
       await verifySessionPassword(resetPassword);
-      await onResetWorkspace();
+      await onResetWorkspace({
+        actor: { ...actor, role: currentRole },
+        confirmation: resetPhrase,
+      });
       setIsResetModalOpen(false);
       setResetPassword("");
       setResetPhrase("");
@@ -364,6 +368,40 @@ export default function AccountSettings({
       setFeedbackMessage("error", error instanceof Error ? error.message : "No fue posible reiniciar.");
     } finally {
       setIsResettingWorkspace(false);
+    }
+  };
+
+  const handleSeedDemoData = async () => {
+    if (!canSaveAdminAreas) {
+      setFeedbackMessage("error", "No tienes permisos para cargar datos demo.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await seedDemoData(businessId);
+      setFeedbackMessage("success", "Datos demo cargados. Puedes mostrar venta, caja, compra, inventario y margen.");
+    } catch (error) {
+      setFeedbackMessage("error", error instanceof Error ? error.message : "No fue posible cargar datos demo.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCleanDemoData = async () => {
+    if (!canSaveAdminAreas) {
+      setFeedbackMessage("error", "No tienes permisos para limpiar datos demo.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const deleted = await cleanupDemoData(businessId);
+      setFeedbackMessage("success", `Datos demo limpiados (${deleted} documento(s)).`);
+    } catch (error) {
+      setFeedbackMessage("error", error instanceof Error ? error.message : "No fue posible limpiar datos demo.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -720,6 +758,20 @@ export default function AccountSettings({
               <div className="mt-4 grid gap-2 text-sm text-slate-600">
                 <p>Contacto soporte: soporte@smartprofit.local</p>
                 <p>Futuro: exportar datos, respaldos, politicas de privacidad, plan de suscripcion, logs avanzados y personalizacion visual.</p>
+              </div>
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Demo comercial controlada</p>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  Carga productos, insumos, una compra, una venta, caja y movimientos marcados como demo. Puedes limpiarlos sin tocar datos reales.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button type="button" onClick={handleSeedDemoData} disabled={isSaving || !canSaveAdminAreas} className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                    Empezar con datos de ejemplo
+                  </button>
+                  <button type="button" onClick={handleCleanDemoData} disabled={isSaving || !canSaveAdminAreas} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60">
+                    Limpiar solo datos demo
+                  </button>
+                </div>
               </div>
               <button type="button" onClick={onGoGuide} className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
                 Abrir guia de uso
