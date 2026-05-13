@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createProduct,
-  deleteProduct,
+  archiveProduct,
+  createProductCategory,
+  createProductModifier,
+  seedDefaultProductCategories,
+  subscribeToProductCategories,
+  subscribeToProductCombos,
+  subscribeToProductModifiers,
   subscribeToProducts,
+  updateProductCategory,
+  updateProductModifier,
+  updateProductStatus,
   updateProduct,
 } from "../services/productService";
 import {
@@ -66,17 +75,20 @@ function normalizeComparableValue(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-export default function ProductManager({ businessId, mode = "resources", initialTab }) {
+export default function ProductManager({ businessId, mode = "resources", initialTab, userProfile }) {
   const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const [products, setProducts] = useState([]);
   const [supplies, setSupplies] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [recipeBooks, setRecipeBooks] = useState([]);
+  const [productCategoryDocs, setProductCategoryDocs] = useState([]);
+  const [productModifiers, setProductModifiers] = useState([]);
+  const [productCombos, setProductCombos] = useState([]);
   const [supplierCategories, setSupplierCategories] = useState([]);
   const [ingredientCategories, setIngredientCategories] = useState([]);
   const [activeTab, setActiveTab] = useState(
-    mode === "catalog" ? "products" : initialTab || "suppliers"
+    mode === "catalog" ? initialTab || "products" : initialTab || "suppliers"
   );
   const [productForm, setProductForm] = useState(createProductForm);
   const [supplyForm, setSupplyForm] = useState(createSupplyForm);
@@ -92,11 +104,14 @@ export default function ProductManager({ businessId, mode = "resources", initial
   const [taxonomyModalScope, setTaxonomyModalScope] = useState("");
   const isCatalogMode = mode === "catalog";
   const currentProductRecipe = useMemo(
-    () => recipeBooks.find((recipeBook) => recipeBook.product_id === editingProductId) || null,
-    [editingProductId, recipeBooks]
+    () =>
+      recipeBooks.find((recipeBook) => recipeBook.id === productForm.linkedTechnicalSheetId) ||
+      recipeBooks.find((recipeBook) => recipeBook.product_id === editingProductId) ||
+      null,
+    [editingProductId, productForm.linkedTechnicalSheetId, recipeBooks]
   );
   useEffect(() => {
-    setActiveTab(mode === "catalog" ? "products" : initialTab || "suppliers");
+    setActiveTab(mode === "catalog" ? initialTab || "products" : initialTab || "suppliers");
   }, [initialTab, mode]);
 
   useEffect(() => {
@@ -105,6 +120,9 @@ export default function ProductManager({ businessId, mode = "resources", initial
     const unsubscribeSuppliers = subscribeToSuppliers(businessId, setSuppliers);
     const unsubscribePurchases = subscribeToPurchases(businessId, setPurchases);
     const unsubscribeRecipeBooks = subscribeToRecipeBooks(businessId, setRecipeBooks);
+    const unsubscribeProductCategories = subscribeToProductCategories(businessId, setProductCategoryDocs);
+    const unsubscribeProductModifiers = subscribeToProductModifiers(businessId, setProductModifiers);
+    const unsubscribeProductCombos = subscribeToProductCombos(businessId, setProductCombos);
 
     return () => {
       unsubscribeProducts();
@@ -112,12 +130,16 @@ export default function ProductManager({ businessId, mode = "resources", initial
       unsubscribeSuppliers();
       unsubscribePurchases();
       unsubscribeRecipeBooks();
+      unsubscribeProductCategories();
+      unsubscribeProductModifiers();
+      unsubscribeProductCombos();
     };
   }, [businessId]);
 
   useEffect(() => {
     seedDefaultTaxonomies(businessId, "supplier_categories").catch(() => {});
     seedDefaultTaxonomies(businessId, "ingredient_categories").catch(() => {});
+    seedDefaultProductCategories(businessId).catch(() => {});
 
     const unsubscribeSupplierCategories = subscribeToTaxonomies(
       businessId,
@@ -142,7 +164,13 @@ export default function ProductManager({ businessId, mode = "resources", initial
 
   const productRecipeMap = useMemo(() => buildProductRecipeMap(recipeBooks), [recipeBooks]);
   const recipeImpactBySupply = useMemo(() => buildUsageCountBySupply(recipeBooks), [recipeBooks]);
-  const productCategories = useMemo(() => buildProductCategories(products), [products]);
+  const productCategories = useMemo(() => {
+    const fromDocs = productCategoryDocs.map((category) => category.name).filter(Boolean);
+    const fromProducts = buildProductCategories(products);
+    return [...new Set([...fromDocs, ...fromProducts])].sort((left, right) =>
+      left.localeCompare(right, "es", { sensitivity: "base" })
+    );
+  }, [productCategoryDocs, products]);
   const supplierCategoryOptions = useMemo(
     () =>
       buildSelectOptions(
@@ -223,9 +251,12 @@ export default function ProductManager({ businessId, mode = "resources", initial
     const normalizedPrice = Number(productForm.price);
     const normalizedStock = Number(productForm.stock);
     const hasValidTicketConfig =
-      productForm.productType !== "ticket_wallet" ||
+        productForm.productType !== "ticket_wallet" ||
       (Number(productForm.ticketUnits) > 0 &&
         Number(productForm.ticketValidityDays) > 0);
+    const needsTechnicalSheet =
+      productForm.consumesInventory && productForm.inventoryImpactMode === "technical_sheet";
+    const hasKitchenStation = !productForm.requiresKitchen || Boolean(productForm.kitchenStationId);
 
     return (
       Boolean(normalizedName) &&
@@ -234,7 +265,9 @@ export default function ProductManager({ businessId, mode = "resources", initial
       normalizedPrice >= 0 &&
       Number.isFinite(normalizedStock) &&
       normalizedStock >= 0 &&
-      hasValidTicketConfig
+      hasValidTicketConfig &&
+      (!needsTechnicalSheet || Boolean(productForm.linkedTechnicalSheetId)) &&
+      hasKitchenStation
     );
   }, [productForm]);
 
@@ -364,6 +397,11 @@ export default function ProductManager({ businessId, mode = "resources", initial
       const normalizedStock = Number(productForm.stock);
       const normalizedTicketUnits = Number(productForm.ticketUnits);
       const normalizedTicketValidityDays = Number(productForm.ticketValidityDays);
+      const linkedTechnicalSheetId = String(productForm.linkedTechnicalSheetId || "").trim();
+      const inventoryImpactMode =
+        productForm.consumesInventory && linkedTechnicalSheetId
+          ? "technical_sheet"
+          : productForm.inventoryImpactMode;
 
       if (!normalizedName || !normalizedCategory) {
         throw new Error("Completa nombre y categoria antes de guardar el producto.");
@@ -398,13 +436,43 @@ export default function ProductManager({ businessId, mode = "resources", initial
 
       const payload = {
         name: normalizedName,
+        code: productForm.code.trim(),
+        description: productForm.description.trim(),
         category: normalizedCategory,
+        categoryId: productForm.categoryId,
         price: normalizedPrice,
         stock: normalizedStock,
+        taxRate: Number(productForm.taxRate || 0),
+        targetFoodCost: Number(productForm.targetFoodCost || 30),
         productType: productForm.productType,
-        recipeMode: "direct",
+        type: productForm.productType,
+        status: productForm.status,
+        tags: productForm.tags,
+        linkedTechnicalSheetId,
+        consumesInventory: Boolean(productForm.consumesInventory),
+        inventoryImpactMode,
+        allowSaleWhenStockLow: Boolean(productForm.allowSaleWhenStockLow),
+        requiresKitchen: Boolean(productForm.requiresKitchen),
+        kitchenStationId: productForm.kitchenStationId,
+        kitchenStationName: productForm.kitchenStationName,
+        preparationTime: Number(productForm.preparationTime || 0),
+        availableForTables: Boolean(productForm.availableForTables),
+        availableForQuickSale: Boolean(productForm.availableForQuickSale),
+        availableForDelivery: Boolean(productForm.availableForDelivery),
+        visibleInPOS: Boolean(productForm.visibleInPOS),
+        visibleInMenu: Boolean(productForm.visibleInMenu),
+        isFavorite: Boolean(productForm.isFavorite),
+        sortOrder: Number(productForm.sortOrder || 0),
+        color: productForm.color,
+        icon: productForm.icon,
+        recipeMode: productForm.productType === "combo" ? "composed" : "direct",
         ticketEligible:
           productForm.productType === "ticket_wallet" ? true : productForm.ticketEligible,
+        ticketEligibilityType:
+          productForm.ticketEligibilityType ||
+          (productForm.ticketEligible || productForm.productType === "ticket_wallet" ? "meal" : ""),
+        ticketValueReference: productForm.ticketValueReference,
+        allowedTicketPlans: productForm.allowedTicketPlans,
         ticketUnits: normalizedTicketUnits,
         ticketValidityDays: normalizedTicketValidityDays,
       };
@@ -416,7 +484,9 @@ export default function ProductManager({ businessId, mode = "resources", initial
         productId = await createProduct(businessId, payload);
       }
 
-      const existingRecipeBook = recipeBooks.find((recipeBook) => recipeBook.product_id === productId);
+      const existingRecipeBook = linkedTechnicalSheetId
+        ? recipeBooks.find((recipeBook) => recipeBook.id === linkedTechnicalSheetId)
+        : recipeBooks.find((recipeBook) => recipeBook.product_id === productId);
       if (existingRecipeBook) {
         await updateRecipeBook(existingRecipeBook.id, {
           ...existingRecipeBook,
@@ -427,7 +497,7 @@ export default function ProductManager({ businessId, mode = "resources", initial
           direct_ingredients: existingRecipeBook.direct_ingredients || existingRecipeBook.ingredients || [],
           sale_price: payload.price,
         });
-      } else {
+      } else if (!linkedTechnicalSheetId) {
         await createRecipeBook({
           business_id: businessId,
           product_id: productId,
@@ -516,7 +586,7 @@ export default function ProductManager({ businessId, mode = "resources", initial
 
     try {
       if (itemToDelete.type === "product") {
-        await deleteProduct(itemToDelete.id);
+        await archiveProduct(itemToDelete.id);
       } else {
         await updateSupply(itemToDelete.id, businessId, {
           ...itemToDelete,
@@ -548,6 +618,7 @@ export default function ProductManager({ businessId, mode = "resources", initial
         <ResourceSectionRouter
           activeTab={activeTab}
           businessId={businessId}
+          userProfile={userProfile}
           suppliers={suppliers}
           purchases={purchases}
           supplies={supplies}
@@ -578,17 +649,47 @@ export default function ProductManager({ businessId, mode = "resources", initial
         />
       ) : null}
 
-      {activeTab === "products" ? (
+      {activeTab === "products" || isCatalogMode ? (
         <ResourceProductsPanel
           isCatalogMode={isCatalogMode}
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
           productView={productView}
           onProductViewChange={setProductView}
           onCreateProduct={openCreateProductModal}
           products={products}
+          categories={productCategoryDocs}
+          modifiers={productModifiers}
+          combos={productCombos}
           productRecipeMap={productRecipeMap}
+          recipeBooks={recipeBooks}
+          userProfile={userProfile}
           getProductFlowSummary={buildProductFlowSummary}
           onEditProduct={openEditProductModal}
           onOpenProductRecipes={openProductCostingContext}
+          onDuplicateProduct={(product) => {
+            setEditingProductId(null);
+            setProductForm({
+              ...buildProductForm(product),
+              name: `${product.name} copia`,
+              code: "",
+              status: "inactive",
+            });
+            setIsProductModalOpen(true);
+          }}
+          onUpdateProductStatus={updateProductStatus}
+          onCreateCategory={(category) =>
+            createProductCategory(businessId, category, productCategoryDocs)
+          }
+          onUpdateCategory={(categoryId, category) =>
+            updateProductCategory(categoryId, businessId, category, productCategoryDocs)
+          }
+          onCreateModifier={(productId, modifier) =>
+            createProductModifier(businessId, productId, modifier)
+          }
+          onUpdateModifier={(modifierId, productId, modifier) =>
+            updateProductModifier(modifierId, businessId, productId, modifier)
+          }
           onDeleteProduct={(product) =>
             setItemToDelete({ id: product.id, type: "product", name: product.name })
           }
@@ -606,6 +707,9 @@ export default function ProductManager({ businessId, mode = "resources", initial
         productForm={productForm}
         setProductForm={setProductForm}
         productCategories={productCategories}
+        productCategoryDocs={productCategoryDocs}
+        recipeBooks={recipeBooks}
+        productModifiers={productModifiers}
         productModalMetrics={productModalMetrics}
         onOpenRecipe={() => {
           if (isCatalogMode) {
@@ -636,15 +740,15 @@ export default function ProductManager({ businessId, mode = "resources", initial
 
       <ConfirmModal
         open={Boolean(itemToDelete)}
-        title={itemToDelete?.type === "product" ? "Eliminar producto" : "Desactivar insumo"}
+        title={itemToDelete?.type === "product" ? "Archivar producto" : "Desactivar insumo"}
         description={
           itemToDelete
             ? itemToDelete.type === "product"
-              ? `Se eliminara ${itemToDelete.name} de SmartProfit.`
+              ? `${itemToDelete.name} quedara archivado para conservar ventas historicas.`
               : `${itemToDelete.name} quedara inactivo sin borrar historial ni romper fichas tecnicas.`
             : ""
         }
-        confirmLabel={itemToDelete?.type === "product" ? "Eliminar" : "Desactivar"}
+        confirmLabel={itemToDelete?.type === "product" ? "Archivar" : "Desactivar"}
         onConfirm={confirmDelete}
         onCancel={() => setItemToDelete(null)}
       />

@@ -31,6 +31,7 @@ export default function POSCartPanel({
   cashLockInfo,
   paymentMethod,
   setPaymentMethod,
+  paymentOptions = PAYMENT_OPTIONS,
   canUseSplitPayment,
   loading,
   activeOrder,
@@ -375,7 +376,7 @@ export default function POSCartPanel({
 
           <p className="mb-3 text-sm text-slate-300">Metodo de pago</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            {PAYMENT_OPTIONS.map((option) => (
+            {paymentOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"

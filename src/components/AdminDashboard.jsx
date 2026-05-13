@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
+  AlertTriangle,
+  Banknote,
+  BarChart3,
+  CheckCircle2,
   Clock3,
   CreditCard,
   Pencil,
@@ -10,6 +14,7 @@ import {
   Printer,
   ReceiptText,
   Search,
+  TrendingUp,
   Wallet,
 } from "lucide-react";
 import { subscribeToSalesHistory, updateSaleHistoryEntry } from "../services/financeService";
@@ -19,6 +24,14 @@ import {
   subscribeToOperatingExpenses,
   updateOperatingExpense,
 } from "../services/operatingExpenseService";
+import {
+  registerPayablePayment,
+  registerReceivablePayment,
+  subscribeToAccountsPayable,
+  subscribeToAccountsReceivable,
+  subscribeToCashMovements,
+  summarizeCashSession,
+} from "../services/financeControlService";
 import {
   buildCashClosingReportHtml,
   closeCashSession,
@@ -48,7 +61,6 @@ import {
   buildCashPressureQueue,
   buildExecutiveInsights,
   buildPaymentMethodCards,
-  summarizeReceivables,
   buildSupplyChainInsights,
   createEmptyOperatingExpenseForm,
   formatDuration,
@@ -95,12 +107,119 @@ function getMovementOperationalBadge(movement) {
   return movement.operationalType === "compuesto" ? "Venta compuesta" : "Venta directa";
 }
 
+function InsightCard({ tone = "slate", icon: Icon, title, body }) {
+  const tones = {
+    green: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    amber: "border-amber-200 bg-amber-50 text-amber-900",
+    red: "border-rose-200 bg-rose-50 text-rose-900",
+    blue: "border-sky-200 bg-sky-50 text-sky-900",
+    slate: "border-slate-200 bg-slate-50 text-slate-800",
+  };
+
+  return (
+    <article className={`rounded-2xl border px-4 py-3 ${tones[tone] || tones.slate}`}>
+      <div className="flex items-start gap-3">
+        {Icon ? (
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/70">
+            <Icon size={16} />
+          </span>
+        ) : null}
+        <div>
+          <p className="text-sm font-bold">{title}</p>
+          <p className="mt-1 text-sm leading-5 opacity-80">{body}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ExecutiveKpi({ label, value, note, icon: Icon, featured = false, tone = "slate" }) {
+  const tones = {
+    green: "text-emerald-700 bg-emerald-50 ring-emerald-100",
+    red: "text-rose-700 bg-rose-50 ring-rose-100",
+    amber: "text-amber-700 bg-amber-50 ring-amber-100",
+    blue: "text-sky-700 bg-sky-50 ring-sky-100",
+    slate: "text-slate-700 bg-slate-50 ring-slate-100",
+  };
+
+  return (
+    <article
+      className={`rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm ${
+        featured ? "md:col-span-2 xl:col-span-2" : ""
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
+          <p className={`${featured ? "text-4xl" : "text-2xl"} mt-3 font-black text-slate-950`}>{value}</p>
+          <p className="mt-2 text-sm leading-5 text-slate-500">{note}</p>
+        </div>
+        {Icon ? (
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1 ${tones[tone] || tones.slate}`}>
+            <Icon size={20} />
+          </span>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function HorizontalMeter({ label, value, maxValue, tone = "bg-slate-900" }) {
+  const pct = maxValue > 0 ? Math.min((Number(value || 0) / maxValue) * 100, 100) : 0;
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium text-slate-600">{label}</span>
+        <span className="font-mono font-semibold text-slate-900">{formatCOP(value)}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function PaymentMethodSummary({ totals }) {
+  const rows = [
+    ["cash", "Efectivo", "bg-emerald-500"],
+    ["nequi", "Nequi", "bg-fuchsia-500"],
+    ["daviplata", "Daviplata", "bg-rose-500"],
+    ["transfer", "Transferencia", "bg-sky-500"],
+    ["debit_card", "Debito", "bg-indigo-500"],
+    ["credit_card", "Credito", "bg-blue-500"],
+    ["qr", "QR", "bg-cyan-500"],
+  ].map(([key, label, color]) => ({ key, label, color, value: Number(totals?.[key] || 0) }));
+  const maxValue = Math.max(...rows.map((row) => row.value), 1);
+
+  return (
+    <article className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-bold text-slate-900">Metodos de pago</h3>
+          <p className="mt-1 text-sm text-slate-500">Lectura rapida del recaudo por canal.</p>
+        </div>
+        <CreditCard size={20} className="text-slate-400" />
+      </div>
+      <div className="mt-5 space-y-4">
+        {rows.filter((row) => row.value > 0).slice(0, 5).map((row) => (
+          <HorizontalMeter key={row.key} label={row.label} value={row.value} maxValue={maxValue} tone={row.color} />
+        ))}
+        {rows.every((row) => row.value <= 0) ? (
+          <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Aun no hay pagos registrados para graficar.</p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 export default function AdminDashboard({
   businessId,
   business,
   userProfile,
   currentUser,
   requestAuditPin,
+  moduleMode = "finance",
 }) {
   const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
   const buildEmptyOperatingExpenseForm = () => createEmptyOperatingExpenseForm(getLocalDateKey);
@@ -108,7 +227,13 @@ export default function AdminDashboard({
   const [purchases, setPurchases] = useState([]);
   const [operatingExpenses, setOperatingExpenses] = useState([]);
   const [cashClosings, setCashClosings] = useState([]);
+  const [cashMovements, setCashMovements] = useState([]);
+  const [syncedAccountsReceivable, setSyncedAccountsReceivable] = useState([]);
+  const [accountsPayable, setAccountsPayable] = useState([]);
   const [openSession, setOpenSession] = useState(null);
+  const [activeFinanceTab, setActiveFinanceTab] = useState(() =>
+    moduleMode === "cash" ? "cash" : "receivables"
+  );
   const [selectedRange, setSelectedRange] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(() => getLocalDateInputValue(getLocalDateKey));
   const [search, setSearch] = useState("");
@@ -116,6 +241,7 @@ export default function AdminDashboard({
   const [cashCounted, setCashCounted] = useState("");
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [saleToSettle, setSaleToSettle] = useState(null);
+  const [payableToSettle, setPayableToSettle] = useState(null);
   const [selectedMovement, setSelectedMovement] = useState(null);
   const [movementToEdit, setMovementToEdit] = useState(null);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
@@ -126,6 +252,8 @@ export default function AdminDashboard({
     paymentMethod: "cash",
   });
   const [settlementMethod, setSettlementMethod] = useState("cash");
+  const [payablePaymentMethod, setPayablePaymentMethod] = useState("cash");
+  const [payablePaymentAmount, setPayablePaymentAmount] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
@@ -135,6 +263,9 @@ export default function AdminDashboard({
     const unsubscribeOperatingExpenses = subscribeToOperatingExpenses(businessId, setOperatingExpenses);
     const unsubscribeClosings = subscribeToCashClosings(businessId, setCashClosings);
     const unsubscribeOpenSession = subscribeToOpenCashSession(businessId, setOpenSession);
+    const unsubscribeCashMovements = subscribeToCashMovements(businessId, setCashMovements);
+    const unsubscribeReceivables = subscribeToAccountsReceivable(businessId, setSyncedAccountsReceivable);
+    const unsubscribePayables = subscribeToAccountsPayable(businessId, setAccountsPayable);
 
     return () => {
       unsubscribeSales();
@@ -142,6 +273,9 @@ export default function AdminDashboard({
       unsubscribeOperatingExpenses();
       unsubscribeClosings();
       unsubscribeOpenSession();
+      unsubscribeCashMovements();
+      unsubscribeReceivables();
+      unsubscribePayables();
     };
   }, [businessId]);
 
@@ -149,6 +283,10 @@ export default function AdminDashboard({
     const timer = window.setInterval(() => setNow(new Date()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setActiveFinanceTab(moduleMode === "cash" ? "cash" : "receivables");
+  }, [moduleMode]);
 
   const lockInfo = useMemo(() => getCashSessionLockInfo(openSession), [openSession]);
 
@@ -279,14 +417,55 @@ export default function AdminDashboard({
     [filteredSummary, previousFilteredSummary]
   );
 
-  const accountsReceivable = useMemo(
+  const legacyAccountsReceivable = useMemo(
     () => buildAccountsReceivable(sales, normalizeDate),
     [sales]
   );
+  const accountsReceivable = useMemo(() => {
+    const activeSynced = syncedAccountsReceivable.map((account) => ({ ...account, collection: "accountsReceivable" })).filter((account) => {
+      const status = String(account.status || "").trim().toLowerCase();
+      return Number(account.pendingAmount ?? account.pending_amount ?? 0) > 0 && status !== "canceled";
+    });
+
+    return activeSynced.length ? activeSynced : legacyAccountsReceivable;
+  }, [legacyAccountsReceivable, syncedAccountsReceivable]);
 
   const totalReceivable = useMemo(
-    () => summarizeReceivables(accountsReceivable),
+    () =>
+      accountsReceivable.reduce(
+        (sum, account) => sum + Number(account.pendingAmount ?? account.pending_amount ?? account.pending_debt_remaining ?? account.debt_amount ?? 0),
+        0
+      ),
     [accountsReceivable]
+  );
+  const activePayables = useMemo(
+    () =>
+      accountsPayable.filter((account) => {
+        const status = String(account.status || "").trim().toLowerCase();
+        return Number(account.pendingAmount ?? account.pending_amount ?? 0) > 0 && status !== "canceled";
+      }),
+    [accountsPayable]
+  );
+  const totalPayable = useMemo(
+    () =>
+      activePayables.reduce(
+        (sum, account) => sum + Number(account.pendingAmount ?? account.pending_amount ?? 0),
+        0
+      ),
+    [activePayables]
+  );
+  const currentSessionMovements = useMemo(() => {
+    if (!openSession?.id) {
+      return [];
+    }
+
+    return cashMovements.filter(
+      (movement) => String(movement.cashSessionId || movement.cash_session_id || "") === String(openSession.id)
+    );
+  }, [cashMovements, openSession?.id]);
+  const currentSessionSummary = useMemo(
+    () => summarizeCashSession(openSession, currentSessionMovements),
+    [currentSessionMovements, openSession]
   );
 
   const closingPreview = useMemo(
@@ -464,20 +643,30 @@ export default function AdminDashboard({
     return "La pantalla principal queda enfocada en operar y el analisis ejecutivo se concentra en el centro de decisiones.";
   }, [accountsReceivable.length, lockInfo.blocked, totalReceivable]);
 
+  const sectionInsightId = moduleMode === "cash" ? "cash" : "finance";
+  const moduleTitle = moduleMode === "cash" ? "Caja" : "Finanzas";
+  const moduleSummary =
+    moduleMode === "cash"
+      ? "Operacion de turno: apertura, recaudo por medio, movimientos, egresos y cierre."
+      : "Control financiero: cartera, cuentas por pagar, gastos, obligaciones y rentabilidad estimada.";
+
   useEffect(() => {
-    publishSectionInsights("finance", {
-      eyebrow: "Caja y finanzas",
-      title: "Lectura ejecutiva del turno",
+    publishSectionInsights(sectionInsightId, {
+      eyebrow: moduleTitle,
+      title: moduleMode === "cash" ? "Lectura del turno" : "Lectura financiera",
       summary: financeDecisionSummary,
       items: financeDecisionItems,
     });
 
-    return () => clearSectionInsights("finance");
+    return () => clearSectionInsights(sectionInsightId);
   }, [
     clearSectionInsights,
     financeDecisionItems,
     financeDecisionSummary,
+    moduleMode,
+    moduleTitle,
     publishSectionInsights,
+    sectionInsightId,
   ]);
 
   const applyQuickFilter = (range, dateValue) => {
@@ -503,14 +692,19 @@ export default function AdminDashboard({
       return;
     }
 
+    if (cashCounted === "") {
+      return;
+    }
+
     setIsBusy(true);
     try {
       const report = await closeCashSession({
         businessId,
         closingId: openSession.id,
-        cashCounted: Number(cashCounted || 0),
+        cashCounted,
         context: {
           businessName: business?.name || "SmartProfit",
+          operatorId: currentUser?.uid || "",
           operatorName:
             userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Operador SmartProfit",
           cashierEmail: currentUser?.email || userProfile?.email || "",
@@ -531,9 +725,55 @@ export default function AdminDashboard({
 
     setIsBusy(true);
     try {
-      await settlePendingDebtSale(saleToSettle.id, settlementMethod);
+      if (saleToSettle.collection === "accountsReceivable" || typeof saleToSettle.pendingAmount !== "undefined") {
+        await registerReceivablePayment({
+          businessId,
+          accountReceivableId: saleToSettle.id,
+          amount: Number(saleToSettle.pendingAmount ?? saleToSettle.pending_amount ?? 0),
+          method: settlementMethod,
+          actor: {
+            id: currentUser?.uid || "",
+            name: userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Operador SmartProfit",
+            email: currentUser?.email || userProfile?.email || "",
+          },
+        });
+      } else {
+        await settlePendingDebtSale(saleToSettle.id, settlementMethod);
+      }
       setSaleToSettle(null);
       setSettlementMethod("cash");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const openPayablePayment = (account) => {
+    setPayableToSettle(account);
+    setPayablePaymentMethod("cash");
+    setPayablePaymentAmount(String(Math.round(Number(account.pendingAmount ?? account.pending_amount ?? 0))));
+  };
+
+  const handleSettlePayable = async () => {
+    if (!payableToSettle) {
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      await registerPayablePayment({
+        businessId,
+        accountPayableId: payableToSettle.id,
+        amount: Number(payablePaymentAmount || 0),
+        method: payablePaymentMethod,
+        actor: {
+          id: currentUser?.uid || "",
+          name: userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Operador SmartProfit",
+          email: currentUser?.email || userProfile?.email || "",
+        },
+      });
+      setPayableToSettle(null);
+      setPayablePaymentAmount("");
+      setPayablePaymentMethod("cash");
     } finally {
       setIsBusy(false);
     }
@@ -649,41 +889,319 @@ export default function AdminDashboard({
     String(movementEditForm.concept || "").trim().length > 0 &&
     Number.isFinite(Number(movementEditForm.total)) &&
     Number(movementEditForm.total) > 0;
+  const cashTabs = [
+    { id: "cash", label: "Caja actual" },
+    { id: "movements", label: "Movimientos" },
+    { id: "closing", label: "Cierre de caja" },
+  ];
+  const financeTabs = [
+    { id: "receivables", label: "Cuentas por cobrar" },
+    { id: "payables", label: "Cuentas por pagar" },
+    { id: "expenses", label: "Gastos" },
+    { id: "reports", label: "Reportes" },
+  ];
+  const visibleTabs = moduleMode === "cash" ? cashTabs : financeTabs;
+  const canSettlePayable =
+    payableToSettle &&
+    Number.isFinite(Number(payablePaymentAmount)) &&
+    Number(payablePaymentAmount) > 0 &&
+    Number(payablePaymentAmount) <= Number(payableToSettle.pendingAmount ?? payableToSettle.pending_amount ?? 0);
+  const cashDifferencePreview = Number(closingPreview?.difference || 0);
+  const cashAlerts = [
+    lockInfo.blocked
+      ? {
+          tone: "amber",
+          icon: AlertTriangle,
+          title: "Caja requiere atencion",
+          body: lockInfo.message,
+        }
+      : null,
+    cashDifferencePreview !== 0
+      ? {
+          tone: cashDifferencePreview < 0 ? "red" : "amber",
+          icon: AlertTriangle,
+          title: cashDifferencePreview < 0 ? "Faltante estimado" : "Sobrante estimado",
+          body: `La diferencia calculada es ${formatCOP(cashDifferencePreview)}. Revisa egresos, ajustes y cobros antes de cerrar.`,
+        }
+      : null,
+    totalReceivable > 0
+      ? {
+          tone: "amber",
+          icon: Landmark,
+          title: "Hay dinero pendiente por cobrar",
+          body: `${formatCOP(totalReceivable)} no debe contarse como efectivo recibido.`,
+        }
+      : null,
+    boxOpenDuration?.isAlert
+      ? {
+          tone: "red",
+          icon: Clock3,
+          title: "Turno demasiado largo",
+          body: `La caja lleva ${boxOpenDuration.label} abierta. Conviene cerrar o auditar el turno.`,
+        }
+      : null,
+  ].filter(Boolean);
+  const financeAlerts = [
+    totalReceivable > 0
+      ? {
+          tone: "amber",
+          icon: Landmark,
+          title: "Cartera por recuperar",
+          body: `${accountsReceivable.length} cuenta(s) suman ${formatCOP(totalReceivable)}. Prioriza cobros antiguos o de mayor valor.`,
+        }
+      : {
+          tone: "green",
+          icon: CheckCircle2,
+          title: "Cartera controlada",
+          body: "No hay saldos relevantes por cobrar en la lectura actual.",
+        },
+    totalPayable > 0
+      ? {
+          tone: "amber",
+          icon: ArrowDownCircle,
+          title: "Obligaciones pendientes",
+          body: `Hay ${formatCOP(totalPayable)} pendiente con proveedores. Programa pagos sin afectar la caja operativa.`,
+        }
+      : {
+          tone: "green",
+          icon: CheckCircle2,
+          title: "Proveedores al dia",
+          body: "No hay cuentas por pagar activas registradas.",
+        },
+    balance < 0
+      ? {
+          tone: "red",
+          icon: AlertTriangle,
+          title: "Rentabilidad en riesgo",
+          body: "Los egresos filtrados superan los ingresos. Revisa gastos, compras y precios.",
+        }
+      : {
+          tone: "blue",
+          icon: TrendingUp,
+          title: "Resultado positivo",
+          body: "El periodo mantiene utilidad estimada positiva frente a los egresos filtrados.",
+        },
+  ];
+  const cashHeroStatus = openSession
+    ? {
+        label: "Caja abierta",
+        classes: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+      }
+    : {
+        label: "Caja cerrada",
+        classes: "bg-slate-100 text-slate-700 ring-slate-200",
+      };
+  const cashierLabel =
+    openSession?.cashierName ||
+    openSession?.cashier_name ||
+    userProfile?.display_name ||
+    currentUser?.displayName ||
+    currentUser?.email ||
+    "Sin cajero";
+  const openedAtLabel = normalizeDate(openSession?.opened_at || openSession?.openedAt || openSession?.createdAt);
 
   return (
     <>
       <section className="space-y-6">
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Resultado del dia
-            </p>
-            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(todayBalance)}</p>
-            <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1 ${todayBalanceStatus.classes}`}>
-              {todayBalanceStatus.label}
-            </span>
-          </article>
-          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Ventas del dia
-            </p>
-            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(todaySummary.income)}</p>
-            <p className="mt-2 text-sm text-slate-500">Ingreso registrado en la jornada actual.</p>
-          </article>
-          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Gastos del dia
-            </p>
-            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(todaySummary.expense)}</p>
-            <p className="mt-2 text-sm text-slate-500">Compras y egresos cargados hoy.</p>
-          </article>
-          <article className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Cartera pendiente
-            </p>
-            <p className="mt-3 text-3xl font-black text-slate-950">{formatCOP(totalReceivable)}</p>
-            <p className="mt-2 text-sm text-slate-500">Saldo por recuperar de clientes.</p>
-          </article>
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                {moduleMode === "cash" ? "Modulo operativo" : "Modulo financiero"}
+              </p>
+              <h2 className="mt-2 text-2xl font-black text-slate-950">{moduleTitle}</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{moduleSummary}</p>
+            </div>
+            <div className="grid gap-2 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200 sm:grid-cols-2">
+              <a
+                href="/caja"
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.history.pushState({}, "", "/caja");
+                  window.dispatchEvent(new PopStateEvent("popstate"));
+                }}
+                className={`rounded-xl px-4 py-2 text-center text-sm font-semibold ${
+                  moduleMode === "cash" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"
+                }`}
+              >
+                Caja
+              </a>
+              <a
+                href="/finanzas"
+                onClick={(event) => {
+                  event.preventDefault();
+                  window.history.pushState({}, "", "/finanzas");
+                  window.dispatchEvent(new PopStateEvent("popstate"));
+                }}
+                className={`rounded-xl px-4 py-2 text-center text-sm font-semibold ${
+                  moduleMode === "finance" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"
+                }`}
+              >
+                Finanzas
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {moduleMode === "cash" && activeFinanceTab === "cash" ? (
+          <>
+            <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${cashHeroStatus.classes}`}>
+                      {cashHeroStatus.label}
+                    </span>
+                    {boxOpenDuration ? (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                        {boxOpenDuration.label}
+                      </span>
+                    ) : null}
+                  </div>
+                  <h3 className="mt-4 text-3xl font-black text-slate-950">¿Mi turno cuadra?</h3>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+                    <span>Cajero: <strong className="text-slate-900">{cashierLabel}</strong></span>
+                    <span>Inicio: <strong className="text-slate-900">{openedAtLabel ? openedAtLabel.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" }) : "-"}</strong></span>
+                    <span>Base: <strong className="text-slate-900">{formatCOP(Number(openSession?.opening_amount || openSession?.openingAmount || 0))}</strong></span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsExpenseModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <ArrowDownCircle size={16} />
+                    Registrar egreso
+                  </button>
+                  {openSession ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsCloseModalOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white"
+                    >
+                      <ReceiptText size={16} />
+                      Cerrar caja
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleOpenCash}
+                      disabled={isBusy}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      <Wallet size={16} />
+                      Abrir caja
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <ExecutiveKpi
+                featured
+                tone="green"
+                icon={TrendingUp}
+                label="Ventas del turno"
+                value={formatCOP(todaySummary.income)}
+                note={balanceVariation.label}
+              />
+              <ExecutiveKpi
+                tone="slate"
+                icon={Banknote}
+                label="Efectivo esperado"
+                value={formatCOP(currentSessionSummary.expectedCash || closingPreview?.expectedCash || 0)}
+                note="Base inicial mas efectivo real, menos egresos."
+              />
+              <ExecutiveKpi
+                tone="blue"
+                icon={CreditCard}
+                label="Pagos digitales"
+                value={formatCOP(currentSessionSummary.digitalIncome || 0)}
+                note="No mezclado con efectivo fisico."
+              />
+              <ExecutiveKpi
+                tone="amber"
+                icon={Landmark}
+                label="Pendiente por cobrar"
+                value={formatCOP(totalReceivable)}
+                note="No cuenta como dinero recibido."
+              />
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-[1fr_360px]">
+              <div className="grid gap-3">
+                {(cashAlerts.length ? cashAlerts : [{
+                  tone: "green",
+                  icon: CheckCircle2,
+                  title: "Turno sin alertas criticas",
+                  body: "Caja no presenta diferencias estimadas ni bloqueos operativos en este momento.",
+                }]).slice(0, 3).map((alert) => (
+                  <InsightCard key={alert.title} {...alert} />
+                ))}
+              </div>
+              <PaymentMethodSummary totals={paymentMethodTotals} />
+            </section>
+          </>
+        ) : (
+          <>
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <ExecutiveKpi
+                featured
+                tone={balance >= 0 ? "green" : "red"}
+                icon={TrendingUp}
+                label="Utilidad estimada"
+                value={formatCOP(balance)}
+                note={balance >= 0 ? "Resultado positivo en el periodo filtrado." : "Egresos por encima de ingresos filtrados."}
+              />
+              <ExecutiveKpi tone="blue" icon={BarChart3} label="Ventas netas" value={formatCOP(filteredSummary.income)} note={balanceVariation.label} />
+              <ExecutiveKpi tone="red" icon={ArrowDownCircle} label="Gastos" value={formatCOP(filteredSummary.expense)} note="Compras y gastos del periodo." />
+              <ExecutiveKpi tone="amber" icon={Landmark} label="Por cobrar" value={formatCOP(totalReceivable)} note={`${accountsReceivable.length} cuenta(s) activas.`} />
+              <ExecutiveKpi tone="slate" icon={ReceiptText} label="Por pagar" value={formatCOP(totalPayable)} note={`${activePayables.length} obligacion(es) activas.`} />
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-[1fr_360px]">
+              <div className="grid gap-3">
+                {financeAlerts.slice(0, 3).map((alert) => (
+                  <InsightCard key={alert.title} {...alert} />
+                ))}
+              </div>
+              <article className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Ventas vs gastos</h3>
+                    <p className="mt-1 text-sm text-slate-500">Comparacion del periodo filtrado.</p>
+                  </div>
+                  <BarChart3 size={20} className="text-slate-400" />
+                </div>
+                <div className="mt-5 space-y-5">
+                  <HorizontalMeter label="Ventas" value={filteredSummary.income} maxValue={Math.max(filteredSummary.income, filteredSummary.expense, 1)} tone="bg-emerald-500" />
+                  <HorizontalMeter label="Gastos" value={filteredSummary.expense} maxValue={Math.max(filteredSummary.income, filteredSummary.expense, 1)} tone="bg-rose-500" />
+                  <HorizontalMeter label="Cartera" value={totalReceivable} maxValue={Math.max(totalReceivable, totalPayable, 1)} tone="bg-amber-500" />
+                </div>
+              </article>
+            </section>
+          </>
+        )}
+
+        <section className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex gap-2 overflow-x-auto">
+            {visibleTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveFinanceTab(tab.id)}
+                className={`shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                  activeFinanceTab === tab.id
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-sm">
@@ -722,6 +1240,7 @@ export default function AdminDashboard({
           </div>
         </section>
 
+        {moduleMode === "cash" && activeFinanceTab === "cash" ? (
         <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
@@ -841,7 +1360,9 @@ export default function AdminDashboard({
             </div>
           </div>
         </section>
+        ) : null}
 
+        {moduleMode === "cash" && activeFinanceTab === "movements" ? (
         <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
@@ -1200,8 +1721,10 @@ export default function AdminDashboard({
             </table>
           </div>
         </section>
+        ) : null}
       </section>
       <section className="mt-6 grid gap-6 xl:grid-cols-[0.75fr_1.25fr]">
+        {moduleMode === "finance" && activeFinanceTab === "receivables" ? (
         <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1223,20 +1746,20 @@ export default function AdminDashboard({
                 <div key={sale.id} className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900">{sale.customer_name || "Cliente"}</p>
+                      <p className="font-semibold text-slate-900">{sale.customerName || sale.customer_name || "Cliente"}</p>
                       <p className="text-xs text-slate-500">
                         {new Intl.DateTimeFormat("es-CO", {
                           dateStyle: "short",
                           timeStyle: "short",
-                        }).format(normalizeDate(sale.closed_at || sale.createdAt) || new Date())}
+                        }).format(normalizeDate(sale.closed_at || sale.createdAt || sale.created_at) || new Date())}
                       </p>
                     </div>
                     <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
-                      {formatCOP(Number(sale.pending_debt_remaining ?? sale.debt_amount ?? 0))}
+                      {formatCOP(Number(sale.pendingAmount ?? sale.pending_amount ?? sale.pending_debt_remaining ?? sale.debt_amount ?? 0))}
                     </span>
                   </div>
                   <p className="mt-3 text-sm text-slate-600">
-                    {(sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ") || sale.concept}
+                    {(sale.items || []).map((item) => `${item.quantity}x ${item.name}`).join(", ") || sale.concept || sale.saleId || sale.sale_id || "Venta a credito"}
                   </p>
                   <button
                     type="button"
@@ -1252,6 +1775,8 @@ export default function AdminDashboard({
           </div>
         </article>
 
+        ) : null}
+        {moduleMode === "cash" && activeFinanceTab === "closing" ? (
         <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1291,7 +1816,120 @@ export default function AdminDashboard({
             ))}
           </div>
         </article>
+        ) : null}
       </section>
+
+      {moduleMode === "finance" && activeFinanceTab === "expenses" ? (
+      <section className="mt-6 rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Gastos operativos</h3>
+            <p className="text-sm text-slate-500">Egresos no ligados directamente a compras de inventario.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsExpenseModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <ReceiptText size={16} />
+            Registrar gasto
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          {operatingExpenses.slice(0, 6).map((expense) => (
+            <article key={expense.id} className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-900">{expense.concept || "Gasto operativo"}</p>
+                  <p className="mt-1 text-xs text-slate-500">{expense.category || "General"} · {PAYMENT_METHOD_LABELS[expense.payment_method] || expense.payment_method || "Efectivo"}</p>
+                </div>
+                <span className="font-mono text-sm font-bold text-rose-700">
+                  -{formatCOP(Number(expense.total || expense.amount || 0))}
+                </span>
+              </div>
+              <p className="mt-3 text-sm text-slate-600">{expense.notes || expense.vendor_name || "Sin detalle adicional."}</p>
+            </article>
+          ))}
+          {operatingExpenses.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
+              No hay gastos operativos registrados.
+            </div>
+          ) : null}
+        </div>
+      </section>
+      ) : null}
+
+      {moduleMode === "finance" && ["payables", "reports"].includes(activeFinanceTab) ? (
+      <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Cuentas por pagar</h3>
+              <p className="text-sm text-slate-500">Compras a credito que aun no han salido de caja.</p>
+            </div>
+            <span className="rounded-full bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+              Total por pagar {formatCOP(totalPayable)}
+            </span>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {activePayables.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
+                No hay cuentas pendientes con proveedores.
+              </div>
+            ) : (
+              activePayables.slice(0, 6).map((account) => (
+                <div key={account.id} className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{account.supplierName || account.supplier_name || "Proveedor"}</p>
+                      <p className="text-xs text-slate-500">{account.purchaseId || account.purchase_id || "Compra registrada"}</p>
+                    </div>
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                      {formatCOP(Number(account.pendingAmount ?? account.pending_amount ?? 0))}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+                    <span>Inicial {formatCOP(Number(account.originalAmount ?? account.original_amount ?? 0))}</span>
+                    <span>Abonos {formatCOP(Number(account.paidAmount ?? account.paid_amount ?? 0))}</span>
+                    <span>Estado {account.status || "pending"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openPayablePayment(account)}
+                    className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    <ArrowDownCircle size={16} />
+                    Registrar pago
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Reportes financieros</h3>
+            <p className="text-sm text-slate-500">Lectura preparada para caja diaria, metodos, cartera, proveedores y rentabilidad.</p>
+          </div>
+          <div className="mt-5 grid gap-3">
+            {[
+              ["Ingresos filtrados", filteredSummary.income],
+              ["Egresos filtrados", filteredSummary.expense],
+              ["Cuentas por cobrar", totalReceivable],
+              ["Cuentas por pagar", totalPayable],
+              ["Utilidad estimada", balance],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                <span className="text-sm font-semibold text-slate-600">{label}</span>
+                <span className="font-mono text-sm font-bold text-slate-950">{formatCOP(value)}</span>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+      ) : null}
 
       <ModalWrapper
         open={isExpenseModalOpen}
@@ -1384,7 +2022,7 @@ export default function AdminDashboard({
                 }
                 className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
               >
-                {["cash", "card", "transfer", "nequi", "daviplata"].map((method) => (
+                {["cash", "debit_card", "credit_card", "transfer", "nequi", "daviplata", "qr"].map((method) => (
                   <option key={method} value={method}>
                     {PAYMENT_METHOD_LABELS[method]}
                   </option>
@@ -1564,7 +2202,7 @@ export default function AdminDashboard({
                   }
                   className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
                 >
-                  {["cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map(
+                  {["cash", "card", "debit_card", "credit_card", "transfer", "nequi", "daviplata", "qr", "ticket_wallet", "courtesy"].map(
                     (method) => (
                       <option key={method} value={method}>
                         {PAYMENT_METHOD_LABELS[method]}
@@ -1746,8 +2384,8 @@ export default function AdminDashboard({
             <button
               type="button"
               onClick={handleCloseCash}
-              disabled={isBusy}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
+              disabled={isBusy || cashCounted === ""}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Printer size={16} />
               {isBusy ? "Cerrando..." : "Cerrar caja y emitir reporte"}
@@ -1773,7 +2411,7 @@ export default function AdminDashboard({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            {["cash", "card", "transfer", "nequi", "daviplata"].map((method) => (
+            {["cash", "debit_card", "credit_card", "transfer", "nequi", "daviplata", "qr"].map((method) => (
               <button
                 key={method}
                 type="button"
@@ -1804,6 +2442,71 @@ export default function AdminDashboard({
               className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
             >
               {isBusy ? "Liquidando..." : "Liquidar saldo"}
+            </button>
+          </div>
+        </div>
+      </ModalWrapper>
+
+      <ModalWrapper
+        open={Boolean(payableToSettle)}
+        onClose={() => setPayableToSettle(null)}
+        maxWidthClass="max-w-2xl"
+        icon={{ main: <ArrowDownCircle size={20} />, close: "X" }}
+        title="Registrar pago a proveedor"
+        description="Este pago reduce la cuenta por pagar y genera egreso real en caja."
+      >
+        <div className="grid gap-6">
+          <div className="rounded-3xl bg-slate-50 p-5 ring-1 ring-slate-200">
+            <p className="text-sm font-semibold text-slate-900">{payableToSettle?.supplierName || payableToSettle?.supplier_name || "Proveedor"}</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Saldo pendiente {formatCOP(Number(payableToSettle?.pendingAmount ?? payableToSettle?.pending_amount ?? 0))}
+            </p>
+          </div>
+
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            <span>Valor a pagar</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={payablePaymentAmount}
+              onChange={(event) => setPayablePaymentAmount(event.target.value)}
+              className="h-14 rounded-2xl border border-slate-200 bg-white px-4 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {["cash", "debit_card", "credit_card", "transfer", "nequi", "daviplata", "qr"].map((method) => (
+              <button
+                key={method}
+                type="button"
+                onClick={() => setPayablePaymentMethod(method)}
+                className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${
+                  payablePaymentMethod === method
+                    ? "border-amber-400 bg-gradient-to-r from-amber-500 to-amber-600 text-white"
+                    : "border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                {PAYMENT_METHOD_LABELS[method]}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setPayableToSettle(null)}
+              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSettlePayable}
+              disabled={isBusy || !canSettlePayable}
+              className="rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isBusy ? "Registrando..." : "Registrar pago"}
             </button>
           </div>
         </div>

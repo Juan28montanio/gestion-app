@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
@@ -13,6 +14,7 @@ import { auth, db } from "../firebase/firebaseConfig";
 import { refreshRecipeBooksForIngredients } from "./recipeBookService";
 import { buildSupplySearchKey, listSupplies } from "./supplyService";
 import { resolvePurchasePaymentMethod } from "../utils/payments";
+import { getCurrentOpenCashSession } from "./cashClosingService";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
 import {
   calculateConversionFactor,
@@ -534,6 +536,119 @@ function appendHistory(purchase, event) {
   ];
 }
 
+function buildPurchaseFinanceImpact(transaction, purchaseRef, payload, openCashSession = null) {
+  const paymentMethod = resolvePurchasePaymentMethod(
+    payload.payment_method,
+    payload.supplier_payment_terms
+  );
+  const total = toFiniteNumber(payload.total, 0);
+
+  if (total <= 0) {
+    return;
+  }
+
+  if (paymentMethod === "supplier_credit") {
+    const payableRef = doc(collection(db, "accountsPayable"));
+    transaction.set(payableRef, {
+      businessId: payload.business_id,
+      business_id: payload.business_id,
+      supplierId: payload.supplier_id,
+      supplier_id: payload.supplier_id,
+      supplierName: payload.supplier_name,
+      supplier_name: payload.supplier_name,
+      purchaseId: purchaseRef.id,
+      purchase_id: purchaseRef.id,
+      originalAmount: total,
+      original_amount: total,
+      paidAmount: 0,
+      paid_amount: 0,
+      pendingAmount: total,
+      pending_amount: total,
+      status: "pending",
+      dueDate: null,
+      due_date: null,
+      notes: payload.notes || "",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    transaction.set(doc(collection(db, "auditLogs")), {
+      business_id: payload.business_id,
+      businessId: payload.business_id,
+      user_id: getCurrentUserId(),
+      userId: getCurrentUserId(),
+      user_name: getCurrentUserId(),
+      userName: getCurrentUserId(),
+      module: "finance",
+      action: "payable.created",
+      entity_type: "accountsPayable",
+      entityType: "accountsPayable",
+      entity_id: payableRef.id,
+      entityId: payableRef.id,
+      previousValue: null,
+      newValue: {
+        purchaseId: purchaseRef.id,
+        supplierId: payload.supplier_id,
+        pendingAmount: total,
+      },
+      reason: "Compra registrada a credito",
+      createdAt: serverTimestamp(),
+    });
+    return;
+  }
+
+  const movementRef = doc(collection(db, "cashMovements"));
+  transaction.set(movementRef, {
+    businessId: payload.business_id,
+    business_id: payload.business_id,
+    cashSessionId: openCashSession?.id || null,
+    cash_session_id: openCashSession?.id || null,
+    purchaseId: purchaseRef.id,
+    purchase_id: purchaseRef.id,
+    type: "purchase_expense",
+    method: paymentMethod || "cash",
+    amount: total,
+    description: payload.concept || `Compra ${payload.purchaseNumber}`,
+    sourceType: "purchase",
+    source_type: "purchase",
+    sourceId: purchaseRef.id,
+    source_id: purchaseRef.id,
+    status: "valid",
+    createdBy: {
+      id: getCurrentUserId(),
+      name: getCurrentUserId(),
+      email: auth.currentUser?.email || "",
+    },
+    created_by: {
+      id: getCurrentUserId(),
+      name: getCurrentUserId(),
+      email: auth.currentUser?.email || "",
+    },
+    createdAt: serverTimestamp(),
+  });
+  transaction.set(doc(collection(db, "auditLogs")), {
+    business_id: payload.business_id,
+    businessId: payload.business_id,
+    user_id: getCurrentUserId(),
+    userId: getCurrentUserId(),
+    user_name: getCurrentUserId(),
+    userName: getCurrentUserId(),
+    module: "cash",
+    action: "cashMovement.purchaseExpense",
+    entity_type: "cashMovements",
+    entityType: "cashMovements",
+    entity_id: movementRef.id,
+    entityId: movementRef.id,
+    previousValue: null,
+    newValue: {
+      purchaseId: purchaseRef.id,
+      amount: total,
+      method: paymentMethod || "cash",
+    },
+    reason: "Compra pagada de contado",
+    createdAt: serverTimestamp(),
+  });
+}
+
 async function applyInventoryDelta(transaction, payload, purchaseRef, items, movementType, reason = "") {
   const touchedIngredientIds = [];
   const impactLines = [];
@@ -743,6 +858,13 @@ export async function confirmPurchase(purchaseId) {
 
   let touchedIngredientIds = [];
   let businessId = "";
+  let openCashSession = null;
+  const purchaseBeforeConfirm = await getDoc(doc(db, "purchases", normalizedPurchaseId));
+
+  if (purchaseBeforeConfirm.exists()) {
+    const purchaseBusinessId = normalizeText(purchaseBeforeConfirm.data().business_id);
+    openCashSession = purchaseBusinessId ? await getCurrentOpenCashSession(purchaseBusinessId) : null;
+  }
 
   await runTransaction(db, async (transaction) => {
     const purchaseRef = doc(db, "purchases", normalizedPurchaseId);
@@ -783,6 +905,8 @@ export async function confirmPurchase(purchaseId) {
         updatedAt: serverTimestamp(),
       });
     }
+
+    buildPurchaseFinanceImpact(transaction, purchaseRef, payload, openCashSession);
 
     transaction.update(purchaseRef, {
       status: PURCHASE_STATUS.CONFIRMED,

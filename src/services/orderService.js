@@ -53,15 +53,38 @@ function normalizeOrderItems(items) {
       throw new Error("Cada item debe incluir un precio valido.");
     }
 
+    const modifiers = Array.isArray(item?.modifiers)
+      ? item.modifiers.map((modifier) => ({
+          id: String(modifier?.id || "").trim(),
+          name: String(modifier?.name || "").trim(),
+          priceDelta: Number(modifier?.priceDelta ?? modifier?.price_delta ?? modifier?.price ?? 0) || 0,
+          affectsInventory: Boolean(modifier?.affectsInventory ?? modifier?.affects_inventory),
+          linkedInventoryItemId: String(modifier?.linkedInventoryItemId || "").trim(),
+          linkedTechnicalSheetId: String(modifier?.linkedTechnicalSheetId || "").trim(),
+          stationImpact: String(modifier?.stationImpact || "").trim(),
+        }))
+      : [];
+
     return {
       id,
+      productId: id,
       name,
+      productName: name,
       quantity,
       price,
+      unitPrice: price,
       note,
+      notes: note,
       category: String(item?.category || "").trim(),
+      categoryId: String(item?.categoryId || "").trim(),
       product_type: String(item?.product_type || item?.productType || "standard").trim(),
       recipe_mode: String(item?.recipe_mode || item?.recipeMode || "direct").trim(),
+      inventoryImpactMode: String(item?.inventoryImpactMode || item?.inventory_impact_mode || "").trim(),
+      technicalSheetId: String(item?.technicalSheetId || item?.technical_sheet_id || "").trim(),
+      kitchenStationId: String(item?.kitchenStationId || item?.kitchen_station_id || "").trim(),
+      kitchenStationName: String(item?.kitchenStationName || item?.kitchen_station_name || "").trim(),
+      requiresKitchen: Boolean(item?.requiresKitchen ?? item?.requires_kitchen),
+      modifiers,
       ticket_units: Number(item?.ticket_units || item?.ticketUnits || 0),
       ticket_validity_days: Number(item?.ticket_validity_days || item?.ticketValidityDays || 30),
       ticket_eligible: Boolean(item?.ticket_eligible),
@@ -72,7 +95,13 @@ function normalizeOrderItems(items) {
 
 function calculateOrderTotal(items) {
   return items.reduce(
-    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+    (sum, item) => {
+      const modifiersTotal = (item.modifiers || []).reduce(
+        (modifierSum, modifier) => modifierSum + Number(modifier.priceDelta || 0),
+        0
+      );
+      return sum + (Number(item.price || 0) + modifiersTotal) * Number(item.quantity || 0);
+    },
     0
   );
 }
@@ -164,7 +193,7 @@ export function subscribeToActiveOrders(businessId, callback) {
   const ordersQuery = query(
     ordersCollection,
     where("business_id", "==", businessId),
-    where("status", "in", ["preparando", "cuenta_solicitada", "open", "requested_bill"])
+    where("status", "in", ["preparando", "sent", "preparing", "cuenta_solicitada", "open", "requested_bill", "waiting_payment"])
   );
 
   return onSnapshot(ordersQuery, (snapshot) => {
@@ -207,7 +236,7 @@ export function subscribeToActiveOrder(businessId, tableId, callback) {
     ordersCollection,
     where("business_id", "==", businessId),
     where("table_id", "==", tableId),
-    where("status", "in", ["preparando", "cuenta_solicitada", "open", "requested_bill"])
+    where("status", "in", ["preparando", "sent", "preparing", "cuenta_solicitada", "open", "requested_bill", "waiting_payment"])
   );
 
   return onSnapshot(orderQuery, (snapshot) => {
@@ -284,16 +313,22 @@ export async function requestPayment({
   ticketConsumption,
   splitPayments,
   customer,
+  actor,
+  tableSessionId,
+  sessionId,
 }) {
   await closeOrderAndLogSale(orderId, paymentMethod, {
     businessId,
     tableId,
+    tableSessionId,
+    sessionId,
     chargedTotal,
     cashReceived,
     subtotal,
     ticketConsumption,
     splitPayments,
     customer,
+    actor,
   });
 }
 

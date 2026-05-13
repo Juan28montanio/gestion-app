@@ -5,6 +5,7 @@ import SupplierManager from "../../../components/SupplierManager";
 export default function ResourceSectionRouter({
   activeTab,
   businessId,
+  userProfile,
   suppliers,
   purchases,
   supplies,
@@ -21,6 +22,7 @@ export default function ResourceSectionRouter({
     return (
       <SupplierManager
         businessId={businessId}
+        userProfile={userProfile}
         suppliers={suppliers}
         purchases={purchases}
         categoryOptions={supplierCategoryOptions}

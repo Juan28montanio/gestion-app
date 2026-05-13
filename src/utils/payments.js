@@ -2,10 +2,16 @@ export const PAYMENT_METHOD_LABELS = {
   all: "Todos",
   cash: "Efectivo",
   card: "Tarjeta",
+  debit_card: "Tarjeta debito",
+  credit_card: "Tarjeta credito",
   transfer: "Transferencia",
   nequi: "Nequi",
   daviplata: "Daviplata",
+  qr: "QR",
+  ticket: "Tiquetera",
   ticket_wallet: "Tiquetera",
+  courtesy: "Cortesia",
+  customer_credit: "Cuenta por cobrar",
   account_credit: "Cuenta por cobrar",
   supplier_credit: "Credito proveedor",
   split: "Pago dividido",
@@ -16,10 +22,16 @@ export function createEmptyPaymentTotals() {
   return {
     cash: 0,
     card: 0,
+    debit_card: 0,
+    credit_card: 0,
     transfer: 0,
     nequi: 0,
     daviplata: 0,
+    qr: 0,
     ticket_wallet: 0,
+    courtesy: 0,
+    customer_credit: 0,
+    account_credit: 0,
   };
 }
 

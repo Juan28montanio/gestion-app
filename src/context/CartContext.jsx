@@ -15,10 +15,22 @@ const buildCartItem = (product, modifiers = [], note = "") => ({
   productId: product.id,
   id: product.id,
   name: product.name,
+  productName: product.name,
   category: product.category,
+  categoryId: product.categoryId || "",
   price: Number(product.price) || 0,
+  unitPrice: Number(product.price) || 0,
   product_type: product.product_type || "standard",
   recipe_mode: product.recipe_mode || "direct",
+  technicalSheetId:
+    product.costing?.linkedTechnicalSheetId ||
+    product.inventory?.linkedTechnicalSheetId ||
+    product.technicalSheetId ||
+    "",
+  kitchenStationId: product.operation?.kitchenStationId || product.kitchenStationId || "",
+  kitchenStationName: product.operation?.kitchenStationName || product.kitchenStationName || "",
+  requiresKitchen: Boolean(product.operation?.requiresKitchen ?? product.requiresKitchen),
+  inventoryImpactMode: product.inventory?.inventoryImpactMode || product.inventoryImpactMode || "none",
   ticket_units: Number(product.ticket_units || 0),
   ticket_validity_days: Number(product.ticket_validity_days || 30),
   ticket_eligible:

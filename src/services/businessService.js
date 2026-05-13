@@ -168,10 +168,15 @@ export async function updateBusinessUserProfile(userId, values) {
     throw new Error("El nombre del usuario es obligatorio.");
   }
 
-  await setDoc(doc(db, "business_users", normalizedUserId), {
+  const payload = {
     display_name: displayName,
+    phone: String(values?.phone || "").trim(),
+    avatar_url: String(values?.avatarUrl || values?.avatar_url || "").trim(),
+    preferences: values?.preferences || {},
     updatedAt: serverTimestamp(),
-  }, { merge: true });
+  };
+
+  await setDoc(doc(db, "business_users", normalizedUserId), payload, { merge: true });
 
   if (auth.currentUser) {
     await updateProfile(auth.currentUser, { displayName });

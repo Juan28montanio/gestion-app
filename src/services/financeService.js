@@ -22,6 +22,10 @@ import {
   normalizePaymentBreakdown,
 } from "../utils/payments";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import {
+  buildPosSaleDocuments,
+  writePosSaleDocuments,
+} from "./posFinancialService";
 
 function getTicketProductGrant(items = []) {
   return items.reduce(
@@ -69,15 +73,71 @@ const startOfDay = () => {
   return Timestamp.fromDate(date);
 };
 
-export async function handleStockReduction(businessId, orderItems) {
+function createSaleInventoryMovement(transaction, {
+  businessId,
+  saleId = "",
+  orderId = "",
+  inventoryItemId,
+  inventoryItemName,
+  productId = "",
+  productName = "",
+  quantity,
+  unit = "und",
+  unitCost = 0,
+  stockBefore = 0,
+  stockAfter = 0,
+}) {
+  const movementRef = doc(collection(db, "inventoryMovements"));
+  transaction.set(movementRef, {
+    businessId,
+    business_id: businessId,
+    type: "sale_out",
+    movementType: "sale_out",
+    movement_type: "sale_out",
+    direction: "out",
+    sourceType: "sale",
+    source_type: "sale",
+    sourceId: saleId || orderId || null,
+    source_id: saleId || orderId || null,
+    saleId: saleId || null,
+    sale_id: saleId || null,
+    orderId: orderId || null,
+    order_id: orderId || null,
+    inventoryItemId,
+    inventory_item_id: inventoryItemId,
+    inventoryItemName,
+    inventory_item_name: inventoryItemName,
+    productId: productId || null,
+    product_id: productId || null,
+    productName,
+    product_name: productName,
+    quantity: Math.abs(Number(quantity || 0)),
+    unit,
+    unitCost: Number(unitCost || 0),
+    totalCost: Math.abs(Number(quantity || 0)) * Number(unitCost || 0),
+    stockBefore: Number(stockBefore || 0),
+    stock_before: Number(stockBefore || 0),
+    stockAfter: Number(stockAfter || 0),
+    stock_after: Number(stockAfter || 0),
+    reason: "Descuento automatico por venta",
+    status: "valid",
+    createdAt: serverTimestamp(),
+    createdBy: "system",
+    created_by: "system",
+  });
+}
+
+export async function handleStockReduction(businessId, orderItems, options = {}) {
   const normalizedBusinessId = String(businessId || "").trim();
+  const saleId = String(options.saleId || "").trim();
+  const orderId = String(options.orderId || "").trim();
 
   if (!normalizedBusinessId || !Array.isArray(orderItems) || orderItems.length === 0) {
     return;
   }
 
   const productAdjustments = new Map();
-  const productIds = [];
+  const orderItemsByProduct = new Map();
 
   orderItems.forEach((item) => {
     const productId = String(item?.id || item?.productId || "").trim();
@@ -87,8 +147,8 @@ export async function handleStockReduction(businessId, orderItems) {
       return;
     }
 
-    productIds.push(productId);
     productAdjustments.set(productId, (productAdjustments.get(productId) || 0) + quantity);
+    orderItemsByProduct.set(productId, item);
   });
 
   const recipeBooksSnapshot = await getDocs(
@@ -97,10 +157,17 @@ export async function handleStockReduction(businessId, orderItems) {
 
   const recipeBooks = recipeBooksSnapshot.docs
     .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-    .filter((recipeBook) => productIds.includes(String(recipeBook.product_id || "").trim()));
+    .filter((recipeBook) => {
+      const productId = String(recipeBook.product_id || "").trim();
+      const linkedByOrder = [...orderItemsByProduct.values()].some(
+        (item) => String(item?.technicalSheetId || item?.technical_sheet_id || "").trim() === recipeBook.id
+      );
+      return productAdjustments.has(productId) || linkedByOrder;
+    });
 
   await runTransaction(db, async (transaction) => {
     const ingredientAdjustments = new Map();
+    const productStockImpacts = [];
 
     for (const [productId, quantitySold] of productAdjustments.entries()) {
       const productRef = doc(db, "products", productId);
@@ -110,19 +177,51 @@ export async function handleStockReduction(businessId, orderItems) {
         const productData = productSnapshot.data();
         const isTicketWalletProduct =
           String(productData.product_type || "").trim() === "ticket_wallet";
+        const orderItem = orderItemsByProduct.get(productId) || {};
+        const inventoryImpactMode = String(
+          orderItem.inventoryImpactMode ||
+            productData.inventory?.inventoryImpactMode ||
+            (productData.inventory?.linkedTechnicalSheetId ? "technical_sheet" : "")
+        ).trim();
 
-        if (!isTicketWalletProduct) {
+        const consumesInventory = Boolean(productData.inventory?.consumesInventory ?? productData.consumesInventory);
+        const shouldDiscountProductStock =
+          !isTicketWalletProduct &&
+          consumesInventory &&
+          ["direct_item", "combo"].includes(inventoryImpactMode);
+
+        if (shouldDiscountProductStock) {
           const currentStock = Number(productData.stock || 0);
-
-          transaction.update(productRef, {
-            stock: Math.max(currentStock - quantitySold, 0),
-            updatedAt: serverTimestamp(),
+          const nextStock = Math.max(currentStock - quantitySold, 0);
+          productStockImpacts.push({
+            productRef,
+            patch: {
+              stock: nextStock,
+              updatedAt: serverTimestamp(),
+            },
+            movement: {
+            businessId: normalizedBusinessId,
+            saleId,
+            orderId,
+            inventoryItemId: productId,
+            inventoryItemName: productData.name || orderItem.name || productId,
+            productId,
+            productName: productData.name || orderItem.name || "",
+            quantity: quantitySold,
+            unit: productData.unit || "und",
+            unitCost: productData.costing?.estimatedCost || productData.cost || 0,
+            stockBefore: currentStock,
+            stockAfter: nextStock,
+            },
           });
         }
       }
 
       const recipeBook = recipeBooks.find(
-        (candidate) => String(candidate.product_id || "").trim() === productId
+        (candidate) =>
+          String(candidate.product_id || "").trim() === productId ||
+          String(candidate.id || "").trim() ===
+            String(orderItemsByProduct.get(productId)?.technicalSheetId || "").trim()
       );
 
       if (!recipeBook || !Array.isArray(recipeBook.ingredients)) {
@@ -144,6 +243,7 @@ export async function handleStockReduction(businessId, orderItems) {
       });
     }
 
+    const ingredientStockImpacts = [];
     for (const [ingredientId, quantityToDiscount] of ingredientAdjustments.entries()) {
       const ingredientRef = doc(db, "ingredients", ingredientId);
       const ingredientSnapshot = await transaction.get(ingredientRef);
@@ -154,9 +254,55 @@ export async function handleStockReduction(businessId, orderItems) {
 
       const ingredientData = ingredientSnapshot.data();
       const currentStock = Number(ingredientData.stock || 0);
+      const nextStock = Math.max(currentStock - quantityToDiscount, 0);
 
-      transaction.update(ingredientRef, {
-        stock: Math.max(currentStock - quantityToDiscount, 0),
+      ingredientStockImpacts.push({
+        ingredientRef,
+        patch: {
+          stock: nextStock,
+          inventory: {
+            ...(ingredientData.inventory || {}),
+            currentStock: nextStock,
+          },
+          updatedAt: serverTimestamp(),
+        },
+        movement: {
+          businessId: normalizedBusinessId,
+          saleId,
+          orderId,
+          inventoryItemId: ingredientId,
+          inventoryItemName: ingredientData.name || ingredientId,
+          quantity: quantityToDiscount,
+          unit: ingredientData.base_unit || ingredientData.baseUnit || ingredientData.unit || "und",
+          unitCost:
+            ingredientData.costs?.averageCost ||
+            ingredientData.average_cost ||
+            ingredientData.cost_per_base_unit ||
+            ingredientData.cost_per_unit ||
+            0,
+          stockBefore: currentStock,
+          stockAfter: nextStock,
+        },
+      });
+    }
+
+    productStockImpacts.forEach((impact) => {
+      transaction.update(impact.productRef, impact.patch);
+      createSaleInventoryMovement(transaction, impact.movement);
+    });
+
+    ingredientStockImpacts.forEach((impact) => {
+      transaction.update(impact.ingredientRef, impact.patch);
+      createSaleInventoryMovement(transaction, impact.movement);
+    });
+
+    if (saleId) {
+      const hasInventoryImpact = productStockImpacts.length > 0 || ingredientStockImpacts.length > 0;
+      transaction.update(doc(db, "sales", saleId), {
+        inventoryImpactStatus: hasInventoryImpact ? "applied" : "not_applicable",
+        inventory_impact_status: hasInventoryImpact ? "applied" : "not_applicable",
+        inventoryAppliedAt: serverTimestamp(),
+        inventory_applied_at: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
     }
@@ -179,6 +325,7 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
   const salesCollection = collection(db, "sales_history");
   let orderItemsForInventory = [];
   let businessIdForInventory = "";
+  let createdSaleId = "";
   const preloadedOrderSnapshot = await getDoc(orderRef);
 
   if (!preloadedOrderSnapshot.exists()) {
@@ -201,6 +348,9 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     const orderData = orderSnapshot.data();
     const resolvedTableId = String(options.tableId || orderData.table_id || "").trim();
+    const resolvedSessionId = String(
+      options.tableSessionId || options.sessionId || orderData.sessionId || orderData.session_id || ""
+    ).trim();
     const resolvedBusinessId = String(options.businessId || orderData.business_id || "").trim();
     const subtotal = Number(options.subtotal ?? orderData.subtotal ?? orderData.total ?? 0);
     const chargedTotalCandidate = Number(options.chargedTotal);
@@ -223,19 +373,24 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       options.customer?.name || orderData.customer_name || options.customerName || ""
     ).trim();
     const isTicketWalletPayment = normalizedPaymentMethod === "ticket_wallet";
-    const debtAmount =
-      !isTicketWalletPayment && customerId && subtotal > chargedTotal
-        ? Number((subtotal - chargedTotal).toFixed(2))
-        : 0;
     const ticketGrantUnits = getTicketProductGrant(orderData.items || []);
     const ticketConsumption = getTicketConsumption(
       orderData.items || [],
       options.ticketConsumption || {}
     );
+    const debtAmount =
+      !isTicketWalletPayment && customerId && subtotal > chargedTotal
+        ? Number((subtotal - chargedTotal).toFixed(2))
+        : 0;
+    const legacyCashflowTotal = normalizedPaymentMethod === "account_credit" ? 0 : chargedTotal;
+    const operationalSaleTotal = debtAmount > 0 || normalizedPaymentMethod === "account_credit"
+      ? subtotal
+      : chargedTotal + ticketConsumption.coveredAmount;
+    const paymentAmount = normalizedPaymentMethod === "account_credit" ? operationalSaleTotal : chargedTotal;
     const paymentBreakdown = normalizePaymentBreakdown(
       options.splitPayments || [],
       normalizedPaymentMethod,
-      chargedTotal
+      paymentAmount
     );
     const paymentBreakdownTotal = paymentBreakdown.reduce(
       (sum, line) => sum + Number(line.amount || 0),
@@ -271,7 +426,7 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
       throw new Error("Debes seleccionar un cliente para aplicar tickets en esta venta.");
     }
 
-    if (paymentBreakdown.length > 1 && Math.abs(paymentBreakdownTotal - chargedTotal) > 1) {
+    if (paymentBreakdown.length > 1 && Math.abs(paymentBreakdownTotal - paymentAmount) > 1) {
       throw new Error("La suma del pago dividido debe coincidir con el valor final cobrado.");
     }
 
@@ -281,7 +436,9 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     const isQuickSale = resolvedTableId === QUICK_SALE_TABLE.id;
     const tableRef = isQuickSale ? null : doc(db, "tables", resolvedTableId);
+    const tableSessionRef = !isQuickSale && resolvedSessionId ? doc(db, "tableSessions", resolvedSessionId) : null;
     const tableSnapshot = tableRef ? await transaction.get(tableRef) : null;
+    const tableSessionSnapshot = tableSessionRef ? await transaction.get(tableSessionRef) : null;
     const customerRef = customerId ? doc(db, "customers", customerId) : null;
     const customerSnapshot = customerRef ? await transaction.get(customerRef) : null;
 
@@ -291,24 +448,54 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     const tableData = isQuickSale ? QUICK_SALE_TABLE : tableSnapshot.data();
 
+    const posDocuments = buildPosSaleDocuments({
+      businessId: resolvedBusinessId,
+      orderId: normalizedOrderId,
+      orderData,
+      tableId: resolvedTableId,
+      tableName: tableData.name || `Mesa ${tableData.number || ""}`.trim(),
+      tableSessionId: resolvedSessionId || null,
+      paymentMethod: normalizedPaymentMethod === "account_credit" ? "customer_credit" : normalizedPaymentMethod,
+      paymentBreakdown: paymentBreakdown.map((line) => ({
+        ...line,
+        method: line.method === "account_credit" ? "customer_credit" : line.method,
+      })),
+      subtotal,
+      chargedTotal: operationalSaleTotal,
+      paymentAmount,
+      cashReceived,
+      ticketConsumption,
+      ticketGrantUnits,
+      customerId,
+      customerName,
+      cashSessionId: openCashSession?.id || "",
+      actor: options.actor || options.currentUser || {},
+    });
+    createdSaleId = posDocuments.saleRef.id;
+    writePosSaleDocuments(transaction, posDocuments);
+
     transaction.update(orderRef, {
       status: "pagada",
+      sale_id: posDocuments.saleRef.id,
+      saleId: posDocuments.saleRef.id,
       payment_method: primaryPaymentMethod,
       payment_label: paymentLabel,
       payment_breakdown: paymentBreakdown,
       customer_id: customerId || null,
       customer_name: customerName || "",
+      table_session_id: resolvedSessionId || null,
+      tableSessionId: resolvedSessionId || null,
       closing_id: openCashSession?.id || null,
       subtotal,
-      total: chargedTotal,
+      total: operationalSaleTotal,
       cash_received: normalizedPaymentMethod === "cash" ? cashReceived : 0,
       cash_change: normalizedPaymentMethod === "cash" ? cashChange : 0,
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
-      settled_amount: 0,
-      payment_status: debtAmount > 0 ? "pending" : "paid",
+      settled_amount: paymentAmount,
+      payment_status: debtAmount > 0 ? (paymentAmount > 0 ? "partial" : "pending") : "paid",
       payment_kind:
         primaryPaymentMethod === "split"
           ? "split_cashflow"
@@ -326,22 +513,26 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     transaction.set(doc(salesCollection), {
       business_id: resolvedBusinessId,
+      sale_id: posDocuments.saleRef.id,
       order_id: normalizedOrderId,
+      table_session_id: resolvedSessionId || null,
+      tableSessionId: resolvedSessionId || null,
       table_id: resolvedTableId,
       table_name: tableData.name || `Mesa ${tableData.number || ""}`.trim(),
       customer_id: customerId || null,
       customer_name: customerName || "",
       items: orderData.items || [],
       subtotal,
-      total: chargedTotal,
+      total: legacyCashflowTotal,
+      paid_amount: legacyCashflowTotal,
       cash_received: normalizedPaymentMethod === "cash" ? cashReceived : 0,
       cash_change: normalizedPaymentMethod === "cash" ? cashChange : 0,
       adjustment_amount: adjustmentAmount,
       adjustment_pct: adjustmentPct,
       debt_amount: debtAmount,
       pending_debt_remaining: debtAmount,
-      settled_amount: 0,
-      payment_status: debtAmount > 0 ? "pending" : "paid",
+      settled_amount: paymentAmount,
+      payment_status: debtAmount > 0 ? (paymentAmount > 0 ? "partial" : "pending") : "paid",
       payment_method: primaryPaymentMethod,
       payment_label: paymentLabel,
       payment_breakdown: paymentBreakdown,
@@ -400,10 +591,29 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
 
     if (tableRef) {
       transaction.update(tableRef, {
-        status: "disponible",
+        status: "cleaning",
+        current_session_id: null,
         current_order_id: null,
         current_order_summary: "",
         current_total: 0,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    if (tableSessionRef && tableSessionSnapshot?.exists()) {
+      transaction.update(tableSessionRef, {
+        status: "closed",
+        saleId: posDocuments.saleRef.id,
+        sale_id: posDocuments.saleRef.id,
+        orderId: normalizedOrderId,
+        order_id: normalizedOrderId,
+        closedAt: serverTimestamp(),
+        closed_at: serverTimestamp(),
+        total: operationalSaleTotal,
+        paidAmount: paymentAmount,
+        paid_amount: paymentAmount,
+        pendingAmount: debtAmount,
+        pending_amount: debtAmount,
         updatedAt: serverTimestamp(),
       });
     }
@@ -412,7 +622,10 @@ export async function closeOrderAndLogSale(orderId, paymentMethod, options = {})
     businessIdForInventory = resolvedBusinessId;
   });
 
-  await handleStockReduction(businessIdForInventory, orderItemsForInventory);
+  await handleStockReduction(businessIdForInventory, orderItemsForInventory, {
+    saleId: createdSaleId,
+    orderId: normalizedOrderId,
+  });
 }
 
 export function subscribeToSalesHistory(businessId, callback) {

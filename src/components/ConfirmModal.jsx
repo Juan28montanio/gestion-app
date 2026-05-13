@@ -9,6 +9,7 @@ export default function ConfirmModal({
   tone = "danger",
   onConfirm,
   onCancel,
+  children,
 }) {
   const toneClasses =
     tone === "danger"
@@ -23,6 +24,7 @@ export default function ConfirmModal({
       title={title}
       description={description}
     >
+      {children ? <div className="mb-4">{children}</div> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <button
           type="button"

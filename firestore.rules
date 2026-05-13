@@ -36,16 +36,23 @@ service cloud.firestore {
     }
 
     function sameBusinessResource() {
-      return belongsToCurrentBusiness(resource.data.business_id);
+      return belongsToCurrentBusiness(resource.data.business_id) ||
+        belongsToCurrentBusiness(resource.data.businessId);
     }
 
     function sameBusinessCreate() {
-      return belongsToCurrentBusiness(request.resource.data.business_id);
+      return belongsToCurrentBusiness(request.resource.data.business_id) ||
+        belongsToCurrentBusiness(request.resource.data.businessId);
     }
 
     function sameBusinessUpdate() {
       return sameBusinessResource() &&
-        request.resource.data.business_id == resource.data.business_id;
+        (
+          request.resource.data.business_id == resource.data.business_id ||
+          request.resource.data.businessId == resource.data.businessId ||
+          request.resource.data.business_id == resource.data.businessId ||
+          request.resource.data.businessId == resource.data.business_id
+        );
     }
 
     function sameBusinessDelete() {
@@ -57,12 +64,13 @@ service cloud.firestore {
     }
 
     match /business_users/{userId} {
-      allow read: if isCurrentUserDocument(userId);
+      allow read: if isCurrentUserDocument(userId) || sameBusinessResource();
       allow create: if isCurrentUserDocument(userId) &&
         request.resource.data.business_id is string &&
         request.resource.data.display_name is string;
       allow update: if isCurrentUserDocument(userId) &&
-        request.resource.data.business_id == resource.data.business_id;
+        request.resource.data.business_id == resource.data.business_id ||
+        sameBusinessUpdate();
     }
 
     match /businesses/{businessId} {
@@ -94,10 +102,115 @@ service cloud.firestore {
       allow delete: if sameBusinessDelete();
     }
 
+    match /tableSessions/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /orderItems/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /kitchenTickets/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /tableEvents/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if false;
+      allow delete: if false;
+    }
+
     match /sales_history/{documentId} {
       allow read: if sameBusinessResource();
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
+    }
+
+    match /sales/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /saleItems/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /payments/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /cashMovements/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /paymentMethods/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /businessSettings/{businessId} {
+      allow read: if belongsToCurrentBusiness(businessId);
+      allow create: if sameBusinessCreate() || belongsToCurrentBusiness(businessId);
+      allow update: if sameBusinessUpdate() || belongsToCurrentBusiness(businessId);
+      allow delete: if false;
+    }
+
+    match /auditLogs/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /accountsReceivable/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /receivablePayments/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /accountsPayable/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /payablePayments/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
     }
 
     match /customers/{documentId} {
@@ -105,6 +218,34 @@ service cloud.firestore {
       allow create: if sameBusinessCreate();
       allow update: if sameBusinessUpdate();
       allow delete: if sameBusinessDelete();
+    }
+
+    match /ticketPlans/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /mealTickets/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /ticketConsumptions/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if sameBusinessUpdate();
+      allow delete: if false;
+    }
+
+    match /ticketAdjustments/{documentId} {
+      allow read: if sameBusinessResource();
+      allow create: if sameBusinessCreate();
+      allow update: if false;
+      allow delete: if false;
     }
 
     match /suppliers/{documentId} {

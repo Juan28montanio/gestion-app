@@ -1,5 +1,4 @@
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
@@ -7,7 +6,6 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
-  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -19,6 +17,7 @@ import {
   PAYMENT_METHOD_LABELS,
   resolvePurchasePaymentMethod,
 } from "../utils/payments";
+import { getPaymentMethodConfig, registerDebtPayment } from "../utils/posFinance";
 import { buildOperationalSaleItemDetail } from "../utils/sales";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
 
@@ -274,19 +273,76 @@ export async function openCashSession(businessId, options = {}) {
     )
   );
   const dailySequence = previousSessionsSnapshot.size + 1;
-  const createdRef = await addDoc(cashClosingsCollection, {
+  const createdRef = doc(cashClosingsCollection);
+  const actor = {
+    id: String(options.cashierId || options.userId || "").trim(),
+    name: cashierName,
+    email: cashierEmail,
+  };
+  const batch = writeBatch(db);
+
+  batch.set(createdRef, {
+    businessId: normalizedBusinessId,
     business_id: normalizedBusinessId,
     status: "open",
+    cashierId: actor.id || null,
+    cashier_id: actor.id || null,
     opening_amount: openingAmount,
+    openingAmount,
     cashier_name: cashierName,
+    cashierName,
     cashier_email: cashierEmail,
+    cashierEmail,
+    openingNotes: String(options.notes || options.openingNotes || "").trim(),
+    opening_notes: String(options.notes || options.openingNotes || "").trim(),
     opened_at: serverTimestamp(),
+    openedAt: serverTimestamp(),
     opened_date_key: openedDateKey,
     daily_sequence: dailySequence,
     notification_sent: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+
+  batch.set(doc(collection(db, "cashMovements")), {
+    businessId: normalizedBusinessId,
+    business_id: normalizedBusinessId,
+    cashSessionId: createdRef.id,
+    cash_session_id: createdRef.id,
+    type: "opening_balance",
+    method: "cash",
+    amount: openingAmount,
+    description: "Base inicial de caja",
+    sourceType: "cash_session",
+    source_type: "cash_session",
+    sourceId: createdRef.id,
+    source_id: createdRef.id,
+    status: "valid",
+    createdBy: actor,
+    created_by: actor,
+    createdAt: serverTimestamp(),
+  });
+
+  batch.set(doc(collection(db, "auditLogs")), {
+    business_id: normalizedBusinessId,
+    businessId: normalizedBusinessId,
+    user_id: actor.id || "",
+    userId: actor.id || "",
+    user_name: actor.name,
+    userName: actor.name,
+    module: "cash",
+    action: "cash.open",
+    entity_type: "cash_closings",
+    entityType: "cash_closings",
+    entity_id: createdRef.id,
+    entityId: createdRef.id,
+    previousValue: null,
+    newValue: { openingAmount, cashierName, status: "open" },
+    reason: "Apertura de caja",
+    createdAt: serverTimestamp(),
+  });
+
+  await batch.commit();
 
   return createdRef.id;
 }
@@ -297,6 +353,10 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
 
   if (!normalizedBusinessId || !normalizedClosingId) {
     throw new Error("Debes indicar la caja abierta para realizar el cierre.");
+  }
+
+  if (cashCounted === "" || cashCounted === null || typeof cashCounted === "undefined") {
+    throw new Error("Debes ingresar el efectivo contado para cerrar caja.");
   }
 
   const closingRef = doc(db, "cash_closings", normalizedClosingId);
@@ -410,8 +470,17 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     cashOperatingExpenses;
   const countedCash = Number(cashCounted || 0);
   const cashDifference = countedCash - expectedCash;
-  const totalCollected = Object.values(byMethod).reduce(
-    (sum, amount) => sum + Number(amount || 0),
+  const closeStatus =
+    cashDifference === 0
+      ? "balanced"
+      : context.closingNotes || context.notes
+        ? "closed_with_note"
+        : cashDifference < 0
+          ? "shortage"
+          : "overage";
+  const totalCollected = Object.entries(byMethod).reduce(
+    (sum, [method, amount]) =>
+      getPaymentMethodConfig(method).affectsCashRegister ? sum + Number(amount || 0) : sum,
     0
   );
   const auditEntries = relevantOrders
@@ -493,9 +562,19 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
 
   batch.update(closingRef, {
     status: "closed",
+    closeStatus,
+    close_status: closeStatus,
     closed_at: serverTimestamp(),
+    closedAt: serverTimestamp(),
     closing_code: closingCode,
     cashier_name: cashierName,
+    countedCash,
+    counted_cash: countedCash,
+    expectedCash,
+    expected_cash: expectedCash,
+    difference: cashDifference,
+    closingNotes: String(context.closingNotes || context.notes || "").trim(),
+    closing_notes: String(context.closingNotes || context.notes || "").trim(),
     sales_total: totalSales,
     expenses_total: totalExpenses,
     net_balance: totalSales - totalExpenses,
@@ -509,7 +588,49 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     purchase_expenses_total: purchaseExpensesTotal,
     total_sales_count: relevantSales.length,
     audit_count: auditEntries.length,
+    summary: {
+      openingAmount: Number(closingData.opening_amount || 0),
+      salesTotal: totalSales,
+      expensesTotal: totalExpenses,
+      netBalance: totalSales - totalExpenses,
+      totalCollected,
+      byMethod,
+      ticketWalletUnits,
+      cashExpected: expectedCash,
+      cashCounted: countedCash,
+      cashDifference,
+      closeStatus,
+      operatingExpensesTotal,
+      purchaseExpensesTotal,
+      cashPurchaseExpenses,
+      cashOperatingExpenses,
+      totalSalesCount: relevantSales.length,
+    },
     updatedAt: serverTimestamp(),
+  });
+
+  batch.set(doc(collection(db, "auditLogs")), {
+    business_id: normalizedBusinessId,
+    businessId: normalizedBusinessId,
+    user_id: context.operatorId || context.cashierId || "",
+    userId: context.operatorId || context.cashierId || "",
+    user_name: operatorName,
+    userName: operatorName,
+    module: "cash",
+    action: "cash.close",
+    entity_type: "cash_closings",
+    entityType: "cash_closings",
+    entity_id: normalizedClosingId,
+    entityId: normalizedClosingId,
+    previousValue: closingData,
+    newValue: {
+      cashExpected: expectedCash,
+      cashCounted: countedCash,
+      cashDifference,
+      closeStatus,
+    },
+    reason: "Cierre de caja",
+    createdAt: serverTimestamp(),
   });
 
   await batch.commit();
@@ -575,6 +696,24 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
     throw new Error("Debes abrir caja antes de registrar un abono de cartera.");
   }
 
+  const receivableSnapshot = saleData.sale_id
+    ? await getDocs(
+        query(
+          collection(db, "accountsReceivable"),
+          where("business_id", "==", saleData.business_id),
+          where("sale_id", "==", saleData.sale_id)
+        )
+      )
+    : null;
+  const receivableDoc = receivableSnapshot?.docs?.[0] || null;
+  const receivablePaymentState = registerDebtPayment({
+    pendingAmount,
+    amount: pendingAmount,
+  });
+  const paymentConfig = getPaymentMethodConfig(normalizedPaymentMethod);
+  const paymentRef = doc(collection(db, "payments"));
+  const cashMovementRef = paymentConfig.affectsCashRegister ? doc(collection(db, "cashMovements")) : null;
+  const receivablePaymentRef = doc(collection(db, "receivablePayments"));
   const batch = writeBatch(db);
 
   batch.update(saleRef, {
@@ -582,8 +721,20 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
     settled_amount: Number(saleData.settled_amount || 0) + pendingAmount,
     settled_at: serverTimestamp(),
     settlement_payment_method: normalizedPaymentMethod,
+    payment_status: "paid",
     updatedAt: serverTimestamp(),
   });
+
+  if (receivableDoc) {
+    batch.update(receivableDoc.ref, {
+      paidAmount: Number(receivableDoc.data().paidAmount || receivableDoc.data().paid_amount || 0) + pendingAmount,
+      paid_amount: Number(receivableDoc.data().paid_amount || receivableDoc.data().paidAmount || 0) + pendingAmount,
+      pendingAmount: receivablePaymentState.pendingAmount,
+      pending_amount: receivablePaymentState.pendingAmount,
+      status: receivablePaymentState.status,
+      updatedAt: serverTimestamp(),
+    });
+  }
 
   if (customerRef) {
     const customerSnapshot = await getDoc(customerRef);
@@ -598,6 +749,70 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
   }
 
   const settlementRef = doc(salesHistoryCollection);
+  batch.set(paymentRef, {
+    businessId: saleData.business_id,
+    business_id: saleData.business_id,
+    saleId: saleData.sale_id || normalizedSaleId,
+    sale_id: saleData.sale_id || normalizedSaleId,
+    method: normalizedPaymentMethod,
+    amount: pendingAmount,
+    reference: "",
+    status: "completed",
+    affectsCashRegister: paymentConfig.affectsCashRegister,
+    affects_cash_register: paymentConfig.affectsCashRegister,
+    cashSessionId: paymentConfig.affectsCashRegister ? openSession.id || null : null,
+    cash_session_id: paymentConfig.affectsCashRegister ? openSession.id || null : null,
+    customerId: saleData.customer_id || null,
+    customer_id: saleData.customer_id || null,
+    receivedBy: null,
+    received_by: null,
+    createdAt: serverTimestamp(),
+  });
+
+  if (cashMovementRef) {
+    batch.set(cashMovementRef, {
+      businessId: saleData.business_id,
+      business_id: saleData.business_id,
+      cashSessionId: openSession.id || null,
+      cash_session_id: openSession.id || null,
+      saleId: saleData.sale_id || normalizedSaleId,
+      sale_id: saleData.sale_id || normalizedSaleId,
+      paymentId: paymentRef.id,
+      payment_id: paymentRef.id,
+      receivableId: receivableDoc?.id || null,
+      receivable_id: receivableDoc?.id || null,
+      type: "debt_payment_income",
+      method: normalizedPaymentMethod,
+      amount: pendingAmount,
+      description: `Abono a cartera ${saleData.customer_name || "Cliente"}`,
+      sourceType: "account_receivable",
+      source_type: "account_receivable",
+      sourceId: receivableDoc?.id || normalizedSaleId,
+      source_id: receivableDoc?.id || normalizedSaleId,
+      status: "valid",
+      createdBy: null,
+      created_by: null,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  batch.set(receivablePaymentRef, {
+    businessId: saleData.business_id,
+    business_id: saleData.business_id,
+    accountReceivableId: receivableDoc?.id || null,
+    account_receivable_id: receivableDoc?.id || null,
+    customerId: saleData.customer_id || null,
+    customer_id: saleData.customer_id || null,
+    amount: pendingAmount,
+    method: normalizedPaymentMethod,
+    reference: "",
+    receivedBy: null,
+    received_by: null,
+    paymentId: paymentRef.id,
+    payment_id: paymentRef.id,
+    createdAt: serverTimestamp(),
+  });
+
   batch.set(settlementRef, {
     business_id: saleData.business_id,
     type: "income",
@@ -611,6 +826,7 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
     subtotal: pendingAmount,
     total: pendingAmount,
     payment_method: normalizedPaymentMethod,
+    payment_breakdown: [{ method: normalizedPaymentMethod, amount: pendingAmount }],
     debt_amount: 0,
     pending_debt_remaining: 0,
     settlement: true,

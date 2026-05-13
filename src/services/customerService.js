@@ -71,7 +71,12 @@ function normalizeCustomerPayload(customer, businessId) {
   const normalizedBusinessId = String(customer?.business_id || businessId || "").trim();
   const name = String(customer?.name || "").trim();
   const phone = String(customer?.phone || "").trim();
+  const documentId = String(customer?.document || customer?.document_id || "").trim();
   const email = String(customer?.email || "").trim();
+  const institution = String(customer?.institution || "").trim();
+  const program = String(customer?.program || "").trim();
+  const customerType = String(customer?.customerType || customer?.customer_type || "general").trim();
+  const status = String(customer?.status || "active").trim();
   const notes = String(customer?.notes || "").trim();
 
   if (!normalizedBusinessId) {
@@ -84,9 +89,17 @@ function normalizeCustomerPayload(customer, businessId) {
 
   return {
     business_id: normalizedBusinessId,
+    businessId: normalizedBusinessId,
     name,
     phone,
+    document: documentId,
+    document_id: documentId,
     email,
+    institution,
+    program,
+    customerType,
+    customer_type: customerType,
+    status,
     notes,
     debt_balance: Number(
       customer?.debt_balance ?? customer?.debtBalance ?? customer?.pendingDebt ?? 0

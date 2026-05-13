@@ -24,6 +24,31 @@ import { DecisionCenterProvider, useDecisionCenter } from "./decision-center/Dec
 import DecisionCenterDrawer from "./decision-center/DecisionCenterDrawer";
 
 const CHUNK_RELOAD_KEY = "smartprofit:chunk-reload";
+const SECTION_ROUTES = {
+  salon: "/salon",
+  pos: "/pos",
+  inventory: "/productos",
+  resources: "/recursos",
+  ticketing: "/clientes-ticketeras",
+  cash: "/caja",
+  finance: "/finanzas",
+  guide: "/guia",
+  account: "/cuenta",
+};
+
+function resolveSectionFromPath(pathname) {
+  if (/^\/salon(\/|$)/i.test(pathname)) return "salon";
+  if (/^\/pos(\/|$)/i.test(pathname)) return "pos";
+  if (/^\/productos(\/|$)/i.test(pathname)) return "inventory";
+  if (/^\/recursos(\/|$)/i.test(pathname)) return "resources";
+  if (/^\/clientes-ticketeras(\/|$)/i.test(pathname)) return "ticketing";
+  if (/^\/caja-finanzas(\/|$)/i.test(pathname)) return "finance";
+  if (/^\/caja(\/|$)/i.test(pathname)) return "cash";
+  if (/^\/finanzas(\/|$)/i.test(pathname)) return "finance";
+  if (/^\/guia(\/|$)/i.test(pathname)) return "guide";
+  if (/^\/cuenta(\/|$)/i.test(pathname)) return "account";
+  return "salon";
+}
 
 function isChunkLoadError(error) {
   const message = String(error?.message || error || "").toLowerCase();
@@ -55,7 +80,6 @@ function lazyWithChunkRecovery(importer) {
 
 const POSOrder = lazyWithChunkRecovery(() => import("../components/POSOrder"));
 const AdminDashboard = lazyWithChunkRecovery(() => import("../components/AdminDashboard"));
-const CustomerManager = lazyWithChunkRecovery(() => import("../components/CustomerManager"));
 const ProductManager = lazyWithChunkRecovery(() => import("../components/ProductManager"));
 const TableManager = lazyWithChunkRecovery(() => import("../components/TableManager"));
 const TicketWalletManager = lazyWithChunkRecovery(() => import("../components/TicketWalletManager"));
@@ -84,7 +108,7 @@ function AppShellContent() {
   const [selectedTable, setSelectedTable] = useState(null);
   const [pathname, setPathname] = useState(() => window.location.pathname);
   const [toasts, setToasts] = useState([]);
-  const [activeSection, setActiveSection] = useState("salon");
+  const [activeSection, setActiveSection] = useState(() => resolveSectionFromPath(window.location.pathname));
   const [resourceInitialTab, setResourceInitialTab] = useState("");
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -99,7 +123,10 @@ function AppShellContent() {
   const { entriesBySection, isOpen: isDecisionCenterOpen, openDecisionCenter, closeDecisionCenter } = useDecisionCenter();
 
   useEffect(() => {
-    const handleNavigation = () => setPathname(window.location.pathname);
+    const handleNavigation = () => {
+      setPathname(window.location.pathname);
+      setActiveSection(resolveSectionFromPath(window.location.pathname));
+    };
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     const handleResize = () => setIsWideDesktop(window.innerWidth >= 1280);
@@ -189,7 +216,7 @@ function AppShellContent() {
   const shouldShowCashLockOverlay =
     cashLockInfo.blocked &&
     cashLockInfo.reason !== "no_open_session" &&
-    activeSection !== "finance" &&
+    activeSection !== "cash" &&
     !cashLockDismissed;
 
   useEffect(() => {
@@ -198,7 +225,7 @@ function AppShellContent() {
       return;
     }
 
-    if (activeSection === "finance") {
+    if (activeSection === "cash") {
       setCashLockDismissed(true);
     }
   }, [activeSection, cashLockInfo.blocked, cashLockInfo.reason]);
@@ -290,6 +317,15 @@ function AppShellContent() {
     }
   };
 
+  const handleSelectSection = (section) => {
+    setActiveSection(section);
+    const nextPath = SECTION_ROUTES[section];
+    if (nextPath && window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath);
+      setPathname(nextPath);
+    }
+  };
+
   if (menuRoute) {
     return (
       <>
@@ -322,7 +358,7 @@ function AppShellContent() {
               cashLockInfo={cashLockInfo}
               onGoFinance={() => {
                 setCashLockDismissed(true);
-                setActiveSection("finance");
+                handleSelectSection("cash");
               }}
             />
           ) : null}
@@ -334,7 +370,7 @@ function AppShellContent() {
               userDisplayName={userDisplayName}
               activeSection={activeSection}
               navSections={navSections}
-              onSelect={setActiveSection}
+              onSelect={handleSelectSection}
               onClose={() => setIsMobileSidebarOpen(false)}
               onLogout={logout}
             />
@@ -345,7 +381,7 @@ function AppShellContent() {
               activeSection={activeSection}
               isCollapsed={isSidebarCollapsed}
               navSections={navSections}
-              onSelect={setActiveSection}
+              onSelect={handleSelectSection}
               onLogout={logout}
             />
 
@@ -362,7 +398,7 @@ function AppShellContent() {
                 userDisplayName={userDisplayName}
                 onOpenDecisionCenter={openDecisionCenter}
                 onToggleNavigation={handleToggleNavigation}
-                onGoAccount={() => setActiveSection("account")}
+                onGoAccount={() => handleSelectSection("account")}
               />
 
               <div className="flex-1 px-4 py-6 pb-36 md:px-6 xl:pb-28">
@@ -372,7 +408,7 @@ function AppShellContent() {
                   title={`No fue posible cargar ${currentSectionMeta.title}`}
                   description="Revisa el modulo nuevamente o vuelve a una vista segura para seguir operando mientras solucionamos el fallo."
                   onRetry={() => setSectionRenderNonce((current) => current + 1)}
-                  onGoSafeSection={() => setActiveSection("account")}
+                  onGoSafeSection={() => handleSelectSection("account")}
                 >
                   <Suspense fallback={<SectionFallback title={currentSectionMeta.title} />}>
                     {activeSection === "salon" ? (
@@ -381,6 +417,9 @@ function AppShellContent() {
                         selectedTableId={selectedTable?.id}
                         onSelectTable={setSelectedTable}
                         onNotify={notify}
+                        onOpenPOS={() => handleSelectSection("pos")}
+                        currentUser={currentUser}
+                        userProfile={userProfile}
                       />
                     ) : null}
 
@@ -389,7 +428,7 @@ function AppShellContent() {
                         businessId={businessId}
                         selectedTable={selectedTable}
                         onSelectTable={setSelectedTable}
-                        onOpenCatalog={() => setActiveSection("inventory")}
+                        onOpenCatalog={() => handleSelectSection("inventory")}
                         onOrderPaid={() => setSelectedTable(null)}
                         onOrderCancelled={() => {
                           notify("La orden fue cancelada y la mesa quedo libre.");
@@ -402,11 +441,13 @@ function AppShellContent() {
                             }.`
                           )
                         }
+                        currentUser={currentUser}
+                        userProfile={userProfile}
                       />
                     ) : null}
 
                     {activeSection === "inventory" ? (
-                      <ProductManager businessId={businessId} mode="catalog" />
+                      <ProductManager businessId={businessId} mode="catalog" userProfile={userProfile} />
                     ) : null}
 
                     {activeSection === "resources" ? (
@@ -414,14 +455,29 @@ function AppShellContent() {
                         businessId={businessId}
                         mode="resources"
                         initialTab={resourceInitialTab}
+                        userProfile={userProfile}
                       />
                     ) : null}
 
                     {activeSection === "ticketing" ? (
-                      <TicketWalletManager businessId={businessId} requestAuditPin={requestAuditPin} />
+                      <TicketWalletManager
+                        businessId={businessId}
+                        requestAuditPin={requestAuditPin}
+                        currentUser={currentUser}
+                        userProfile={userProfile}
+                      />
                     ) : null}
 
-                    {activeSection === "clients" ? <CustomerManager businessId={businessId} /> : null}
+                    {activeSection === "cash" ? (
+                      <AdminDashboard
+                        businessId={businessId}
+                        business={business}
+                        userProfile={userProfile}
+                        currentUser={currentUser}
+                        requestAuditPin={requestAuditPin}
+                        moduleMode="cash"
+                      />
+                    ) : null}
 
                     {activeSection === "finance" ? (
                       <AdminDashboard
@@ -430,6 +486,7 @@ function AppShellContent() {
                         userProfile={userProfile}
                         currentUser={currentUser}
                         requestAuditPin={requestAuditPin}
+                        moduleMode="finance"
                       />
                     ) : null}
 
@@ -442,14 +499,15 @@ function AppShellContent() {
                         onSaveBusiness={(values) => saveBusinessAccount(businessId, values)}
                         onSaveProfile={(values) => saveUserProfile(currentUser.uid, values)}
                         onResetWorkspace={() => resetWorkspace(businessId)}
-                        onGoGuide={() => setActiveSection("guide")}
+                        onGoGuide={() => handleSelectSection("guide")}
+                        onLogout={logout}
                       />
                     ) : null}
 
                     {activeSection === "guide" ? (
                       <UsageGuide
                         business={business}
-                        onNavigate={(section) => setActiveSection(section)}
+                        onNavigate={handleSelectSection}
                       />
                     ) : null}
                   </Suspense>
@@ -460,7 +518,7 @@ function AppShellContent() {
 
           <MobileBottomNav
             activeSection={activeSection}
-            onSelect={setActiveSection}
+            onSelect={handleSelectSection}
             onOpenMenu={() => setIsMobileSidebarOpen(true)}
           />
         </main>

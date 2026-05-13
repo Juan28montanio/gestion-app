@@ -38,6 +38,7 @@ import {
   getSupplyBaseUnit,
   getSupplyCostPerBaseUnit,
 } from "../features/resources/inventory/supplyCalculations";
+import { hasPermission } from "../utils/accountPermissions";
 
 function normalizeComparableValue(value) {
   return String(value || "")
@@ -91,6 +92,7 @@ export default function RecipeBookManager({
   products,
   supplies,
   recipeBooks,
+  userProfile,
   focusedProductId,
   onFocusHandled,
 }) {
@@ -186,6 +188,7 @@ export default function RecipeBookManager({
     () => buildRecipeOperationalSummary(safeRecipeBooks, safeSupplies),
     [safeRecipeBooks, safeSupplies]
   );
+  const canViewCosts = hasPermission(userProfile || { role: "owner" }, "technicalSheets.viewCosts");
 
   const filteredSheets = useMemo(() => {
     const search = normalizeComparableValue(filters.search);
@@ -450,20 +453,26 @@ export default function RecipeBookManager({
             </div>
           </div>
           <div className="grid gap-5 overflow-y-auto p-6">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <DetailBlock title="Costo por porcion">
-                <p className="text-2xl font-black text-slate-950">{formatCOP(costing.costPerPortion)}</p>
-              </DetailBlock>
-              <DetailBlock title="Precio venta">
-                <p className="text-2xl font-black text-slate-950">{formatCOP(costing.currentSalePrice)}</p>
-              </DetailBlock>
-              <DetailBlock title="Food cost">
-                <p className="text-2xl font-black text-slate-950">{costing.foodCostPercent.toFixed(1)}%</p>
-              </DetailBlock>
-              <DetailBlock title="Margen">
-                <p className="text-2xl font-black text-slate-950">{costing.grossMarginPercent.toFixed(1)}%</p>
-              </DetailBlock>
-            </div>
+            {canViewCosts ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <DetailBlock title="Costo por porcion">
+                  <p className="text-2xl font-black text-slate-950">{formatCOP(costing.costPerPortion)}</p>
+                </DetailBlock>
+                <DetailBlock title="Precio venta">
+                  <p className="text-2xl font-black text-slate-950">{formatCOP(costing.currentSalePrice)}</p>
+                </DetailBlock>
+                <DetailBlock title="Food cost">
+                  <p className="text-2xl font-black text-slate-950">{costing.foodCostPercent.toFixed(1)}%</p>
+                </DetailBlock>
+                <DetailBlock title="Margen">
+                  <p className="text-2xl font-black text-slate-950">{costing.grossMarginPercent.toFixed(1)}%</p>
+                </DetailBlock>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-amber-200 bg-[#fff7df] px-4 py-3 text-sm text-[#7a5200]">
+                Tu rol puede consultar la ficha operativa, pero no ver costos ni margenes.
+              </div>
+            )}
             <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
               <DetailBlock title="Datos y rendimiento">
                 <dl className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
@@ -481,7 +490,7 @@ export default function RecipeBookManager({
                         <th className="px-3 py-3">Componente</th>
                         <th className="px-3 py-3">Tipo</th>
                         <th className="px-3 py-3">Cantidad</th>
-                        <th className="px-3 py-3">Costo</th>
+                          {canViewCosts ? <th className="px-3 py-3">Costo</th> : null}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
@@ -490,7 +499,7 @@ export default function RecipeBookManager({
                           <td className="px-3 py-3 font-medium text-slate-900">{component.name}</td>
                           <td className="px-3 py-3 text-slate-500">{component.sourceType === "technical_sheet" ? "Ficha base" : "Insumo"}</td>
                           <td className="px-3 py-3 text-slate-500">{component.quantity} {component.unit}</td>
-                          <td className="px-3 py-3 font-semibold text-slate-900">{formatCOP(component.totalCost)}</td>
+                          {canViewCosts ? <td className="px-3 py-3 font-semibold text-slate-900">{formatCOP(component.totalCost)}</td> : null}
                         </tr>
                       ))}
                     </tbody>
@@ -562,11 +571,19 @@ export default function RecipeBookManager({
             <p className="mt-2 text-2xl font-black text-amber-900">{recipeSummary.draft}</p>
             <p className="mt-1 text-sm text-amber-800/80">Pendientes de completar.</p>
           </article>
-          <article className="rounded-[24px] bg-rose-50 p-4 ring-1 ring-rose-200">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">Margen bajo</p>
-            <p className="mt-2 text-2xl font-black text-rose-900">{recipeSummary.lowMargin}</p>
-            <p className="mt-1 text-sm text-rose-800/80">Requieren precio o receta.</p>
-          </article>
+          {canViewCosts ? (
+            <article className="rounded-[24px] bg-rose-50 p-4 ring-1 ring-rose-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">Margen bajo</p>
+              <p className="mt-2 text-2xl font-black text-rose-900">{recipeSummary.lowMargin}</p>
+              <p className="mt-1 text-sm text-rose-800/80">Requieren precio o receta.</p>
+            </article>
+          ) : (
+            <article className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Costos</p>
+              <p className="mt-2 text-base font-semibold text-slate-700">Restringidos</p>
+              <p className="mt-1 text-sm text-slate-500">Requiere permiso technicalSheets.viewCosts.</p>
+            </article>
+          )}
         </div>
 
         <div className="mt-6 grid gap-3 md:grid-cols-3">
@@ -578,10 +595,12 @@ export default function RecipeBookManager({
             <p className="text-sm font-semibold text-slate-900">Sin procedimiento</p>
             <p className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.undocumentedOps}</p>
           </article>
-          <article className="rounded-[22px] border border-slate-200 bg-white px-4 py-4">
-            <p className="text-sm font-semibold text-slate-900">Margen promedio</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.averageMargin.toFixed(0)}%</p>
-          </article>
+          {canViewCosts ? (
+            <article className="rounded-[22px] border border-slate-200 bg-white px-4 py-4">
+              <p className="text-sm font-semibold text-slate-900">Margen promedio</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.averageMargin.toFixed(0)}%</p>
+            </article>
+          ) : null}
         </div>
       </section>
 
@@ -643,30 +662,36 @@ export default function RecipeBookManager({
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-lg font-semibold text-slate-950">{getTechnicalSheetName(sheet)}</h3>
                       <StatusBadge status={getTechnicalSheetStatus(sheet)} />
-                      <FinancialBadge costing={costing} />
+                      {canViewCosts ? <FinancialBadge costing={costing} /> : null}
                     </div>
                     <p className="mt-2 text-sm text-slate-500">
                       {TYPE_LABELS[getTechnicalSheetType(sheet)]} · {sheet.category || "Sin categoria"} · {(sheet.components || sheet.ingredients || []).length} componente(s)
                     </p>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-4">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Costo/porcion</p>
-                      <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.costPerPortion)}</p>
+                  {canViewCosts ? (
+                    <div className="grid gap-3 sm:grid-cols-4">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Costo/porcion</p>
+                        <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.costPerPortion)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Precio</p>
+                        <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.currentSalePrice)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Sugerido</p>
+                        <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.suggestedPrice)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Food cost</p>
+                        <p className="mt-1 font-semibold text-slate-950">{costing.foodCostPercent.toFixed(1)}%</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Precio</p>
-                      <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.currentSalePrice)}</p>
+                  ) : (
+                    <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 ring-1 ring-slate-200">
+                      Costos y margenes ocultos para este rol.
                     </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Sugerido</p>
-                      <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.suggestedPrice)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Food cost</p>
-                      <p className="mt-1 font-semibold text-slate-950">{costing.foodCostPercent.toFixed(1)}%</p>
-                    </div>
-                  </div>
+                  )}
                   <div className="flex flex-wrap gap-2 xl:justify-end">
                     <button type="button" onClick={() => setDetailSheet(sheet)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 transition hover:bg-slate-200" title="Ver detalle">
                       <Eye size={16} />

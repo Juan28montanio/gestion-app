@@ -57,10 +57,15 @@ export const PAYMENT_METHOD_STYLES = {
   all: "from-slate-900 to-slate-700 text-white ring-slate-900/10",
   cash: "from-emerald-500 to-emerald-600 text-white ring-emerald-500/20",
   card: "from-sky-500 to-sky-600 text-white ring-sky-500/20",
+  debit_card: "from-sky-500 to-cyan-500 text-white ring-sky-500/20",
+  credit_card: "from-indigo-500 to-blue-600 text-white ring-indigo-500/20",
   transfer: "from-indigo-500 to-indigo-600 text-white ring-indigo-500/20",
   nequi: "from-fuchsia-500 to-fuchsia-600 text-white ring-fuchsia-500/20",
   daviplata: "from-rose-500 to-pink-600 text-white ring-rose-500/20",
+  qr: "from-cyan-500 to-teal-500 text-white ring-cyan-500/20",
   ticket_wallet: "from-amber-500 to-[#d4a72c] text-white ring-[#d4a72c]/20",
+  courtesy: "from-slate-500 to-slate-700 text-white ring-slate-500/20",
+  customer_credit: "from-amber-600 to-orange-600 text-white ring-amber-500/20",
 };
 
 export function getLocalDateInputValue(getLocalDateKey, date = new Date()) {
@@ -645,7 +650,7 @@ export function buildPaymentMethodCards({
   previousFilteredMovements = [],
   paymentMatcher,
 }) {
-  return ["all", "cash", "card", "transfer", "nequi", "daviplata", "ticket_wallet"].map(
+  return ["all", "cash", "card", "debit_card", "credit_card", "transfer", "nequi", "daviplata", "qr", "ticket_wallet", "courtesy", "customer_credit"].map(
     (method) => {
       const total = method === "all" ? filteredIncome : Number(paymentMethodTotals[method] || 0);
       const previousTotal =

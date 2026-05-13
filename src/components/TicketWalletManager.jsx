@@ -1,844 +1,1022 @@
-import { useEffect, useId, useMemo, useState } from "react";
-import { Pencil, Plus, ShieldCheck, Ticket, WalletCards, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  adjustCustomerTicketWallet,
-  getTicketWalletState,
+  Ban,
+  ClipboardList,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Search,
+  ShieldAlert,
+  Ticket,
+  Utensils,
+  WalletCards,
+  X,
+} from "lucide-react";
+import {
+  createCustomer,
   subscribeToCustomers,
+  updateCustomer,
 } from "../services/customerService";
 import {
-  createProduct,
-  subscribeToProducts,
-  updateProduct,
-} from "../services/productService";
-import { subscribeToSalesHistory } from "../services/financeService";
+  adjustMealTicketBalance,
+  cancelTicketConsumption,
+  consumeMealTicket,
+  registerExistingMealTicket,
+  saveTicketPlan,
+  sellMealTicket,
+  subscribeToMealTickets,
+  subscribeToTicketConsumptions,
+  subscribeToTicketPlans,
+  updateMealTicketStatus,
+} from "../services/mealTicketService";
+import { subscribeToProducts } from "../services/productService";
 import FormInput from "./FormInput";
+import FormSelect from "./FormSelect";
 import ModalWrapper from "./ModalWrapper";
 import { formatCOP } from "../utils/formatters";
-import { useDecisionCenter } from "../app/decision-center/DecisionCenterContext";
+import {
+  TICKET_STATUS,
+  calculateExpirationDate,
+  calculateMealsAvailable,
+  calculatePricePerMeal,
+  calculateTicketStatus,
+  canConsumeTicket,
+  normalizeDate,
+} from "../utils/ticketing";
+import { PAYMENT_OPTIONS } from "../features/pos/posHelpers";
 
-function createEmptyPlanForm() {
+const TABS = [
+  { id: "customers", label: "Clientes" },
+  { id: "tickets", label: "Ticketeras" },
+  { id: "consumptions", label: "Consumos" },
+  { id: "plans", label: "Planes" },
+];
+
+const CUSTOMER_TYPES = [
+  { value: "student", label: "Estudiante" },
+  { value: "worker", label: "Trabajador" },
+  { value: "company", label: "Empresa" },
+  { value: "general", label: "General" },
+];
+
+const CUSTOMER_TYPE_LABELS = {
+  student: "Estudiante",
+  worker: "Trabajador",
+  company: "Empresa",
+  general: "General",
+};
+
+const TICKET_STATUS_LABELS = {
+  active: "Activa",
+  exhausted: "Agotada",
+  expired: "Vencida",
+  canceled: "Anulada",
+  suspended: "Suspendida",
+};
+
+const CONSUMPTION_STATUS_LABELS = {
+  valid: "Valido",
+  canceled: "Anulado",
+};
+
+function createCustomerForm(customer = {}) {
   return {
-    name: "",
-    category: "Almuerzos",
-    price: "",
-    ticketUnits: "10",
-    ticketValidityDays: "30",
+    name: customer.name || "",
+    phone: customer.phone || "",
+    document: customer.document || customer.document_id || "",
+    email: customer.email || "",
+    institution: customer.institution || "",
+    program: customer.program || "",
+    customerType: customer.customerType || customer.customer_type || "student",
+    status: customer.status || "active",
+    notes: customer.notes || "",
   };
 }
 
-function createEmptyAssignmentForm() {
-  return {
-    customerId: "",
-    units: "0",
-    expiresAt: "",
-  };
-}
-
-function getWalletHealth(wallet) {
-  if (wallet.balance <= 0) {
-    return {
-      label: "Sin saldo",
-      tone: "bg-slate-100 text-slate-700 ring-slate-200",
-      action: "Conviene ofrecer recompra o reactivacion.",
-    };
-  }
-
-  if (wallet.lowBalance) {
-    return {
-      label: "Saldo por renovar",
-      tone: "bg-[#fff7df] text-[#946200] ring-[#d4a72c]/20",
-      action: "Hay espacio para vender renovacion antes de que se agote.",
-    };
-  }
-
-  return {
-    label: "Saldo activo",
-    tone: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    action: "Mantener seguimiento para sostener frecuencia y redencion.",
-  };
-}
-
-function buildPlanForm(plan) {
-  if (!plan) {
-    return createEmptyPlanForm();
-  }
-
+function createPlanForm(plan = {}) {
   return {
     name: plan.name || "",
-    category: plan.category || "Almuerzos",
+    mealsIncluded: String(plan.mealsIncluded ?? plan.meals_included ?? 10),
     price: String(plan.price ?? ""),
-    ticketUnits: String(plan.ticket_units ?? 10),
-    ticketValidityDays: String(plan.ticket_validity_days ?? 30),
+    validityDays: String(plan.validityDays ?? plan.validity_days ?? 30),
+    status: plan.status || "active",
+    description: plan.description || "",
   };
 }
 
-export default function TicketWalletManager({ businessId, requestAuditPin }) {
-  const { publishSectionInsights, clearSectionInsights, openDecisionCenter } = useDecisionCenter();
-  const assignmentCustomerId = useId();
+function createSaleForm(customer = null, plan = null) {
+  const mealsPurchased = Number(plan?.mealsIncluded ?? plan?.meals_included ?? 10);
+  const amountPaid = Number(plan?.price ?? 0);
+  const expirationDate = calculateExpirationDate(new Date(), Number(plan?.validityDays ?? plan?.validity_days ?? 30));
+  return {
+    registrationMode: "sale",
+    customerId: customer?.id || "",
+    planId: plan?.id || "",
+    customSale: plan ? "plan" : "custom",
+    mealsPurchased: String(mealsPurchased || 10),
+    amountPaid: String(amountPaid || ""),
+    paymentMethod: "cash",
+    validityDays: String(plan?.validityDays ?? plan?.validity_days ?? 30),
+    expirationDate: expirationDate ? expirationDate.toISOString().slice(0, 10) : "",
+    mealsConsumed: "0",
+    purchaseDate: "",
+    migrationReason: "",
+    notes: "",
+  };
+}
+
+function createConsumeForm(ticket = null) {
+  return {
+    ticketId: ticket?.id || "",
+    productId: "",
+    productName: "Almuerzo",
+    notes: "",
+  };
+}
+
+function statusBadge(status) {
+  const normalizedStatus = String(status || "active");
+  if (normalizedStatus === "active" || normalizedStatus === "valid") {
+    return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  }
+  if (normalizedStatus === "suspended") {
+    return "bg-amber-50 text-amber-800 ring-amber-200";
+  }
+  if (normalizedStatus === "expired" || normalizedStatus === "exhausted") {
+    return "bg-slate-100 text-slate-700 ring-slate-200";
+  }
+  return "bg-rose-50 text-rose-700 ring-rose-200";
+}
+
+function formatDate(value) {
+  const date = normalizeDate(value);
+  return date ? date.toLocaleDateString("es-CO") : "-";
+}
+
+function buildActor(currentUser, userProfile) {
+  return {
+    id: currentUser?.uid || "",
+    name: userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Operador SmartProfit",
+    email: currentUser?.email || "",
+  };
+}
+
+export default function TicketWalletManager({
+  businessId,
+  requestAuditPin,
+  currentUser,
+  userProfile,
+}) {
+  const [activeTab, setActiveTab] = useState("customers");
   const [customers, setCustomers] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [tickets, setTickets] = useState([]);
+  const [consumptions, setConsumptions] = useState([]);
   const [products, setProducts] = useState([]);
-  const [sales, setSales] = useState([]);
   const [search, setSearch] = useState("");
-  const [planForm, setPlanForm] = useState(createEmptyPlanForm);
-  const [assignmentForm, setAssignmentForm] = useState(createEmptyAssignmentForm);
-  const [editingPlanId, setEditingPlanId] = useState(null);
-  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
-  const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isCompactLayout, setIsCompactLayout] = useState(() => window.innerWidth < 1024);
+  const [feedback, setFeedback] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [customerModal, setCustomerModal] = useState({ open: false, id: "", form: createCustomerForm() });
+  const [planModal, setPlanModal] = useState({ open: false, id: "", form: createPlanForm() });
+  const [saleModal, setSaleModal] = useState({ open: false, form: createSaleForm() });
+  const [consumeModal, setConsumeModal] = useState({ open: false, form: createConsumeForm() });
+  const [cancelConsumptionModal, setCancelConsumptionModal] = useState({ open: false, consumption: null, reason: "" });
+  const [ticketStatusModal, setTicketStatusModal] = useState({ open: false, ticket: null, status: "", reason: "" });
+  const [adjustModal, setAdjustModal] = useState({ open: false, ticket: null, balance: "", reason: "" });
+
+  const actor = useMemo(() => buildActor(currentUser, userProfile), [currentUser, userProfile]);
 
   useEffect(() => {
-    const handleResize = () => {
-      setIsCompactLayout(window.innerWidth < 1024);
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    const unsubscribeCustomers = subscribeToCustomers(businessId, setCustomers);
-    const unsubscribeProducts = subscribeToProducts(businessId, setProducts);
-    const unsubscribeSales = subscribeToSalesHistory(businessId, setSales);
-
-    return () => {
-      unsubscribeCustomers();
-      unsubscribeProducts();
-      unsubscribeSales();
-    };
+    const unsubscribers = [
+      subscribeToCustomers(businessId, setCustomers),
+      subscribeToTicketPlans(businessId, setPlans),
+      subscribeToMealTickets(businessId, setTickets),
+      subscribeToTicketConsumptions(businessId, setConsumptions),
+      subscribeToProducts(businessId, setProducts),
+    ];
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [businessId]);
 
-  const ticketPlans = useMemo(
-    () => products.filter((product) => product.product_type === "ticket_wallet"),
-    [products]
+  const enrichedCustomers = useMemo(() => {
+    return customers.map((customer) => {
+      const customerTickets = tickets.filter((ticket) => ticket.customer_id === customer.id);
+      const customerConsumptions = consumptions.filter(
+        (consumption) => consumption.customer_id === customer.id && consumption.status !== "canceled"
+      );
+      const activeBalance = customerTickets
+        .filter((ticket) => calculateTicketStatus(ticket) === TICKET_STATUS.ACTIVE)
+        .reduce((sum, ticket) => sum + calculateMealsAvailable(ticket), 0);
+      const lastVisit = customerConsumptions[0]?.consumed_at || customerConsumptions[0]?.consumedAt || null;
+
+      return { ...customer, activeBalance, lastVisit, ticketCount: customerTickets.length };
+    });
+  }, [consumptions, customers, tickets]);
+
+  const activeTickets = useMemo(
+    () => tickets.filter((ticket) => calculateTicketStatus(ticket) === TICKET_STATUS.ACTIVE),
+    [tickets]
   );
+
+  const ticketSummary = useMemo(() => {
+    const activeBalance = activeTickets.reduce((sum, ticket) => sum + calculateMealsAvailable(ticket), 0);
+    const expiringSoon = activeTickets.filter((ticket) => {
+      const expirationDate = normalizeDate(ticket.expiration_date || ticket.expirationDate);
+      if (!expirationDate) {
+        return false;
+      }
+      const diffDays = Math.ceil((expirationDate.getTime() - Date.now()) / 86400000);
+      return diffDays >= 0 && diffDays <= 7;
+    }).length;
+    const ticketIncome = tickets.reduce((sum, ticket) => sum + Number(ticket.amount_paid || ticket.amountPaid || 0), 0);
+    return {
+      customers: customers.length,
+      activeTickets: activeTickets.length,
+      activeBalance,
+      expiringSoon,
+      ticketIncome,
+      canceledConsumptions: consumptions.filter((consumption) => consumption.status === "canceled").length,
+    };
+  }, [activeTickets, consumptions, customers.length, tickets]);
 
   const filteredCustomers = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) {
-      return customers;
-    }
-
-    return customers.filter((customer) =>
-      [customer.name, customer.phone, customer.email]
+    return enrichedCustomers.filter((customer) =>
+      [customer.name, customer.phone, customer.document, customer.email, customer.institution]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(term)
     );
-  }, [customers, search]);
+  }, [enrichedCustomers, search]);
 
-  const salesThisMonth = useMemo(() => {
-    const now = new Date();
-    return sales.filter((sale) => {
-      const saleDate = sale.closed_at?.toDate ? sale.closed_at.toDate() : sale.createdAt?.toDate?.();
-      return (
-        saleDate &&
-        saleDate.getMonth() === now.getMonth() &&
-        saleDate.getFullYear() === now.getFullYear()
-      );
-    });
-  }, [sales]);
-
-  const ticketPurchases = useMemo(
-    () => salesThisMonth.filter((sale) => Number(sale.ticket_units_granted || 0) > 0),
-    [salesThisMonth]
-  );
-  const ticketRedemptions = useMemo(
-    () => salesThisMonth.filter((sale) => Number(sale.ticket_units_consumed || 0) > 0),
-    [salesThisMonth]
-  );
-  const ticketMovements = useMemo(
-    () =>
-      [...ticketPurchases, ...ticketRedemptions].sort((a, b) => {
-        const aTime = a.closed_at?.toDate?.()?.getTime?.() || 0;
-        const bTime = b.closed_at?.toDate?.()?.getTime?.() || 0;
-        return bTime - aTime;
-      }),
-    [ticketPurchases, ticketRedemptions]
-  );
-  const walletSummary = useMemo(() => {
-    const customersWithBalance = customers.filter(
-      (customer) => getTicketWalletState(customer).balance > 0
+  const filteredTickets = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return tickets.filter((ticket) =>
+      [ticket.customer_name, ticket.plan_name, ticket.status]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
     );
-    const expiringSoon = customersWithBalance.filter((customer) => {
-      const expiresAt = getTicketWalletState(customer).expiresAt;
-      if (!expiresAt) {
-        return false;
-      }
-      const diffDays = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-      return diffDays >= 0 && diffDays <= 7;
-    }).length;
-    const pendingDebt = customers.reduce(
-      (sum, customer) => sum + Number(customer.pendingDebt || customer.debt_balance || 0),
-      0
+  }, [search, tickets]);
+
+  const filteredConsumptions = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return consumptions.filter((consumption) =>
+      [consumption.customer_name, consumption.product_name, consumption.status]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
     );
+  }, [consumptions, search]);
 
-    return {
-      customersWithBalance: customersWithBalance.length,
-      expiringSoon,
-      pendingDebt,
-      committedRevenue: ticketPurchases.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
-      grantedUnits: ticketPurchases.reduce((sum, sale) => sum + Number(sale.ticket_units_granted || 0), 0),
-      redeemedUnits: ticketRedemptions.reduce((sum, sale) => sum + Number(sale.ticket_units_consumed || 0), 0),
-    };
-  }, [customers, ticketPurchases, ticketRedemptions]);
+  const lunchProducts = useMemo(
+    () => products.filter((product) => product.ticket_eligible || /almuerzo|menu/i.test(`${product.name} ${product.category}`)),
+    [products]
+  );
 
-  const redemptionRate = useMemo(() => {
-    if (!walletSummary.grantedUnits) {
-      return 0;
+  const selectedSalePlan = plans.find((plan) => plan.id === saleModal.form.planId) || null;
+  const selectedSaleCustomer = customers.find((customer) => customer.id === saleModal.form.customerId) || null;
+
+  const requireAudit = async (title, description) => {
+    if (!requestAuditPin) {
+      return true;
     }
+    return requestAuditPin({ title, description });
+  };
 
-    return (walletSummary.redeemedUnits / walletSummary.grantedUnits) * 100;
-  }, [walletSummary.grantedUnits, walletSummary.redeemedUnits]);
-
-  const ticketDecisionItems = useMemo(() => {
-    const expiringCustomers = customers.filter((customer) => {
-      const wallet = getTicketWalletState(customer);
-      if (!wallet.expiresAt || wallet.balance <= 0) {
-        return false;
-      }
-      const diffDays = Math.ceil((wallet.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-      return diffDays >= 0 && diffDays <= 7;
-    });
-    const lowBalanceCustomers = customers.filter((customer) => {
-      const wallet = getTicketWalletState(customer);
-      return wallet.balance > 0 && wallet.lowBalance;
-    });
-    const topPlan = [...ticketPlans].sort((left, right) => Number(right.price || 0) - Number(left.price || 0))[0];
-
-    return [
-      {
-        title: "Renovaciones cercanas",
-        body: expiringCustomers.length
-          ? `${expiringCustomers.length} cliente(s) tienen saldo por vencer en los proximos 7 dias. Es el mejor momento para renovar sin perder continuidad.`
-          : "No hay saldos por vencer en la ventana inmediata. La base prepaga esta estable.",
-        tone: expiringCustomers.length
-          ? "bg-[#fff7df] text-[#7a5500] ring-[#d4a72c]/25"
-          : "bg-emerald-50 text-emerald-900 ring-emerald-200",
-        icon: "lightbulb",
-      },
-      {
-        title: "Uso real del mes",
-        body: walletSummary.grantedUnits
-          ? `Se han redimido ${walletSummary.redeemedUnits} de ${walletSummary.grantedUnits} tickets otorgados, con una tasa de uso del ${redemptionRate.toFixed(0)}%.`
-          : "Todavia no hay otorgamiento de tickets en el mes actual para medir comportamiento de uso.",
-        tone: "bg-white text-slate-900 ring-slate-200",
-        icon: "sparkles",
-      },
-      {
-        title: "Clientes listos para recompra",
-        body: lowBalanceCustomers.length
-          ? `${lowBalanceCustomers.length} cliente(s) ya van en saldo bajo. Este grupo es prioridad natural para venta recurrente.`
-          : "No hay clientes con saldo bajo por ahora, asi que la recompra inmediata no es la tension principal.",
-        tone: "bg-slate-50 text-slate-900 ring-slate-200",
-        icon: "lightbulb",
-      },
-      {
-        title: "Plan de mayor valor",
-        body: topPlan
-          ? `${topPlan.name} es el plan de mayor precio con ${formatCOP(topPlan.price || 0)} y ${topPlan.ticket_units || 0} ticket(s). Vale la pena medir si tambien es el mas facil de redimir y renovar.`
-          : "Aun no hay planes creados para comparar valor y facilidad de recompra.",
-        tone: "bg-white text-slate-900 ring-slate-200",
-        icon: "sparkles",
-      },
-    ];
-  }, [
-    customers,
-    redemptionRate,
-    ticketPlans,
-    walletSummary.grantedUnits,
-    walletSummary.redeemedUnits,
-  ]);
-
-  const ticketDecisionSummary = useMemo(() => {
-    if (walletSummary.expiringSoon > 0) {
-      return `${walletSummary.expiringSoon} ticketera(s) por vencer y ${walletSummary.customersWithBalance} cliente(s) con saldo activo ya merecen seguimiento comercial en un solo panel.`;
-    }
-
-    if (walletSummary.committedRevenue > 0) {
-      return `Las ticketeras ya aportan ${formatCOP(walletSummary.committedRevenue)} en venta recurrente del mes y el analisis queda mejor concentrado fuera de la vista operativa.`;
-    }
-
-    return "El modulo queda mas limpio para operar planes y el seguimiento de recompra vive en el centro de decisiones.";
-  }, [
-    walletSummary.committedRevenue,
-    walletSummary.customersWithBalance,
-    walletSummary.expiringSoon,
-  ]);
-
-  useEffect(() => {
-    publishSectionInsights("ticketing", {
-      eyebrow: "Ticketeras",
-      title: "Venta recurrente y renovacion",
-      summary: ticketDecisionSummary,
-      items: ticketDecisionItems,
-    });
-
-    return () => clearSectionInsights("ticketing");
-  }, [
-    clearSectionInsights,
-    publishSectionInsights,
-    ticketDecisionItems,
-    ticketDecisionSummary,
-  ]);
-
-  const handleSavePlan = async (event) => {
-    event.preventDefault();
-    const normalizedName = String(planForm.name || "").trim();
-    const price = Number(planForm.price);
-    const ticketUnits = Number(planForm.ticketUnits);
-    const ticketValidityDays = Number(planForm.ticketValidityDays);
-
-    if (!normalizedName) {
-      return;
-    }
-
-    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(ticketUnits) || ticketUnits <= 0 || !Number.isFinite(ticketValidityDays) || ticketValidityDays <= 0) {
-      return;
-    }
-
-    setIsSaving(true);
+  const runAction = async (action, successMessage = "") => {
+    setSaving(true);
+    setFeedback("");
     try {
+      await action();
+      setFeedback(successMessage);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "No fue posible completar la accion.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveCustomer = async (event) => {
+    event.preventDefault();
+    await runAction(async () => {
+      if (customerModal.id) {
+        await updateCustomer(customerModal.id, businessId, customerModal.form);
+      } else {
+        const duplicated = customers.find((customer) => {
+          const samePhone = customerModal.form.phone && customer.phone === customerModal.form.phone;
+          const sameDocument = customerModal.form.document && (customer.document || customer.document_id) === customerModal.form.document;
+          return samePhone || sameDocument;
+        });
+        if (duplicated) {
+          throw new Error("Ya existe un cliente con ese celular o documento.");
+        }
+        await createCustomer(businessId, customerModal.form);
+      }
+      setCustomerModal({ open: false, id: "", form: createCustomerForm() });
+    }, "Cliente guardado.");
+  };
+
+  const savePlan = async (event) => {
+    event.preventDefault();
+    await runAction(async () => {
+      await saveTicketPlan(businessId, planModal.form, planModal.id);
+      setPlanModal({ open: false, id: "", form: createPlanForm() });
+    }, "Plan guardado.");
+  };
+
+  const sellTicket = async (event) => {
+    event.preventDefault();
+    await runAction(async () => {
       const payload = {
-        name: normalizedName,
-        category: String(planForm.category || "Almuerzos").trim() || "Almuerzos",
-        price,
-        stock: 9999,
-        productType: "ticket_wallet",
-        ticketUnits,
-        ticketValidityDays,
+        ...saleModal.form,
+        customerName: selectedSaleCustomer?.name || "",
+        planName: selectedSalePlan?.name || (saleModal.form.registrationMode === "migration" ? "Saldo inicial" : "Personalizada"),
+        validityDays: Number(saleModal.form.validityDays || selectedSalePlan?.validity_days || 0),
       };
 
-      if (editingPlanId) {
-        await updateProduct(editingPlanId, businessId, payload);
-      } else {
-        await createProduct(businessId, payload);
-      }
+      if (saleModal.form.registrationMode === "migration") {
+        const authorized = await requireAudit(
+          "Validar saldo inicial",
+          "Confirma el PIN para cargar ticketeras pagadas antes de usar el sistema."
+        );
+        if (!authorized) {
+          throw new Error("Operacion cancelada por falta de autorizacion.");
+        }
 
-      setIsPlanModalOpen(false);
-      setEditingPlanId(null);
-      setPlanForm(createEmptyPlanForm());
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleAssignTickets = async (event) => {
-    event.preventDefault();
-    const units = Number(assignmentForm.units);
-
-    if (!assignmentForm.customerId) {
-      return;
-    }
-
-    if (!Number.isFinite(units) || units < 0) {
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await adjustCustomerTicketWallet(assignmentForm.customerId, {
-        units,
-        totalPurchased: units,
-        expiresAt: assignmentForm.expiresAt ? new Date(`${assignmentForm.expiresAt}T00:00:00`) : null,
-      });
-      setIsAssignmentModalOpen(false);
-      setAssignmentForm(createEmptyAssignmentForm());
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const openAssignmentModal = async (customer = null) => {
-    if (requestAuditPin) {
-      const isAuthorized = await requestAuditPin({
-        title: "Validar PIN de auditoria",
-        description: "Confirma el PIN para ajustar saldo de ticketera.",
-      });
-
-      if (!isAuthorized) {
+        await registerExistingMealTicket(businessId, payload, actor);
+        setSaleModal({ open: false, form: createSaleForm() });
+        setActiveTab("tickets");
         return;
       }
-    }
 
-    setAssignmentForm({
-      customerId: customer?.id || "",
-      units: String(customer?.ticket_balance_units ?? 0),
-      expiresAt: customer?.ticket_expires_at?.toDate
-        ? customer.ticket_expires_at.toDate().toISOString().slice(0, 10)
-        : "",
-    });
-    setIsAssignmentModalOpen(true);
+      await sellMealTicket(
+        businessId,
+        payload,
+        actor
+      );
+      setSaleModal({ open: false, form: createSaleForm() });
+      setActiveTab("tickets");
+    }, saleModal.form.registrationMode === "migration" ? "Saldo inicial cargado sin afectar caja." : "Venta de ticketera registrada en caja.");
+  };
+
+  const consumeTicket = async (event) => {
+    event.preventDefault();
+    const selectedProduct = products.find((product) => product.id === consumeModal.form.productId);
+    await runAction(async () => {
+      await consumeMealTicket(
+        businessId,
+        {
+          ...consumeModal.form,
+          productName: selectedProduct?.name || consumeModal.form.productName || "Almuerzo",
+        },
+        actor
+      );
+      setConsumeModal({ open: false, form: createConsumeForm() });
+      setActiveTab("consumptions");
+    }, "Consumo registrado y saldo descontado.");
+  };
+
+  const cancelConsumption = async () => {
+    await runAction(async () => {
+      await cancelTicketConsumption(cancelConsumptionModal.consumption.id, cancelConsumptionModal.reason, actor);
+      setCancelConsumptionModal({ open: false, consumption: null, reason: "" });
+    }, "Consumo anulado y saldo devuelto.");
+  };
+
+  const changeTicketStatus = async () => {
+    await runAction(async () => {
+      await updateMealTicketStatus(
+        ticketStatusModal.ticket.id,
+        ticketStatusModal.status,
+        ticketStatusModal.reason,
+        actor
+      );
+      setTicketStatusModal({ open: false, ticket: null, status: "", reason: "" });
+    }, "Estado de ticketera actualizado.");
+  };
+
+  const adjustBalance = async () => {
+    const authorized = await requireAudit(
+      "Validar ajuste de saldo",
+      "Confirma el PIN para ajustar manualmente una ticketera."
+    );
+    if (!authorized) {
+      return;
+    }
+    await runAction(async () => {
+      await adjustMealTicketBalance(adjustModal.ticket.id, Number(adjustModal.balance), adjustModal.reason, actor);
+      setAdjustModal({ open: false, ticket: null, balance: "", reason: "" });
+    }, "Saldo ajustado con auditoria.");
+  };
+
+  const openSaleModal = (customer = null) => {
+    setSaleModal({ open: true, form: createSaleForm(customer, null) });
+  };
+
+  const openConsumeModal = (ticket = null) => {
+    setConsumeModal({ open: true, form: createConsumeForm(ticket) });
   };
 
   return (
     <section className="space-y-6">
       <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-        <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">Planes prepago</h2>
-            <p className="text-sm text-slate-500">
-              Controla planes activos, clientes con saldo, deuda pendiente y tickets por vencer.
+            <h2 className="text-xl font-semibold text-slate-900">Clientes y Ticketeras</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+              Controla clientes recurrentes, planes prepagos, venta de almuerzos por adelantado y consumo con trazabilidad.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[420px]">
             <button
               type="button"
-              onClick={() => {
-                setEditingPlanId(null);
-                setPlanForm(createEmptyPlanForm());
-                setIsPlanModalOpen(true);
-              }}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg"
+              onClick={() => setCustomerModal({ open: true, id: "", form: createCustomerForm() })}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg"
             >
               <Plus size={16} />
-              Nuevo plan
+              Cliente
             </button>
             <button
               type="button"
-              onClick={() => openAssignmentModal()}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#946200]"
+              onClick={() => openSaleModal()}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg"
             >
               <WalletCards size={16} />
-              Ajustar saldo
+              Vender ticketera
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaleModal({ open: true, form: { ...createSaleForm(), registrationMode: "migration", customSale: "custom", paymentMethod: "legacy_paid" } })}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800"
+            >
+              <ShieldAlert size={16} />
+              Saldo inicial
             </button>
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-          <article className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Planes activos</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{ticketPlans.length}</p>
-          </article>
-          <article className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Clientes con saldo</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{walletSummary.customersWithBalance}</p>
-          </article>
-          <article className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Tickets por vencer</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{walletSummary.expiringSoon}</p>
-          </article>
-          <article className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Deuda pendiente</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{formatCOP(walletSummary.pendingDebt)}</p>
-          </article>
-          <article className="rounded-[24px] bg-slate-950 p-5 text-white ring-1 ring-slate-900">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Redenciones del mes</p>
-            <p className="mt-2 text-2xl font-black">{ticketRedemptions.length}</p>
-          </article>
-        </div>
-
-        <div className="mt-5 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Centro de decisiones
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{ticketDecisionSummary}</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div
-                className={`inline-flex items-center rounded-full px-3 py-2 text-xs font-semibold ${
-                  ticketDecisionItems.length > 0
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-500"
-                }`}
-              >
-                {ticketDecisionItems.length} lectura{ticketDecisionItems.length === 1 ? "" : "s"} activa{ticketDecisionItems.length === 1 ? "" : "s"}
-              </div>
-              <button
-                type="button"
-                onClick={openDecisionCenter}
-                disabled={ticketDecisionItems.length === 0}
-                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
-                  ticketDecisionItems.length > 0
-                    ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-                }`}
-              >
-                Ver panel
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-4 xl:grid-cols-2">
-          <article className="rounded-[24px] bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] p-5 text-white ring-1 ring-slate-900/10">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Venta recurrente del mes
-            </p>
-            <p className="mt-2 text-3xl font-black">{formatCOP(walletSummary.committedRevenue)}</p>
-            <p className="mt-2 text-sm text-slate-300">
-              Ingreso comprometido por compra de planes prepago en el mes actual.
-            </p>
-          </article>
-          <article className="rounded-[24px] bg-white p-5 ring-1 ring-slate-200">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Tasa de uso
-            </p>
-            <p className="mt-2 text-3xl font-black text-slate-950">{redemptionRate.toFixed(0)}%</p>
-            <p className="mt-2 text-sm text-slate-500">
-              {walletSummary.redeemedUnits} tickets usados de {walletSummary.grantedUnits} otorgados este mes.
-            </p>
-          </article>
+        <div className="mt-6 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+          {[
+            ["Clientes", ticketSummary.customers],
+            ["Ticketeras activas", ticketSummary.activeTickets],
+            ["Almuerzos pendientes", ticketSummary.activeBalance],
+            ["Por vencer", ticketSummary.expiringSoon],
+            ["Ingresos ticketera", formatCOP(ticketSummary.ticketIncome)],
+            ["Consumos anulados", ticketSummary.canceledConsumptions],
+          ].map(([label, value]) => (
+            <article key={label} className="rounded-[22px] bg-slate-50 p-4 ring-1 ring-slate-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+              <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
+            </article>
+          ))}
         </div>
       </section>
 
-      <section className="grid gap-6 2xl:grid-cols-[0.9fr_1.1fr]">
-        <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">Planes de ticketera</h3>
-              <p className="text-sm text-slate-500">Configura paquetes prepagos claros y faciles de vender.</p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {ticketPlans.length === 0 ? (
-              <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
-                <p className="text-base font-semibold text-slate-700">Aun no hay planes creados</p>
-                <p className="mt-2 text-sm text-slate-500">
-                  Crea planes prepago para acelerar ventas recurrentes y control de saldo.
-                </p>
-              </div>
-            ) : null}
-
-            {ticketPlans.map((plan) => (
-              <div key={plan.id} className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">{plan.name}</p>
-                    <p className="break-words text-sm text-slate-500">
-                      {plan.ticket_units || 0} tickets · {plan.ticket_validity_days || 30} dias
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingPlanId(plan.id);
-                      setPlanForm(buildPlanForm(plan));
-                      setIsPlanModalOpen(true);
-                    }}
-                    className="rounded-2xl bg-white p-2.5 text-slate-700 ring-1 ring-slate-200"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Precio</p>
-                    <p className="mt-2 font-mono text-lg font-bold text-slate-950">{formatCOP(plan.price)}</p>
-                  </div>
-                  <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Categoria</p>
-                    <p className="mt-2 font-semibold text-slate-900">{plan.category || "Sin categoria"}</p>
-                  </div>
-                </div>
-                <div className="mt-3 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Argumento comercial</p>
-                  <p className="mt-2 text-sm text-slate-700">
-                    Cada ticket queda en{" "}
-                    <span className="font-semibold text-slate-900">
-                      {formatCOP((Number(plan.price || 0) || 0) / Math.max(Number(plan.ticket_units || 0) || 1, 1))}
-                    </span>{" "}
-                    y ayuda a asegurar recurrencia con vigencia de {plan.ticket_validity_days || 30} dias.
-                  </p>
-                </div>
-              </div>
+      <section className="rounded-[28px] bg-white/85 p-5 shadow-lg ring-1 ring-white/70 backdrop-blur">
+        <div className="mb-5 grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center">
+          <div className="flex flex-wrap gap-2">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                  activeTab === tab.id ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {tab.label}
+              </button>
             ))}
           </div>
-        </article>
-
-        <article className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">Clientes con saldo</h3>
-              <p className="text-sm text-slate-500">Consulta vigencia, deuda y saldo disponible por cliente.</p>
-            </div>
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
+            <Search size={16} className="text-slate-400" />
             <input
+              type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar cliente..."
-              className="w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200 lg:w-[280px]"
+              placeholder="Buscar por cliente, celular, documento o estado..."
+              className="w-full min-w-0 bg-transparent text-sm outline-none"
             />
           </div>
+          {feedback ? (
+            <span className="rounded-2xl bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200">
+              {feedback}
+            </span>
+          ) : null}
+        </div>
 
-          <div className="space-y-3">
-            {filteredCustomers.map((customer) => {
-              const wallet = getTicketWalletState(customer);
-              const walletHealth = getWalletHealth(wallet);
+        {activeTab === "customers" ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <tr>
+                  <th className="py-3 pr-4">Cliente</th>
+                  <th className="py-3 pr-4">Contacto</th>
+                  <th className="py-3 pr-4">Institucion</th>
+                  <th className="py-3 pr-4">Tipo</th>
+                  <th className="py-3 pr-4 text-right">Saldo</th>
+                  <th className="py-3 pr-4">Ultima visita</th>
+                  <th className="py-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCustomers.map((customer) => (
+                  <tr key={customer.id} className="border-b border-slate-100 text-slate-700">
+                    <td className="py-3 pr-4 font-semibold text-slate-950">{customer.name}</td>
+                    <td className="py-3 pr-4">{[customer.phone, customer.document].filter(Boolean).join(" / ") || "-"}</td>
+                    <td className="py-3 pr-4">{customer.institution || "-"}</td>
+                    <td className="py-3 pr-4">{CUSTOMER_TYPE_LABELS[customer.customer_type] || customer.customer_type || "General"}</td>
+                    <td className="py-3 pr-4 text-right font-mono">{customer.activeBalance}</td>
+                    <td className="py-3 pr-4">{formatDate(customer.lastVisit)}</td>
+                    <td className="py-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCustomerModal({ open: true, id: customer.id, form: createCustomerForm(customer) })}
+                          className="rounded-xl bg-slate-100 p-2 text-slate-700"
+                          title="Editar cliente"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSaleModal(customer)}
+                          className="rounded-xl bg-emerald-50 p-2 text-emerald-700"
+                          title="Vender ticketera"
+                        >
+                          <Ticket size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+
+        {activeTab === "tickets" ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {filteredTickets.map((ticket) => {
+              const derivedStatus = calculateTicketStatus(ticket);
+              const available = calculateMealsAvailable(ticket);
+              const consumptionPermission = canConsumeTicket(ticket);
               return (
-                <div key={customer.id} className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
+                <article key={ticket.id} className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-slate-900">{customer.name}</p>
-                      <p className="break-words text-sm text-slate-500">
-                        Saldo {wallet.balance} · Vence{" "}
-                        {wallet.expiresAt ? wallet.expiresAt.toLocaleDateString("es-CO") : "sin fecha"}
-                      </p>
-                      {Number(customer.pendingDebt || customer.debt_balance || 0) > 0 ? (
-                        <p className="mt-2 text-xs font-semibold text-rose-700">
-                          Deuda pendiente: {formatCOP(customer.pendingDebt || customer.debt_balance || 0)}
-                        </p>
-                      ) : null}
+                    <div>
+                      <p className="font-semibold text-slate-950">{ticket.customer_name}</p>
+                      <p className="mt-1 text-sm text-slate-500">{ticket.plan_name || "Personalizada"}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2 sm:max-w-[220px] sm:justify-end">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${walletHealth.tone}`}>
-                        {walletHealth.label}
-                      </span>
-                      <span className="rounded-full bg-[#fff7df] px-3 py-1 text-xs font-semibold text-[#946200] ring-1 ring-[#d4a72c]/20">
-                        {wallet.balance} tickets
-                      </span>
-                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusBadge(derivedStatus)}`}>
+                      {TICKET_STATUS_LABELS[derivedStatus] || derivedStatus}
+                    </span>
                   </div>
-                  <div className="mt-4 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Siguiente accion</p>
-                    <p className="mt-2 text-sm text-slate-700">{walletHealth.action}</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    <Metric label="Saldo" value={available} />
+                    <Metric label="Consumidos" value={Number(ticket.meals_consumed || 0)} />
+                    <Metric label="Comprados" value={Number(ticket.meals_purchased || 0)} />
+                    <Metric label="Pagado" value={formatCOP(ticket.amount_paid || 0)} />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => openAssignmentModal(customer)}
-                    className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    <ShieldCheck size={14} />
-                    Ajustar saldo
-                  </button>
-                </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Metric label="Vencimiento" value={formatDate(ticket.expiration_date)} />
+                    <Metric label="Precio almuerzo" value={formatCOP(ticket.price_per_meal || 0)} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openConsumeModal(ticket)}
+                      disabled={!consumptionPermission.allowed}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Utensils size={15} />
+                      Consumir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustModal({ open: true, ticket, balance: String(available), reason: "" })}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-slate-700 ring-1 ring-slate-200"
+                    >
+                      <ShieldAlert size={15} />
+                      Ajustar
+                    </button>
+                    {derivedStatus === TICKET_STATUS.SUSPENDED ? (
+                      <button
+                        type="button"
+                        onClick={() => setTicketStatusModal({ open: true, ticket, status: TICKET_STATUS.ACTIVE, reason: "Reactivacion autorizada" })}
+                        className="rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200"
+                      >
+                        Reactivar
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setTicketStatusModal({ open: true, ticket, status: TICKET_STATUS.SUSPENDED, reason: "" })}
+                        className="rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-amber-700 ring-1 ring-amber-200"
+                      >
+                        Suspender
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setTicketStatusModal({ open: true, ticket, status: TICKET_STATUS.CANCELED, reason: "" })}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 ring-1 ring-rose-200"
+                    >
+                      <Ban size={15} />
+                      Anular
+                    </button>
+                  </div>
+                </article>
               );
             })}
-
-            {filteredCustomers.length === 0 ? (
-              <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">
-                No hay clientes que coincidan con la busqueda actual.
-              </div>
-            ) : null}
           </div>
-        </article>
-      </section>
+        ) : null}
 
-      <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">Historial global del mes</h3>
-            <p className="text-sm text-slate-500">Revisa compras de planes y redenciones desde una sola tabla.</p>
+        {activeTab === "consumptions" ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <tr>
+                  <th className="py-3 pr-4">Fecha</th>
+                  <th className="py-3 pr-4">Cliente</th>
+                  <th className="py-3 pr-4">Producto</th>
+                  <th className="py-3 pr-4">Usuario</th>
+                  <th className="py-3 pr-4">Estado</th>
+                  <th className="py-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredConsumptions.map((consumption) => (
+                  <tr key={consumption.id} className="border-b border-slate-100 text-slate-700">
+                    <td className="py-3 pr-4">{formatDate(consumption.consumed_at || consumption.createdAt)}</td>
+                    <td className="py-3 pr-4 font-semibold text-slate-950">{consumption.customer_name}</td>
+                    <td className="py-3 pr-4">{consumption.product_name || "Almuerzo"}</td>
+                    <td className="py-3 pr-4">{consumption.consumed_by?.name || "-"}</td>
+                    <td className="py-3 pr-4">
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusBadge(consumption.status)}`}>
+                        {CONSUMPTION_STATUS_LABELS[consumption.status] || consumption.status}
+                      </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setCancelConsumptionModal({ open: true, consumption, reason: "" })}
+                        disabled={consumption.status === "canceled"}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <RotateCcw size={15} />
+                        Anular
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
-            {ticketMovements.length} movimientos
-          </span>
-        </div>
-        {isCompactLayout ? (
-          <div className="mt-4 space-y-3">
-            {ticketMovements.map((sale) => (
-              <article key={sale.id} className="rounded-[22px] bg-slate-50 p-4 ring-1 ring-slate-200">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">{sale.customer_name || "Cliente"}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {Number(sale.ticket_units_granted || 0) > 0 ? "Compra de plan" : "Redencion"}
-                    </p>
+        ) : null}
+
+        {activeTab === "plans" ? (
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => setPlanModal({ open: true, id: "", form: createPlanForm() })}
+              className="flex min-h-[170px] flex-col items-center justify-center gap-3 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-5 text-slate-600"
+            >
+              <Plus size={22} />
+              <span className="font-semibold">Crear plan</span>
+            </button>
+            {plans.map((plan) => (
+              <article key={plan.id} className="rounded-[24px] bg-slate-50 p-5 ring-1 ring-slate-200">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-slate-950">{plan.name}</p>
+                    <p className="mt-1 text-sm text-slate-500">{plan.description || "Plan de almuerzos prepagos"}</p>
                   </div>
-                  <span className="text-sm font-semibold text-slate-900">
-                    {formatCOP(sale.total || 0)}
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusBadge(plan.status)}`}>
+                    {plan.status === "active" ? "Activo" : "Inactivo"}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-slate-600">
-                  {(sale.items || []).map((item) => item.name).join(", ") || sale.concept}
-                </p>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>
-                    Unidades: {Number(sale.ticket_units_granted || 0) || Number(sale.ticket_units_consumed || 0)}
-                  </span>
-                  <span>
-                    {sale.closed_at?.toDate?.()?.toLocaleDateString("es-CO") || "Sin fecha"}
-                  </span>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <Metric label="Almuerzos" value={plan.meals_included || plan.mealsIncluded} />
+                  <Metric label="Precio" value={formatCOP(plan.price)} />
+                  <Metric label="Unidad" value={formatCOP(plan.price_per_meal || calculatePricePerMeal(plan.price, plan.meals_included))} />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setPlanModal({ open: true, id: plan.id, form: createPlanForm(plan) })}
+                  className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-slate-700 ring-1 ring-slate-200"
+                >
+                  <Pencil size={15} />
+                  Editar plan
+                </button>
               </article>
             ))}
           </div>
-        ) : (
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              <tr>
-                <th className="py-3 pr-4">Cliente</th>
-                <th className="py-3 pr-4">Movimiento</th>
-                <th className="py-3 pr-4">Detalle</th>
-                <th className="py-3 pr-4 text-right">Unidades</th>
-                <th className="py-3 pr-4 text-right">Valor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ticketMovements.map((sale) => (
-                  <tr key={sale.id} className="border-b border-slate-100 text-slate-700">
-                    <td className="py-3 pr-4">{sale.customer_name || "Cliente"}</td>
-                    <td className="py-3 pr-4">
-                      {Number(sale.ticket_units_granted || 0) > 0 ? "Compra de plan" : "Redencion"}
-                    </td>
-                    <td className="py-3 pr-4">
-                      {(sale.items || []).map((item) => item.name).join(", ") || sale.concept}
-                    </td>
-                    <td className="py-3 pr-4 text-right font-mono">
-                      {Number(sale.ticket_units_granted || 0) || Number(sale.ticket_units_consumed || 0)}
-                    </td>
-                    <td className="py-3 pr-4 text-right font-mono">{formatCOP(sale.total || 0)}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-        )}
+        ) : null}
       </section>
 
-      <ModalWrapper
-        open={isPlanModalOpen}
-        onClose={() => setIsPlanModalOpen(false)}
-        maxWidthClass="max-w-3xl"
-        icon={{ main: <Ticket size={20} />, close: <X size={18} /> }}
-        title={editingPlanId ? "Editar plan de ticketera" : "Nuevo plan de ticketera"}
-        description="Define paquetes prepagos con su precio, cantidad de tickets y vigencia."
-      >
-        <form onSubmit={handleSavePlan} className="grid gap-6">
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormInput
-              label="Nombre del plan"
-              required
-              value={planForm.name}
-              onChange={(event) => setPlanForm((current) => ({ ...current, name: event.target.value }))}
-            />
-            <FormInput
-              label="Categoria"
-              value={planForm.category}
-              onChange={(event) =>
-                setPlanForm((current) => ({ ...current, category: event.target.value }))
-              }
-            />
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <FormInput
-              label="Precio"
-              type="number"
-              min="0"
-              step="1"
-              value={planForm.price}
-              onChange={(event) => setPlanForm((current) => ({ ...current, price: event.target.value }))}
-            />
-            <FormInput
-              label="Tickets"
-              type="number"
-              min="1"
-              step="1"
-              value={planForm.ticketUnits}
-              onChange={(event) =>
-                setPlanForm((current) => ({ ...current, ticketUnits: event.target.value }))
-              }
-            />
-            <FormInput
-              label="Vigencia (dias)"
-              type="number"
-              min="1"
-              step="1"
-              value={planForm.ticketValidityDays}
-              onChange={(event) =>
-                setPlanForm((current) => ({ ...current, ticketValidityDays: event.target.value }))
-              }
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setIsPlanModalOpen(false)}
-              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={
-                isSaving ||
-                !String(planForm.name || "").trim() ||
-                Number(planForm.price) <= 0 ||
-                Number(planForm.ticketUnits) <= 0 ||
-                Number(planForm.ticketValidityDays) <= 0
-              }
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSaving ? "Guardando..." : editingPlanId ? "Actualizar plan" : "Crear plan"}
-            </button>
-          </div>
-        </form>
-      </ModalWrapper>
-
-      <ModalWrapper
-        open={isAssignmentModalOpen}
-        onClose={() => setIsAssignmentModalOpen(false)}
-        maxWidthClass="max-w-3xl"
-        icon={{ main: <WalletCards size={20} />, close: <X size={18} /> }}
-        title="Ajustar saldo de ticketera"
-        description="Usa esta herramienta para migrar clientes antiguos o corregir el saldo disponible."
-      >
-        <form onSubmit={handleAssignTickets} className="grid gap-6">
-          <div className="grid gap-2 text-sm font-medium text-slate-700">
-            <label htmlFor={assignmentCustomerId}>Cliente</label>
-            <select
-              id={assignmentCustomerId}
-              value={assignmentForm.customerId}
-              onChange={(event) =>
-                setAssignmentForm((current) => ({ ...current, customerId: event.target.value }))
-              }
-              className="w-full rounded-2xl bg-white px-4 py-3 text-sm text-slate-900 outline-none ring-1 ring-slate-200 transition focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="">Seleccionar cliente</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormInput
-              label="Saldo disponible"
-              type="number"
-              min="0"
-              step="1"
-              value={assignmentForm.units}
-              onChange={(event) =>
-                setAssignmentForm((current) => ({ ...current, units: event.target.value }))
-              }
-            />
-            <FormInput
-              label="Vencimiento"
-              type="date"
-              value={assignmentForm.expiresAt}
-              onChange={(event) =>
-                setAssignmentForm((current) => ({ ...current, expiresAt: event.target.value }))
-              }
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setIsAssignmentModalOpen(false)}
-              className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={
-                isSaving ||
-                !assignmentForm.customerId ||
-                Number.isNaN(Number(assignmentForm.units)) ||
-                Number(assignmentForm.units) < 0
-              }
-              className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSaving ? "Guardando..." : "Guardar ajuste"}
-            </button>
-          </div>
-        </form>
-      </ModalWrapper>
+      <CustomerFormModal
+        modal={customerModal}
+        setModal={setCustomerModal}
+        onSubmit={saveCustomer}
+        saving={saving}
+      />
+      <PlanFormModal modal={planModal} setModal={setPlanModal} onSubmit={savePlan} saving={saving} />
+      <SellTicketModal
+        modal={saleModal}
+        setModal={setSaleModal}
+        customers={customers}
+        plans={plans.filter((plan) => plan.status === "active")}
+        selectedPlan={selectedSalePlan}
+        onSubmit={sellTicket}
+        saving={saving}
+      />
+      <ConsumeTicketModal
+        modal={consumeModal}
+        setModal={setConsumeModal}
+        tickets={activeTickets}
+        products={lunchProducts}
+        onSubmit={consumeTicket}
+        saving={saving}
+      />
+      <ReasonModal
+        open={cancelConsumptionModal.open}
+        title="Anular consumo"
+        description="El saldo se devolvera a la ticketera y quedara trazabilidad del motivo."
+        icon={<RotateCcw size={20} />}
+        reason={cancelConsumptionModal.reason}
+        onReasonChange={(reason) => setCancelConsumptionModal((current) => ({ ...current, reason }))}
+        onClose={() => setCancelConsumptionModal({ open: false, consumption: null, reason: "" })}
+        onConfirm={cancelConsumption}
+        confirmLabel="Anular consumo"
+        saving={saving}
+      />
+      <ReasonModal
+        open={ticketStatusModal.open}
+        title={
+          ticketStatusModal.status === TICKET_STATUS.CANCELED
+            ? "Anular ticketera"
+            : ticketStatusModal.status === TICKET_STATUS.SUSPENDED
+              ? "Suspender ticketera"
+              : "Reactivar ticketera"
+        }
+        description="La ticketera no se borrara fisicamente. El cambio queda auditado."
+        icon={<Ban size={20} />}
+        reason={ticketStatusModal.reason}
+        onReasonChange={(reason) => setTicketStatusModal((current) => ({ ...current, reason }))}
+        onClose={() => setTicketStatusModal({ open: false, ticket: null, status: "", reason: "" })}
+        onConfirm={changeTicketStatus}
+        confirmLabel="Confirmar"
+        saving={saving}
+      />
+      <AdjustBalanceModal
+        modal={adjustModal}
+        setModal={setAdjustModal}
+        onConfirm={adjustBalance}
+        saving={saving}
+      />
     </section>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</p>
+      <p className="mt-2 break-words text-sm font-bold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function CustomerFormModal({ modal, setModal, onSubmit, saving }) {
+  return (
+    <ModalWrapper
+      open={modal.open}
+      onClose={() => setModal({ open: false, id: "", form: createCustomerForm() })}
+      maxWidthClass="max-w-4xl"
+      icon={{ main: <ClipboardList size={20} />, close: <X size={18} /> }}
+      title={modal.id ? "Editar cliente" : "Nuevo cliente"}
+      description="Registra datos comerciales suficientes para operar ticketera y seguimiento."
+    >
+      <form onSubmit={onSubmit} className="grid gap-5">
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormInput label="Nombre completo" required value={modal.form.name} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, name: event.target.value } }))} />
+          <FormInput label="Celular" value={modal.form.phone} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, phone: event.target.value } }))} />
+          <FormInput label="Documento" value={modal.form.document} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, document: event.target.value } }))} />
+          <FormInput label="Correo" type="email" value={modal.form.email} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, email: event.target.value } }))} />
+          <FormInput label="Institucion educativa" value={modal.form.institution} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, institution: event.target.value } }))} />
+          <FormInput label="Carrera o programa" value={modal.form.program} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, program: event.target.value } }))} />
+          <FormSelect label="Tipo" value={modal.form.customerType} options={CUSTOMER_TYPES} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, customerType: event.target.value } }))} />
+          <FormSelect label="Estado" value={modal.form.status} options={[{ value: "active", label: "Activo" }, { value: "inactive", label: "Inactivo" }]} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, status: event.target.value } }))} />
+        </div>
+        <FormInput label="Observaciones" multiline rows={3} value={modal.form.notes} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, notes: event.target.value } }))} />
+        <ModalActions saving={saving} submitLabel={modal.id ? "Actualizar cliente" : "Crear cliente"} onCancel={() => setModal({ open: false, id: "", form: createCustomerForm() })} />
+      </form>
+    </ModalWrapper>
+  );
+}
+
+function PlanFormModal({ modal, setModal, onSubmit, saving }) {
+  return (
+    <ModalWrapper
+      open={modal.open}
+      onClose={() => setModal({ open: false, id: "", form: createPlanForm() })}
+      icon={{ main: <Ticket size={20} />, close: <X size={18} /> }}
+      title={modal.id ? "Editar plan" : "Nuevo plan"}
+      description="Define cantidad de almuerzos, precio y vigencia comercial."
+    >
+      <form onSubmit={onSubmit} className="grid gap-5">
+        <FormInput label="Nombre" required value={modal.form.name} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, name: event.target.value } }))} />
+        <div className="grid gap-4 md:grid-cols-3">
+          <FormInput label="Almuerzos incluidos" type="number" min="1" required value={modal.form.mealsIncluded} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, mealsIncluded: event.target.value } }))} />
+          <FormInput label="Precio" type="number" min="0" required value={modal.form.price} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, price: event.target.value } }))} />
+          <FormInput label="Vigencia dias" type="number" min="1" value={modal.form.validityDays} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, validityDays: event.target.value } }))} />
+        </div>
+        <FormSelect label="Estado" value={modal.form.status} options={[{ value: "active", label: "Activo" }, { value: "inactive", label: "Inactivo" }]} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, status: event.target.value } }))} />
+        <FormInput label="Descripcion" multiline rows={3} value={modal.form.description} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, description: event.target.value } }))} />
+        <ModalActions saving={saving} submitLabel={modal.id ? "Actualizar plan" : "Crear plan"} onCancel={() => setModal({ open: false, id: "", form: createPlanForm() })} />
+      </form>
+    </ModalWrapper>
+  );
+}
+
+function SellTicketModal({ modal, setModal, customers, plans, selectedPlan, onSubmit, saving }) {
+  useEffect(() => {
+    if (!modal.open || modal.form.customSale !== "plan" || !selectedPlan) {
+      return;
+    }
+    const expirationDate = calculateExpirationDate(new Date(), selectedPlan.validity_days || selectedPlan.validityDays);
+    setModal((current) => ({
+      ...current,
+      form: {
+        ...current.form,
+        mealsPurchased: String(selectedPlan.meals_included || selectedPlan.mealsIncluded || 0),
+        amountPaid: String(selectedPlan.price || 0),
+        validityDays: String(selectedPlan.validity_days || selectedPlan.validityDays || ""),
+        expirationDate: expirationDate ? expirationDate.toISOString().slice(0, 10) : "",
+      },
+    }));
+  }, [modal.form.customSale, modal.open, selectedPlan, setModal]);
+
+  return (
+    <ModalWrapper
+      open={modal.open}
+      onClose={() => setModal({ open: false, form: createSaleForm() })}
+      maxWidthClass="max-w-4xl"
+      icon={{ main: <WalletCards size={20} />, close: <X size={18} /> }}
+      title={modal.form.registrationMode === "migration" ? "Cargar saldo inicial" : "Vender ticketera"}
+      description={
+        modal.form.registrationMode === "migration"
+          ? "Registra ticketeras ya pagadas antes de usar el sistema. No afecta caja ni ventas actuales."
+          : "Registra el ingreso en caja sin descontar inventario."
+      }
+    >
+      <form onSubmit={onSubmit} className="grid gap-5">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setModal((current) => ({ ...current, form: { ...current.form, registrationMode: "sale", paymentMethod: "cash" } }))}
+            className={`rounded-3xl px-5 py-4 text-left ring-1 ${
+              modal.form.registrationMode === "sale"
+                ? "bg-emerald-50 text-emerald-900 ring-emerald-300"
+                : "bg-slate-50 text-slate-600 ring-slate-200"
+            }`}
+          >
+            <p className="text-sm font-semibold">Venta actual</p>
+            <p className="mt-1 text-sm">Entra a caja y queda en reportes financieros.</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setModal((current) => ({ ...current, form: { ...current.form, registrationMode: "migration", customSale: "custom", paymentMethod: "legacy_paid" } }))}
+            className={`rounded-3xl px-5 py-4 text-left ring-1 ${
+              modal.form.registrationMode === "migration"
+                ? "bg-amber-50 text-amber-900 ring-amber-300"
+                : "bg-slate-50 text-slate-600 ring-slate-200"
+            }`}
+          >
+            <p className="text-sm font-semibold">Saldo inicial</p>
+            <p className="mt-1 text-sm">Para pagos hechos antes de existir el sistema.</p>
+          </button>
+        </div>
+        <FormSelect label="Cliente" required value={modal.form.customerId} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, customerId: event.target.value } }))}>
+          <option value="">Seleccionar cliente</option>
+          {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
+        </FormSelect>
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormSelect label="Tipo de venta" value={modal.form.customSale} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, customSale: event.target.value, planId: "" } }))}>
+            <option value="plan">Plan configurado</option>
+            <option value="custom">Personalizada</option>
+          </FormSelect>
+          {modal.form.customSale === "plan" ? (
+            <FormSelect label="Plan" value={modal.form.planId} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, planId: event.target.value } }))}>
+              <option value="">Seleccionar plan</option>
+              {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+            </FormSelect>
+          ) : null}
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <FormInput label="Almuerzos" type="number" min="1" required value={modal.form.mealsPurchased} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, mealsPurchased: event.target.value } }))} />
+          <FormInput label={modal.form.registrationMode === "migration" ? "Valor historico" : "Valor pagado"} type="number" min="0" required={modal.form.registrationMode !== "migration"} value={modal.form.amountPaid} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, amountPaid: event.target.value } }))} />
+          {modal.form.registrationMode === "migration" ? (
+            <FormInput label="Ya consumidos" type="number" min="0" value={modal.form.mealsConsumed} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, mealsConsumed: event.target.value } }))} />
+          ) : (
+            <FormSelect label="Metodo de pago" required value={modal.form.paymentMethod} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, paymentMethod: event.target.value } }))}>
+              {PAYMENT_OPTIONS.filter((option) => option.value !== "ticket_wallet" && option.value !== "account_credit").map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FormSelect>
+          )}
+          <FormInput label="Vencimiento" type="date" value={modal.form.expirationDate} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, expirationDate: event.target.value } }))} />
+        </div>
+        {modal.form.registrationMode === "migration" ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <FormInput label="Fecha de compra historica" type="date" value={modal.form.purchaseDate} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, purchaseDate: event.target.value } }))} />
+            <FormInput label="Motivo de carga" required value={modal.form.migrationReason} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, migrationReason: event.target.value } }))} />
+          </div>
+        ) : null}
+        <Metric label="Precio por almuerzo" value={formatCOP(calculatePricePerMeal(modal.form.amountPaid, modal.form.mealsPurchased))} />
+        <FormInput label="Notas" multiline rows={3} value={modal.form.notes} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, notes: event.target.value } }))} />
+        <ModalActions saving={saving} submitLabel={modal.form.registrationMode === "migration" ? "Cargar saldo inicial" : "Registrar venta"} onCancel={() => setModal({ open: false, form: createSaleForm() })} />
+      </form>
+    </ModalWrapper>
+  );
+}
+
+function ConsumeTicketModal({ modal, setModal, tickets, products, onSubmit, saving }) {
+  const selectedTicket = tickets.find((ticket) => ticket.id === modal.form.ticketId);
+  return (
+    <ModalWrapper
+      open={modal.open}
+      onClose={() => setModal({ open: false, form: createConsumeForm() })}
+      icon={{ main: <Utensils size={20} />, close: <X size={18} /> }}
+      title="Consumir almuerzo"
+      description="Este evento descuenta saldo y queda preparado para inventario/ficha tecnica."
+    >
+      <form onSubmit={onSubmit} className="grid gap-5">
+        <FormSelect label="Ticketera activa" required value={modal.form.ticketId} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, ticketId: event.target.value } }))}>
+          <option value="">Seleccionar ticketera</option>
+          {tickets.map((ticket) => <option key={ticket.id} value={ticket.id}>{ticket.customer_name} - saldo {calculateMealsAvailable(ticket)}</option>)}
+        </FormSelect>
+        {selectedTicket ? <Metric label="Saldo disponible" value={calculateMealsAvailable(selectedTicket)} /> : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormSelect label="Producto entregado" value={modal.form.productId} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, productId: event.target.value } }))}>
+            <option value="">Almuerzo generico</option>
+            {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+          </FormSelect>
+          <FormInput label="Nombre producto" value={modal.form.productName} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, productName: event.target.value } }))} />
+        </div>
+        <FormInput label="Notas" multiline rows={3} value={modal.form.notes} onChange={(event) => setModal((current) => ({ ...current, form: { ...current.form, notes: event.target.value } }))} />
+        <ModalActions saving={saving} submitLabel="Confirmar consumo" onCancel={() => setModal({ open: false, form: createConsumeForm() })} />
+      </form>
+    </ModalWrapper>
+  );
+}
+
+function ReasonModal({ open, title, description, icon, reason, onReasonChange, onClose, onConfirm, confirmLabel, saving }) {
+  return (
+    <ModalWrapper open={open} onClose={onClose} icon={{ main: icon, close: <X size={18} /> }} title={title} description={description}>
+      <div className="grid gap-5">
+        <FormInput label="Motivo" required multiline rows={4} value={reason} onChange={(event) => onReasonChange(event.target.value)} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
+          <button type="button" onClick={onConfirm} disabled={saving || !String(reason || "").trim()} className="rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Procesando..." : confirmLabel}</button>
+        </div>
+      </div>
+    </ModalWrapper>
+  );
+}
+
+function AdjustBalanceModal({ modal, setModal, onConfirm, saving }) {
+  return (
+    <ModalWrapper
+      open={modal.open}
+      onClose={() => setModal({ open: false, ticket: null, balance: "", reason: "" })}
+      icon={{ main: <ShieldAlert size={20} />, close: <X size={18} /> }}
+      title="Ajustar saldo"
+      description="Solo para migraciones o correcciones autorizadas. Requiere PIN de auditoria."
+    >
+      <div className="grid gap-5">
+        <Metric label="Ticketera" value={modal.ticket?.customer_name || "-"} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormInput label="Saldo actual" readOnly value={modal.ticket ? calculateMealsAvailable(modal.ticket) : ""} />
+          <FormInput label="Nuevo saldo" type="number" min="0" required value={modal.balance} onChange={(event) => setModal((current) => ({ ...current, balance: event.target.value }))} />
+        </div>
+        <FormInput label="Motivo" required multiline rows={4} value={modal.reason} onChange={(event) => setModal((current) => ({ ...current, reason: event.target.value }))} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button type="button" onClick={() => setModal({ open: false, ticket: null, balance: "", reason: "" })} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
+          <button type="button" onClick={onConfirm} disabled={saving || !String(modal.reason || "").trim()} className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Guardando..." : "Ajustar saldo"}</button>
+        </div>
+      </div>
+    </ModalWrapper>
+  );
+}
+
+function ModalActions({ saving, submitLabel, onCancel }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <button type="button" onClick={onCancel} className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">Cancelar</button>
+      <button type="submit" disabled={saving} className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">{saving ? "Guardando..." : submitLabel}</button>
+    </div>
   );
 }

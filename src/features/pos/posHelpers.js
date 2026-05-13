@@ -2,10 +2,12 @@ import { formatCOP } from "../../utils/formatters";
 
 export const PAYMENT_OPTIONS = [
   { value: "cash", label: "Efectivo" },
-  { value: "card", label: "Tarjeta" },
+  { value: "debit_card", label: "Debito" },
+  { value: "credit_card", label: "Credito" },
   { value: "transfer", label: "Transferencia" },
   { value: "nequi", label: "Nequi" },
   { value: "daviplata", label: "Daviplata" },
+  { value: "qr", label: "QR" },
 ];
 
 const CATEGORY_STYLES = {

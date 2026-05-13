@@ -8,9 +8,18 @@ function isPermissionError(error) {
   );
 }
 
+const reportedPermissionScopes = new Set();
+
 export function createSubscriptionErrorHandler({ scope, callback, emptyValue }) {
   return (error) => {
-    console.error(`[${scope}]`, error);
+    if (isPermissionError(error)) {
+      if (!reportedPermissionScopes.has(scope)) {
+        reportedPermissionScopes.add(scope);
+        console.warn(`[${scope}] Permisos insuficientes para leer esta coleccion.`);
+      }
+    } else {
+      console.error(`[${scope}]`, error);
+    }
 
     if (typeof callback === "function") {
       callback(emptyValue);

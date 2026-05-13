@@ -8,8 +8,12 @@ import {
 } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { getTicketWalletState, subscribeToCustomers } from "../services/customerService";
-import { subscribeToProducts } from "../services/productService";
+import { subscribeToAvailableProducts } from "../services/productService";
 import { subscribeToTables } from "../services/tableService";
+import {
+  subscribeToBusinessSettings,
+  subscribeToPaymentMethods,
+} from "../services/accountService";
 import {
   getCashSessionLockInfo,
   subscribeToOpenCashSession,
@@ -58,6 +62,8 @@ export default function POSOrder({
   onOrderCancelled,
   onPaymentSuccess,
   onOpenCatalog,
+  currentUser,
+  userProfile,
 }) {
   const [products, setProducts] = useState([]);
   const [tables, setTables] = useState([]);
@@ -78,6 +84,8 @@ export default function POSOrder({
   const [cartNotice, setCartNotice] = useState("");
   const [paymentModalNotice, setPaymentModalNotice] = useState("");
   const [openCashSession, setOpenCashSession] = useState(null);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [businessSettings, setBusinessSettings] = useState(null);
   const previousTableIdRef = useRef(null);
   const cartItemsRef = useRef([]);
   const {
@@ -96,18 +104,22 @@ export default function POSOrder({
   }, [cartItems]);
 
   useEffect(() => {
-    const unsubscribeProducts = subscribeToProducts(businessId, setProducts);
+    const unsubscribeProducts = subscribeToAvailableProducts(businessId, setProducts);
     const unsubscribeTables = subscribeToTables(businessId, (nextTables) =>
       setTables(nextTables.filter((table) => !table.deletedAt))
     );
     const unsubscribeCustomers = subscribeToCustomers(businessId, setCustomers);
     const unsubscribeCashSession = subscribeToOpenCashSession(businessId, setOpenCashSession);
+    const unsubscribePaymentMethods = subscribeToPaymentMethods(businessId, setPaymentMethods);
+    const unsubscribeSettings = subscribeToBusinessSettings(businessId, setBusinessSettings);
 
     return () => {
       unsubscribeProducts();
       unsubscribeTables();
       unsubscribeCustomers();
       unsubscribeCashSession();
+      unsubscribePaymentMethods();
+      unsubscribeSettings();
     };
   }, [businessId]);
 
@@ -175,17 +187,42 @@ export default function POSOrder({
   );
 
   const cashLock = useMemo(
-    () => getCashSessionLockInfo(openCashSession),
-    [openCashSession]
+    () => {
+      const lockInfo = getCashSessionLockInfo(openCashSession);
+      if (
+        lockInfo.reason === "no_open_session" &&
+        businessSettings?.cash?.allowSalesWithoutCashSession
+      ) {
+        return { blocked: false, reason: "ok_without_cash_session", message: "" };
+      }
+      return lockInfo;
+    },
+    [businessSettings?.cash?.allowSalesWithoutCashSession, openCashSession]
   );
+
+  const paymentOptions = useMemo(() => {
+    const configuredOptions = paymentMethods
+      .filter((method) => method.active && !method.isCredit && !method.isNonCashConsumption)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((method) => ({ value: method.key, label: method.name }));
+
+    return configuredOptions.length ? configuredOptions : PAYMENT_OPTIONS;
+  }, [paymentMethods]);
+
+  useEffect(() => {
+    if (!paymentOptions.some((option) => option.value === paymentMethod)) {
+      setPaymentMethod(paymentOptions[0]?.value || "cash");
+    }
+  }, [paymentMethod, paymentOptions]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
       const matchesCategory =
         selectedCategory === "all" || product.category === selectedCategory;
       const matchesSearch = product.name.toLowerCase().includes(search.trim().toLowerCase());
+      const matchesAvailability = product.availableForSale !== false && product.operation?.visibleInPOS !== false;
 
-      return matchesCategory && matchesSearch;
+      return matchesCategory && matchesSearch && matchesAvailability;
     });
   }, [products, search, selectedCategory]);
   const hasProducts = products.length > 0;
@@ -396,6 +433,11 @@ export default function POSOrder({
         ticketConsumption,
         splitPayments: splitPaymentsOverride,
         customer: selectedCustomer,
+        actor: {
+          id: currentUser?.uid,
+          email: currentUser?.email || userProfile?.email,
+          name: userProfile?.display_name || currentUser?.displayName || currentUser?.email,
+        },
       });
       onPaymentSuccess?.(paymentMethodOverride);
       clearCart();
@@ -492,6 +534,11 @@ export default function POSOrder({
         subtotal: payableSubtotal,
         ticketConsumption,
         customer: selectedCustomer,
+        actor: {
+          id: currentUser?.uid,
+          email: currentUser?.email || userProfile?.email,
+          name: userProfile?.display_name || currentUser?.displayName || currentUser?.email,
+        },
       });
       onPaymentSuccess?.("ticket_wallet");
       clearCart();
@@ -796,6 +843,7 @@ export default function POSOrder({
             cashLockInfo={cashLock}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
+            paymentOptions={paymentOptions}
             canUseSplitPayment={payableSubtotal > 0}
             loading={loading}
             activeOrder={activeOrder}
@@ -841,6 +889,7 @@ export default function POSOrder({
               cashLockInfo={cashLock}
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
+              paymentOptions={paymentOptions}
               canUseSplitPayment={payableSubtotal > 0}
               loading={loading}
               activeOrder={activeOrder}
@@ -1023,7 +1072,7 @@ export default function POSOrder({
                           }
                           className="rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-slate-200"
                         >
-                          {PAYMENT_OPTIONS.map((option) => (
+                          {paymentOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>

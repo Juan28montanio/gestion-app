@@ -1,7 +1,7 @@
 import {
   BarChart3,
-  ContactRound,
   Compass,
+  Landmark,
   Package2,
   PanelsTopLeft,
   ReceiptText,
@@ -50,24 +50,24 @@ export const NAV_ITEMS = [
   },
   {
     id: "ticketing",
-    label: "Ticketeras",
+    label: "Clientes y Ticketeras",
     icon: Ticket,
     section: "Control",
-    description: "Planes prepagos y consumo por cliente.",
+    description: "Clientes recurrentes, planes prepagos y consumo por saldo.",
   },
   {
-    id: "clients",
-    label: "Clientes",
-    icon: ContactRound,
+    id: "cash",
+    label: "Caja",
+    icon: ReceiptText,
     section: "Control",
-    description: "Base de clientes y seguimiento comercial.",
+    description: "Turno, movimientos, recaudo y cierres.",
   },
   {
     id: "finance",
-    label: "Caja y finanzas",
-    icon: BarChart3,
+    label: "Finanzas",
+    icon: Landmark,
     section: "Control",
-    description: "Caja, cierres, cartera e historial.",
+    description: "Cartera, proveedores, gastos y rentabilidad.",
   },
   {
     id: "guide",
@@ -85,7 +85,7 @@ export const NAV_ITEMS = [
   },
 ];
 
-const MOBILE_NAV_IDS = ["salon", "pos", "resources", "finance", "account"];
+const MOBILE_NAV_IDS = ["salon", "pos", "resources", "cash", "account"];
 
 export const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) => MOBILE_NAV_IDS.includes(item.id));
 
@@ -115,16 +115,16 @@ export const SECTION_GUIDANCE = {
     workflow: "Registra compras, revisa alertas y ajusta costo antes de tocar precios.",
   },
   ticketing: {
-    promise: "Vende recurrencia y controla el saldo prepago sin perder trazabilidad.",
-    workflow: "Crea planes, asigna saldo y revisa redenciones desde un solo flujo.",
+    promise: "Vende recurrencia y controla almuerzos prepagos sin perder trazabilidad.",
+    workflow: "Registra clientes, vende planes, consume saldo y audita correcciones desde un solo flujo.",
   },
-  clients: {
-    promise: "Prioriza clientes valiosos, deuda pendiente y frecuencia de compra.",
-    workflow: "Filtra, consulta historial y actua sobre oportunidades comerciales reales.",
+  cash: {
+    promise: "Controla el turno, los medios de pago y el arqueo sin mezclarlo con deuda o rentabilidad.",
+    workflow: "Abre caja, revisa movimientos, registra egresos y cierra con diferencia calculada.",
   },
   finance: {
-    promise: "Convierte la caja en una vista ejecutiva del negocio, no solo en un reporte.",
-    workflow: "Mide resultado, revisa cartera y cierra la jornada con contexto financiero.",
+    promise: "Lee la salud economica del negocio desde cartera, proveedores, gastos y margen.",
+    workflow: "Revisa saldos por cobrar, obligaciones por pagar, gastos y reportes para decidir mejor.",
   },
   account: {
     promise: "Mantiene identidad, responsables y datos del negocio en orden.",
