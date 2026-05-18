@@ -17,7 +17,7 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
-import { subscribeToSalesHistory, updateSaleHistoryEntry } from "../services/financeService";
+import { subscribeToSalesHistory, updateSaleHistoryEntry } from "../services/salesLedgerService";
 import { subscribeToPurchases, updatePurchaseMovement } from "../services/purchaseService";
 import {
   createOperatingExpense,

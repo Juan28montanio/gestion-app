@@ -1,17 +1,5 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
-import { createSubscriptionErrorHandler } from "./subscriptionService";
-
-const operatingExpensesCollection = collection(db, "operating_expenses");
+import { getSupabaseClient } from "../lib/supabaseClient";
+import { getOpenCashSession } from "./supabase/cashService";
 
 function sortOperatingExpenses(items = []) {
   return [...items].sort((left, right) =>
@@ -101,13 +89,36 @@ export function subscribeToOperatingExpenses(businessId, callback) {
 
 export async function createOperatingExpense(expense) {
   const payload = buildOperatingExpensePayload(expense);
-  const createdRef = await addDoc(operatingExpensesCollection, {
-    ...payload,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  const openSession = await getOpenCashSession(payload.business_id);
 
-  return createdRef.id;
+  if (!openSession) {
+    throw new Error("Debes abrir caja antes de registrar un gasto operativo.");
+  }
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("cash_movements")
+    .insert({
+      business_id: payload.business_id,
+      cash_session_id: openSession.id,
+      type: "operating_expense",
+      method: payload.payment_method,
+      amount: payload.amount,
+      status: "valid",
+      description: payload.concept,
+      metadata: {
+        source: "operating_expense",
+        category: payload.category,
+        expense_date: payload.expense_date,
+        notes: payload.notes,
+        vendor_name: payload.vendor_name,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id;
 }
 
 export async function updateOperatingExpense(expenseId, updates = {}) {
@@ -116,51 +127,8 @@ export async function updateOperatingExpense(expenseId, updates = {}) {
     throw new Error("El gasto a editar es obligatorio.");
   }
 
-  const payload = {
-    updatedAt: serverTimestamp(),
-  };
-
-  if (typeof updates.concept !== "undefined") {
-    payload.concept = String(updates.concept || "").trim();
-    if (!payload.concept) {
-      throw new Error("El concepto del gasto es obligatorio.");
-    }
-  }
-
-  if (typeof updates.category !== "undefined") {
-    payload.category = String(updates.category || "").trim();
-    if (!payload.category) {
-      throw new Error("La categoria del gasto es obligatoria.");
-    }
-  }
-
-  if (typeof updates.expenseDate !== "undefined") {
-    payload.expense_date = String(updates.expenseDate || "").trim();
-    if (!payload.expense_date) {
-      throw new Error("La fecha del gasto es obligatoria.");
-    }
-  }
-
-  if (typeof updates.paymentMethod !== "undefined") {
-    payload.payment_method = String(updates.paymentMethod || "cash").trim();
-  }
-
-  if (typeof updates.notes !== "undefined") {
-    payload.notes = String(updates.notes || "").trim();
-  }
-
-  if (typeof updates.vendorName !== "undefined") {
-    payload.vendor_name = String(updates.vendorName || "").trim();
-  }
-
-  const nextAmount = Number(updates.amount);
-  if (typeof updates.amount !== "undefined") {
-    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
-      throw new Error("Debes ingresar un valor valido para el gasto.");
-    }
-    payload.amount = nextAmount;
-    payload.total = nextAmount;
-  }
-
-  await updateDoc(doc(db, "operating_expenses", normalizedExpenseId), payload);
+  void updates;
+  throw new Error(
+    "La edicion de gastos ya registrados requiere una RPC de auditoria en Supabase. Por ahora registra un ajuste nuevo."
+  );
 }

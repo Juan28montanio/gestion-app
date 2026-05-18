@@ -211,6 +211,11 @@ export async function registerPayablePayment({
     throw new Error("El pago a proveedor debe ser mayor a cero.");
   }
 
+  throw new Error(
+    "Los pagos a proveedor aun no tienen RPC segura en Supabase. Esta accion queda bloqueada para evitar escrituras en Firebase."
+  );
+
+  /*
   const openSession = await getCurrentOpenCashSession(normalizedBusinessId);
   if (!openSession) {
     throw new Error("Debes abrir caja antes de registrar un pago a proveedor.");
@@ -314,6 +319,7 @@ export async function registerPayablePayment({
 
     return payablePaymentRef.id;
   });
+  */
 }
 
 export async function registerReceivablePayment({
@@ -337,6 +343,11 @@ export async function registerReceivablePayment({
     throw new Error("El abono debe ser mayor a cero.");
   }
 
+  throw new Error(
+    "Los abonos de cartera aun no tienen RPC segura en Supabase. Esta accion queda bloqueada para evitar escrituras en Firebase."
+  );
+
+  /*
   const openSession = await getCurrentOpenCashSession(normalizedBusinessId);
   if (!openSession) {
     throw new Error("Debes abrir caja antes de registrar un abono de cartera.");
@@ -465,6 +476,7 @@ export async function registerReceivablePayment({
 
     return receivablePaymentRef.id;
   });
+  */
 }
 
 export async function reverseCashMovement({ movementId, reason, actor = {} }) {
@@ -475,6 +487,11 @@ export async function reverseCashMovement({ movementId, reason, actor = {} }) {
     throw new Error("El movimiento y el motivo son obligatorios.");
   }
 
+  throw new Error(
+    "La reversa de movimientos requiere una RPC de auditoria en Supabase. Esta accion queda bloqueada temporalmente."
+  );
+
+  /*
   await runTransaction(db, async (transaction) => {
     const movementRef = doc(db, "cashMovements", normalizedMovementId);
     const movementSnapshot = await transaction.get(movementRef);
@@ -515,6 +532,7 @@ export async function reverseCashMovement({ movementId, reason, actor = {} }) {
       createdAt: serverTimestamp(),
     });
   });
+  */
 }
 
 export async function getAccountPayable(accountPayableId) {

@@ -16,6 +16,7 @@ import { buildSupplySearchKey, listSupplies } from "./supplyService";
 import { resolvePurchasePaymentMethod } from "../utils/payments";
 import { getCurrentOpenCashSession } from "./cashClosingService";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import { getSupabaseClient } from "../lib/supabaseClient";
 import {
   calculateConversionFactor,
   calculateCostPerBaseUnit,
@@ -1243,6 +1244,31 @@ export function subscribeToInventoryMovements(businessId, callback) {
     return () => {};
   }
 
+  let cancelled = false;
+  const publish = () => {
+    getSupabaseClient()
+      .from("inventory_movements")
+      .select("*")
+      .eq("business_id", businessId)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (!cancelled) callback(data || []);
+      })
+      .catch((error) => {
+        console.error("[inventoryMovements:supabase]", error);
+        if (!cancelled) callback([]);
+      });
+  };
+
+  publish();
+  const intervalId = window.setInterval(publish, 15000);
+  return () => {
+    cancelled = true;
+    window.clearInterval(intervalId);
+  };
+
+/*
   const movementsQuery = query(movementsCollection, where("business_id", "==", businessId));
   return onSnapshot(
     movementsQuery,
@@ -1263,6 +1289,7 @@ export function subscribeToInventoryMovements(businessId, callback) {
       }
     }
   );
+*/
 }
 
 export async function getIngredientPriceHistory(businessId, ingredientId) {
@@ -1273,6 +1300,9 @@ export async function getIngredientPriceHistory(businessId, ingredientId) {
     return [];
   }
 
+  return [];
+
+/*
   const purchasesQuery = query(purchasesCollection, where("business_id", "==", normalizedBusinessId));
   const snapshot = await getDocs(purchasesQuery);
 
@@ -1294,6 +1324,7 @@ export async function getIngredientPriceHistory(businessId, ingredientId) {
         }))
     )
     .slice(0, 12);
+*/
 }
 
 export async function updatePurchaseMovement(purchaseId, updates = {}) {
@@ -1302,6 +1333,12 @@ export async function updatePurchaseMovement(purchaseId, updates = {}) {
     throw new Error("La compra a editar es obligatoria.");
   }
 
+  void updates;
+  throw new Error(
+    "La edicion de compras desde Caja requiere una RPC de auditoria en Supabase. Por ahora registra un ajuste nuevo."
+  );
+
+/*
   const nextTotal = Number(updates.total);
   const payload = {
     concept: normalizeText(updates.concept),
@@ -1313,4 +1350,5 @@ export async function updatePurchaseMovement(purchaseId, updates = {}) {
   }
 
   await updateDoc(doc(db, "purchases", normalizedPurchaseId), payload);
+*/
 }

@@ -6,6 +6,7 @@ import {
   subscribeToSalesLedger as subscribeToAppSalesLedger,
 } from "./app/salesGateway";
 import { getSalesLedger as getSupabaseSalesLedger } from "./supabase/salesService";
+import { getSupabaseClient } from "../lib/supabaseClient";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -234,4 +235,65 @@ export function subscribeToSalesLedger(businessId, callback) {
 
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
 */
+}
+
+export function subscribeToSalesHistory(businessId, callback) {
+  return subscribeToSalesLedger(businessId, callback);
+}
+
+export async function updateSaleHistoryEntry(saleId, updates = {}) {
+  const normalizedSaleId = normalizeText(saleId);
+  if (!normalizedSaleId) {
+    throw new Error("La venta a editar es obligatoria.");
+  }
+
+  const client = getSupabaseClient();
+  const nextTotal = Number(updates.total);
+  const nextMethod = normalizeText(updates.paymentMethod);
+  const payload = {};
+
+  if (Number.isFinite(nextTotal) && nextTotal >= 0) {
+    payload.total = nextTotal;
+    payload.paid_amount = nextTotal;
+    payload.pending_amount = 0;
+  }
+
+  if (normalizeText(updates.concept)) {
+    payload.metadata = {
+      firebase: {
+        concept: normalizeText(updates.concept),
+      },
+    };
+  }
+
+  if (Object.keys(payload).length) {
+    const { error } = await client.from("sales").update(payload).eq("id", normalizedSaleId);
+    if (error) throw error;
+  }
+
+  if (nextMethod) {
+    const { data: payments, error: paymentReadError } = await client
+      .from("payments")
+      .select("id")
+      .eq("sale_id", normalizedSaleId)
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    if (paymentReadError) throw paymentReadError;
+
+    const paymentId = payments?.[0]?.id;
+    if (paymentId) {
+      const paymentPayload = { method: nextMethod };
+      if (Number.isFinite(nextTotal) && nextTotal >= 0) {
+        paymentPayload.amount = nextTotal;
+      }
+
+      const { error: paymentError } = await client
+        .from("payments")
+        .update(paymentPayload)
+        .eq("id", paymentId);
+
+      if (paymentError) throw paymentError;
+    }
+  }
 }
