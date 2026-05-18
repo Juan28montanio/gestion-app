@@ -1,7 +1,4 @@
-import { collection, getDocs, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
 import { normalizePaymentBreakdown } from "../utils/payments";
-import { createSubscriptionErrorHandler } from "./subscriptionService";
 import {
   subscribeToSalesLedger as subscribeToAppSalesLedger,
 } from "./app/salesGateway";
@@ -45,10 +42,6 @@ function indexBySaleId(rows = []) {
     index.set(saleId, current);
     return index;
   }, new Map());
-}
-
-function mapSnapshot(snapshot) {
-  return snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }));
 }
 
 function buildCanonicalSale(sale, { items = [], payments = [], legacy = null } = {}) {

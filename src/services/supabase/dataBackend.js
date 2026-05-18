@@ -1,5 +1,4 @@
 export const DATA_BACKENDS = {
-  firebase: "firebase",
   supabase: "supabase",
 };
 
@@ -16,8 +15,8 @@ const MODULE_ENV_KEYS = {
 };
 
 function normalizeBackend(value) {
-  const backend = String(value || DATA_BACKENDS.firebase).trim().toLowerCase();
-  return backend === DATA_BACKENDS.supabase ? DATA_BACKENDS.supabase : DATA_BACKENDS.firebase;
+  void value;
+  return DATA_BACKENDS.supabase;
 }
 
 export function getConfiguredDataBackend() {

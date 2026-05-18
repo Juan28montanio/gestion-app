@@ -1,20 +1,7 @@
-import { httpsCallable } from "firebase/functions";
-import { functions } from "../firebase/firebaseConfig";
-
-export async function seedDemoData(businessId) {
-  const normalizedBusinessId = String(businessId || "").trim();
-  if (!normalizedBusinessId) throw new Error("No se encontro el negocio activo.");
-
-  const seedDemo = httpsCallable(functions, "seedDemoData");
-  const result = await seedDemo({ businessId: normalizedBusinessId });
-  return result.data;
+export async function seedDemoData() {
+  throw new Error("La carga de datos demo debe migrarse a una RPC/Edge Function de Supabase antes de habilitarse.");
 }
 
-export async function cleanupDemoData(businessId) {
-  const normalizedBusinessId = String(businessId || "").trim();
-  if (!normalizedBusinessId) return 0;
-
-  const cleanupDemo = httpsCallable(functions, "cleanupDemoData");
-  const result = await cleanupDemo({ businessId: normalizedBusinessId });
-  return Number(result.data?.deleted || 0);
+export async function cleanupDemoData() {
+  throw new Error("La limpieza de datos demo debe migrarse a una RPC/Edge Function de Supabase antes de habilitarse.");
 }

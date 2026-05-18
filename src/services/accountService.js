@@ -1,18 +1,4 @@
-import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-  writeBatch,
-} from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
-import { createSubscriptionErrorHandler } from "./subscriptionService";
-import { getDefaultPermissionsByRole, normalizeUserRole } from "../utils/accountPermissions";
+import { normalizeUserRole } from "../utils/accountPermissions";
 import { getSupabaseClient } from "../lib/supabaseClient";
 import { listBusinessUsers } from "./supabase/businessService";
 
@@ -263,11 +249,11 @@ export function sanitizeBusinessProfile(values = {}) {
     timezone: String(values.timezone || "America/Bogota").trim() || "America/Bogota",
     receipt_notes: String(values.receiptNotes || values.receipt_notes || "").trim(),
     status: String(values.status || "active").trim() || "active",
-    updatedAt: serverTimestamp(),
+    updatedAt: new Date().toISOString(),
   };
 }
 
-function toFirestorePaymentMethod(method, businessId) {
+function toDatabasePaymentMethod(method, businessId) {
   const normalized = normalizePaymentMethodConfig(method);
   return {
     business_id: businessId,
@@ -282,7 +268,7 @@ function toFirestorePaymentMethod(method, businessId) {
     is_credit: normalized.isCredit,
     is_non_cash_consumption: normalized.isNonCashConsumption,
     sort_order: normalized.sortOrder,
-    updatedAt: serverTimestamp(),
+    updatedAt: new Date().toISOString(),
   };
 }
 
@@ -803,7 +789,7 @@ export async function savePaymentMethods(businessId, methods, actor) {
     batch.set(
       doc(db, "paymentMethods", `${normalizedBusinessId}_${normalized.key}`),
       {
-        ...toFirestorePaymentMethod(normalized, normalizedBusinessId),
+        ...toDatabasePaymentMethod(normalized, normalizedBusinessId),
         createdAt: method.createdAt || serverTimestamp(),
       },
       { merge: true }

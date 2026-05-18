@@ -1,18 +1,4 @@
 import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-  writeBatch,
-} from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
-import { createSubscriptionErrorHandler } from "./subscriptionService";
-import {
   archiveProduct as archiveProductInApp,
   createProduct as createProductInApp,
   createProductCategory as createProductCategoryInApp,
@@ -23,11 +9,6 @@ import {
   updateProductCategory as updateProductCategoryInApp,
   updateProductStatus as updateProductStatusInApp,
 } from "./app/catalogGateway";
-
-const productsCollection = collection(db, "products");
-const categoriesCollection = collection(db, "productCategories");
-const modifiersCollection = collection(db, "productModifiers");
-const combosCollection = collection(db, "productCombos");
 
 export const PRODUCT_TYPES = [
   "standard",
@@ -479,46 +460,26 @@ export function subscribeToProductCategories(businessId, callback) {
 }
 
 export function subscribeToProductModifiers(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
-  const modifiersQuery = query(modifiersCollection, where("business_id", "==", businessId));
-  return onSnapshot(modifiersQuery, (snapshot) => {
-    callback(sortByOrderAndName(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
-  }, createSubscriptionErrorHandler({ scope: "products:subscribeToProductModifiers", callback, emptyValue: [] }));
+  void businessId;
+  callback([]);
+  return () => {};
 }
 
 export function subscribeToProductCombos(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
-  const combosQuery = query(combosCollection, where("business_id", "==", businessId));
-  return onSnapshot(combosQuery, (snapshot) => {
-    callback(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() })));
-  }, createSubscriptionErrorHandler({ scope: "products:subscribeToProductCombos", callback, emptyValue: [] }));
+  void businessId;
+  callback([]);
+  return () => {};
 }
 
 export async function seedDefaultProductCategories(businessId) {
   const normalizedBusinessId = normalizeText(businessId);
   if (!normalizedBusinessId) return;
 
-  const snapshot = await getDocs(query(categoriesCollection, where("business_id", "==", normalizedBusinessId)));
-  if (!snapshot.empty) return;
-
-  const batch = writeBatch(db);
-  DEFAULT_PRODUCT_CATEGORIES.forEach((category) => {
-    const categoryRef = doc(categoriesCollection);
-    batch.set(categoryRef, {
-      ...normalizeCategoryPayload(category, normalizedBusinessId),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  });
-  await batch.commit();
+  await Promise.allSettled(
+    DEFAULT_PRODUCT_CATEGORIES.map((category) =>
+      createProductCategoryInApp(normalizedBusinessId, normalizeCategoryPayload(category, normalizedBusinessId))
+    )
+  );
 }
 
 export async function createProduct(businessId, product) {
@@ -561,53 +522,24 @@ export async function updateProductCategory(categoryId, businessId, category, ex
 }
 
 export async function createProductModifier(businessId, productId, modifier) {
-  const payload = normalizeModifierPayload(modifier, businessId, productId);
-  const createdModifier = await addDoc(modifiersCollection, {
-    ...payload,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-  return createdModifier.id;
+  void businessId;
+  void productId;
+  void modifier;
+  throw new Error("Los modificadores de producto requieren una tabla/RPC en Supabase antes de habilitarse.");
 }
 
 export async function updateProductModifier(modifierId, businessId, productId, modifier) {
   if (!modifierId) throw new Error("El id del modificador es obligatorio.");
-  const payload = normalizeModifierPayload(modifier, businessId, productId);
-  await updateDoc(doc(db, "productModifiers", modifierId), {
-    ...payload,
-    updatedAt: serverTimestamp(),
-  });
+  void businessId;
+  void productId;
+  void modifier;
+  throw new Error("La edicion de modificadores requiere una tabla/RPC en Supabase antes de habilitarse.");
 }
 
 export async function upsertProductCombo(businessId, productId, items = []) {
   const normalizedBusinessId = normalizeText(businessId);
   const normalizedProductId = normalizeText(productId);
   if (!normalizedBusinessId || !normalizedProductId) throw new Error("El combo requiere negocio y producto.");
-
-  const payload = {
-    businessId: normalizedBusinessId,
-    business_id: normalizedBusinessId,
-    productId: normalizedProductId,
-    product_id: normalizedProductId,
-    items: items
-      .map((item) => ({
-        childProductId: normalizeText(item.childProductId || item.child_product_id),
-        childProductName: normalizeText(item.childProductName || item.child_product_name),
-        quantity: normalizeNumber(item.quantity, 1),
-      }))
-      .filter((item) => item.childProductId && item.quantity > 0),
-    updatedAt: serverTimestamp(),
-  };
-
-  const existing = await getDocs(query(combosCollection, where("business_id", "==", normalizedBusinessId), where("product_id", "==", normalizedProductId)));
-  if (existing.empty) {
-    const createdRef = await addDoc(combosCollection, {
-      ...payload,
-      createdAt: serverTimestamp(),
-    });
-    return createdRef.id;
-  }
-
-  await updateDoc(doc(db, "productCombos", existing.docs[0].id), payload);
-  return existing.docs[0].id;
+  void items;
+  throw new Error("Los combos compuestos requieren una tabla/RPC en Supabase antes de habilitarse.");
 }

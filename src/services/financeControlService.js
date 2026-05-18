@@ -1,28 +1,8 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  runTransaction,
-  serverTimestamp,
-  where,
-} from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
-import { createSubscriptionErrorHandler } from "./subscriptionService";
-import { getCurrentOpenCashSession } from "./cashClosingService";
 import { getCashMovements } from "./app/cashGateway";
-import { getPaymentMethodConfig, roundCurrency } from "../utils/posFinance";
+import { roundCurrency } from "../utils/posFinance";
 
 function normalizeText(value) {
   return String(value || "").trim();
-}
-
-function normalizeActor(actor = {}) {
-  const id = normalizeText(actor.id || actor.uid || actor.userId);
-  const email = normalizeText(actor.email);
-  const name = normalizeText(actor.name || actor.displayName || actor.display_name || email || "Operador SmartProfit");
-  return { id, name, email };
 }
 
 function sortByCreatedAt(items = []) {
@@ -212,7 +192,7 @@ export async function registerPayablePayment({
   }
 
   throw new Error(
-    "Los pagos a proveedor aun no tienen RPC segura en Supabase. Esta accion queda bloqueada para evitar escrituras en Firebase."
+    "Los pagos a proveedor aun no tienen RPC segura en Supabase. Esta accion queda bloqueada temporalmente."
   );
 
   /*
@@ -344,7 +324,7 @@ export async function registerReceivablePayment({
   }
 
   throw new Error(
-    "Los abonos de cartera aun no tienen RPC segura en Supabase. Esta accion queda bloqueada para evitar escrituras en Firebase."
+    "Los abonos de cartera aun no tienen RPC segura en Supabase. Esta accion queda bloqueada temporalmente."
   );
 
   /*
@@ -536,9 +516,6 @@ export async function reverseCashMovement({ movementId, reason, actor = {} }) {
 }
 
 export async function getAccountPayable(accountPayableId) {
-  const normalizedPayableId = normalizeText(accountPayableId);
-  if (!normalizedPayableId) return null;
-
-  const snapshot = await getDoc(doc(db, "accountsPayable", normalizedPayableId));
-  return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+  void accountPayableId;
+  return null;
 }

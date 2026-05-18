@@ -468,7 +468,7 @@ export default function AccountSettings({
             <form onSubmit={saveProfile} className="grid gap-5">
               <SectionCard
                 title="Mi perfil"
-                description="Informacion personal del usuario activo. El correo proviene de Firebase Auth."
+                description="Informacion personal del usuario activo. El correo proviene de Supabase Auth."
               >
                 <div className="grid gap-4 md:grid-cols-2">
                   <FormInput label="Nombre" required value={profileForm.displayName} onChange={(event) => setProfileForm((current) => ({ ...current, displayName: event.target.value }))} />

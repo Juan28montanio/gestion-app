@@ -1,16 +1,4 @@
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  where,
-  writeBatch,
-} from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
-import {
   accumulatePaymentBreakdown,
   createEmptyPaymentTotals,
   expenseAffectsCash,
@@ -29,12 +17,6 @@ import {
   subscribeToCashSessions as subscribeToCashSessionsInApp,
   subscribeToOpenCashSession as subscribeToOpenCashSessionInApp,
 } from "./app/cashGateway";
-
-const cashClosingsCollection = collection(db, "cash_closings");
-const salesHistoryCollection = collection(db, "sales_history");
-const purchasesCollection = collection(db, "purchases");
-const operatingExpensesCollection = collection(db, "operating_expenses");
-const ordersCollection = collection(db, "orders");
 
 export function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -708,7 +690,7 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
   }
 
   throw new Error(
-    "El saldo de ventas pendientes requiere una RPC de cartera en Supabase. Esta accion queda bloqueada para evitar escrituras en Firebase."
+    "El saldo de ventas pendientes requiere una RPC de cartera en Supabase. Esta accion queda bloqueada temporalmente."
   );
 }
 
