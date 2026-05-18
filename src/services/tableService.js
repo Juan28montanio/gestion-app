@@ -14,6 +14,14 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import {
+  createTableRow,
+  deleteTableRow,
+  disableTableRow,
+  subscribeTables,
+  updateTableRow,
+  updateTableRowState,
+} from "./supabase/salonService";
 
 const tablesCollection = collection(db, "tables");
 const ACTIVE_TABLE_STATUSES = [
@@ -160,9 +168,12 @@ function normalizeTablePayload(tableInput, capacity, businessId) {
 
 export async function createTable(businessId, tableInput, capacity) {
   const payload = normalizeTablePayload(tableInput, capacity, businessId);
+  return createTableRow(payload.business_id, payload);
+/*
   await assertUniqueTableNumber(payload.business_id, payload.number);
   const createdTable = await addDoc(tablesCollection, payload);
   return createdTable.id;
+*/
 }
 
 export async function updateTable(tableId, businessId, tableInput, capacity) {
@@ -171,6 +182,8 @@ export async function updateTable(tableId, businessId, tableInput, capacity) {
   }
 
   const payload = normalizeTablePayload(tableInput, capacity, businessId);
+  return updateTableRow(tableId, payload.business_id, payload);
+/*
   await assertUniqueTableNumber(payload.business_id, payload.number, tableId);
 
   await updateDoc(doc(db, "tables", tableId), {
@@ -189,6 +202,7 @@ export async function updateTable(tableId, businessId, tableInput, capacity) {
     businessId: payload.businessId,
     updatedAt: serverTimestamp(),
   });
+*/
 }
 
 export async function disableTable(tableId) {
@@ -196,6 +210,8 @@ export async function disableTable(tableId) {
     throw new Error("El id de la mesa es obligatorio para deshabilitar.");
   }
 
+  return disableTableRow(tableId);
+/*
   const tableRef = doc(db, "tables", tableId);
   const tableSnapshot = await getDoc(tableRef);
 
@@ -213,6 +229,7 @@ export async function disableTable(tableId) {
     disabledAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+*/
 }
 
 export async function deleteTable(tableId) {
@@ -220,6 +237,8 @@ export async function deleteTable(tableId) {
     throw new Error("El id de la mesa es obligatorio para eliminar.");
   }
 
+  return deleteTableRow(tableId);
+/*
   const tableRef = doc(db, "tables", tableId);
   const tableSnapshot = await getDoc(tableRef);
 
@@ -233,9 +252,12 @@ export async function deleteTable(tableId) {
     tableSnapshot.data().business_id || tableSnapshot.data().businessId
   );
   await deleteDoc(tableRef);
+*/
 }
 
 export function subscribeToTables(businessId, callback) {
+  return subscribeTables(businessId, callback);
+/*
   if (!businessId) {
     callback([]);
     return () => {};
@@ -260,11 +282,15 @@ export function subscribeToTables(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export async function updateTableState(tableId, updates) {
+  return updateTableRowState(tableId, updates);
+/*
   await updateDoc(doc(db, "tables", tableId), {
     ...updates,
     updatedAt: serverTimestamp(),
   });
+*/
 }

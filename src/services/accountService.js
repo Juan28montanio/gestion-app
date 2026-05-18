@@ -13,6 +13,8 @@ import {
 import { db } from "../firebase/firebaseConfig";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
 import { getDefaultPermissionsByRole, normalizeUserRole } from "../utils/accountPermissions";
+import { getSupabaseClient } from "../lib/supabaseClient";
+import { listBusinessUsers } from "./supabase/businessService";
 
 export const DEFAULT_PAYMENT_METHODS = [
   {
@@ -290,6 +292,46 @@ export function subscribeToBusinessUsers(businessId, callback) {
     return () => {};
   }
 
+  const client = getSupabaseClient();
+  const publish = () => {
+    listBusinessUsers(businessId)
+      .then((users) => {
+        callback(
+          users
+            .map((user) => ({
+              ...user,
+              display_name: user.display_name || user.profiles?.display_name || "",
+              email: user.email || user.profiles?.email || "",
+            }))
+            .sort((a, b) => String(a.display_name || a.email).localeCompare(String(b.display_name || b.email)))
+        );
+      })
+      .catch((error) => {
+        console.error("[account:businessUsers]", error);
+        callback([]);
+      });
+  };
+
+  const channel = client
+    .channel(`account_business_users:${businessId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "business_users",
+        filter: `business_id=eq.${businessId}`,
+      },
+      publish
+    )
+    .subscribe();
+
+  publish();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+/*
   const usersQuery = query(collection(db, "business_users"), where("business_id", "==", businessId));
   return onSnapshot(usersQuery, (snapshot) => {
     const users = snapshot.docs
@@ -301,9 +343,55 @@ export function subscribeToBusinessUsers(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export function subscribeToPaymentMethods(businessId, callback) {
+  if (!businessId) {
+    callback(DEFAULT_PAYMENT_METHODS.map(normalizePaymentMethodConfig));
+    return () => {};
+  }
+
+  const client = getSupabaseClient();
+  const publish = async () => {
+    const { data, error } = await client
+      .from("business_settings")
+      .select("settings")
+      .eq("business_id", businessId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[account:paymentMethods]", error);
+      callback(DEFAULT_PAYMENT_METHODS.map(normalizePaymentMethodConfig));
+      return;
+    }
+
+    const methods = Array.isArray(data?.settings?.paymentMethods)
+      ? data.settings.paymentMethods
+      : DEFAULT_PAYMENT_METHODS;
+    callback(methods.map(normalizePaymentMethodConfig).sort((a, b) => a.sortOrder - b.sortOrder));
+  };
+
+  const channel = client
+    .channel(`account_payment_methods:${businessId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "business_settings",
+        filter: `business_id=eq.${businessId}`,
+      },
+      publish
+    )
+    .subscribe();
+
+  publish();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+/*
   if (!businessId) {
     callback(DEFAULT_PAYMENT_METHODS);
     return () => {};
@@ -320,9 +408,52 @@ export function subscribeToPaymentMethods(businessId, callback) {
     callback,
     emptyValue: DEFAULT_PAYMENT_METHODS,
   }));
+*/
 }
 
 export function subscribeToBusinessSettings(businessId, callback) {
+  if (!businessId) {
+    callback(validateBusinessSettings());
+    return () => {};
+  }
+
+  const client = getSupabaseClient();
+  const publish = async () => {
+    const { data, error } = await client
+      .from("business_settings")
+      .select("settings")
+      .eq("business_id", businessId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[account:businessSettings]", error);
+      callback(validateBusinessSettings());
+      return;
+    }
+
+    callback(validateBusinessSettings(data?.settings || {}));
+  };
+
+  const channel = client
+    .channel(`account_business_settings:${businessId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "business_settings",
+        filter: `business_id=eq.${businessId}`,
+      },
+      publish
+    )
+    .subscribe();
+
+  publish();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+/*
   if (!businessId) {
     callback(validateBusinessSettings());
     return () => {};
@@ -335,6 +466,7 @@ export function subscribeToBusinessSettings(businessId, callback) {
     callback,
     emptyValue: validateBusinessSettings(),
   }));
+*/
 }
 
 export function subscribeToAuditLogs(businessId, callback) {
@@ -343,6 +475,50 @@ export function subscribeToAuditLogs(businessId, callback) {
     return () => {};
   }
 
+  const client = getSupabaseClient();
+  const publish = async () => {
+    const { data, error } = await client
+      .from("audit_logs")
+      .select("*")
+      .eq("business_id", businessId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error("[account:auditLogs]", error);
+      callback([]);
+      return;
+    }
+
+    callback((data || []).map((log) => ({
+      ...log,
+      createdAt: log.created_at,
+      user_name: log.user_name || "",
+      entityType: log.entity_type,
+      entityId: log.entity_id,
+    })));
+  };
+
+  const channel = client
+    .channel(`account_audit_logs:${businessId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "audit_logs",
+        filter: `business_id=eq.${businessId}`,
+      },
+      publish
+    )
+    .subscribe();
+
+  publish();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+/*
   const logsQuery = query(collection(db, "auditLogs"), where("business_id", "==", businessId));
   return onSnapshot(logsQuery, (snapshot) => {
     const logs = snapshot.docs
@@ -359,6 +535,7 @@ export function subscribeToAuditLogs(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export async function createAuditLog({
@@ -375,6 +552,26 @@ export async function createAuditLog({
   const normalizedBusinessId = String(businessId || "").trim();
   if (!normalizedBusinessId) return "";
 
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("audit_logs")
+    .insert({
+      business_id: normalizedBusinessId,
+      user_id: actor?.id || null,
+      module,
+      action,
+      entity_type: entityType,
+      entity_id: entityId || "",
+      previous_value: previousValue,
+      new_value: newValue,
+      reason,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id;
+/*
   const ref = await addDoc(collection(db, "auditLogs"), {
     business_id: normalizedBusinessId,
     businessId: normalizedBusinessId,
@@ -395,6 +592,7 @@ export async function createAuditLog({
   });
 
   return ref.id;
+*/
 }
 
 export async function updateBusinessProfileWithAudit(businessId, values, actor, previousValue) {
@@ -404,6 +602,43 @@ export async function updateBusinessProfileWithAudit(businessId, values, actor, 
   const payload = sanitizeBusinessProfile(values);
   if (!payload.name) throw new Error("El nombre comercial es obligatorio.");
 
+  const client = getSupabaseClient();
+  const { error: businessError } = await client
+    .from("businesses")
+    .update({
+      name: payload.name,
+      legal_name: payload.legal_name || null,
+      logo_url: payload.logo_url || "",
+      status: payload.status || "active",
+      metadata: {
+        nit: payload.nit,
+        address: payload.address,
+        city: payload.city,
+        phone: payload.phone,
+        email: payload.email,
+        category: payload.category,
+        currency: payload.currency,
+        timezone: payload.timezone,
+        receipt_notes: payload.receipt_notes,
+      },
+    })
+    .eq("id", normalizedBusinessId);
+
+  if (businessError) throw businessError;
+
+  await createAuditLog({
+    businessId: normalizedBusinessId,
+    actor,
+    module: "account",
+    action: "account.manageBusiness",
+    entityType: "business",
+    entityId: normalizedBusinessId,
+    previousValue,
+    newValue: payload,
+    reason: "Actualizacion de datos del negocio",
+  });
+  return;
+/*
   const batch = writeBatch(db);
   batch.set(doc(db, "businesses", normalizedBusinessId), payload, { merge: true });
   batch.set(doc(collection(db, "auditLogs")), {
@@ -425,6 +660,7 @@ export async function updateBusinessProfileWithAudit(businessId, values, actor, 
     createdAt: serverTimestamp(),
   });
   await batch.commit();
+*/
 }
 
 export async function updateBusinessUserRole({ businessId, targetUserId, role, status, actor, previousValue }) {
@@ -437,6 +673,48 @@ export async function updateBusinessUserRole({ businessId, targetUserId, role, s
     throw new Error("El administrador principal no puede perder su rol desde esta pantalla.");
   }
 
+  const client = getSupabaseClient();
+  const { data: users, error: usersError } = await client
+    .from("business_users")
+    .select("id, role, status")
+    .eq("business_id", normalizedBusinessId);
+
+  if (usersError) throw usersError;
+
+  const adminCount = (users || []).filter((user) => {
+    const userRole = user.id === normalizedTargetUserId ? normalizedRole : normalizeUserRole(user.role);
+    const userStatus = user.id === normalizedTargetUserId ? status : user.status;
+    return ["owner", "admin"].includes(userRole) && String(userStatus || "active") === "active";
+  }).length;
+
+  if (adminCount < 1) {
+    throw new Error("Debe existir al menos un administrador activo.");
+  }
+
+  const { error: updateError } = await client
+    .from("business_users")
+    .update({
+      role: normalizedRole,
+      status: String(status || "active").trim() || "active",
+    })
+    .eq("id", normalizedTargetUserId)
+    .eq("business_id", normalizedBusinessId);
+
+  if (updateError) throw updateError;
+
+  await createAuditLog({
+    businessId: normalizedBusinessId,
+    actor,
+    module: "account",
+    action: "users.manage",
+    entityType: "business_user",
+    entityId: normalizedTargetUserId,
+    previousValue,
+    newValue: { role: normalizedRole, status },
+    reason: "Cambio de rol o estado de usuario",
+  });
+  return;
+/*
   const usersSnapshot = await getDocs(query(collection(db, "business_users"), where("business_id", "==", normalizedBusinessId)));
   const adminCount = usersSnapshot.docs.filter((snapshotDoc) => {
     const data = snapshotDoc.data();
@@ -475,12 +753,49 @@ export async function updateBusinessUserRole({ businessId, targetUserId, role, s
     createdAt: serverTimestamp(),
   });
   await batch.commit();
+*/
 }
 
 export async function savePaymentMethods(businessId, methods, actor) {
   const normalizedBusinessId = String(businessId || "").trim();
   if (!normalizedBusinessId) throw new Error("No se encontro el negocio activo.");
 
+  const normalizedMethods = methods.map(normalizePaymentMethodConfig);
+  const client = getSupabaseClient();
+  const { data: settingsRow, error: settingsError } = await client
+    .from("business_settings")
+    .select("settings")
+    .eq("business_id", normalizedBusinessId)
+    .maybeSingle();
+
+  if (settingsError) throw settingsError;
+
+  const nextSettings = {
+    ...(settingsRow?.settings || {}),
+    paymentMethods: normalizedMethods,
+  };
+
+  const { error } = await client
+    .from("business_settings")
+    .upsert({
+      business_id: normalizedBusinessId,
+      settings: nextSettings,
+    });
+
+  if (error) throw error;
+
+  await createAuditLog({
+    businessId: normalizedBusinessId,
+    actor,
+    module: "account",
+    action: "paymentMethods.update",
+    entityType: "business_settings",
+    entityId: normalizedBusinessId,
+    newValue: normalizedMethods,
+    reason: "Actualizacion de metodos de pago",
+  });
+  return;
+/*
   const batch = writeBatch(db);
   methods.forEach((method) => {
     const normalized = normalizePaymentMethodConfig(method);
@@ -513,6 +828,7 @@ export async function savePaymentMethods(businessId, methods, actor) {
     createdAt: serverTimestamp(),
   });
   await batch.commit();
+*/
 }
 
 export async function saveBusinessSettings(businessId, settings, actor) {
@@ -520,6 +836,39 @@ export async function saveBusinessSettings(businessId, settings, actor) {
   if (!normalizedBusinessId) throw new Error("No se encontro el negocio activo.");
 
   const normalizedSettings = validateBusinessSettings(settings);
+  const client = getSupabaseClient();
+  const { data: settingsRow, error: settingsError } = await client
+    .from("business_settings")
+    .select("settings")
+    .eq("business_id", normalizedBusinessId)
+    .maybeSingle();
+
+  if (settingsError) throw settingsError;
+
+  const { error } = await client
+    .from("business_settings")
+    .upsert({
+      business_id: normalizedBusinessId,
+      settings: {
+        ...(settingsRow?.settings || {}),
+        ...normalizedSettings,
+      },
+    });
+
+  if (error) throw error;
+
+  await createAuditLog({
+    businessId: normalizedBusinessId,
+    actor,
+    module: "account",
+    action: "settings.update",
+    entityType: "business_settings",
+    entityId: normalizedBusinessId,
+    newValue: normalizedSettings,
+    reason: "Actualizacion de configuracion operativa",
+  });
+  return;
+/*
   const batch = writeBatch(db);
   batch.set(doc(db, "businessSettings", normalizedBusinessId), {
     ...normalizedSettings,
@@ -545,4 +894,5 @@ export async function saveBusinessSettings(businessId, settings, actor) {
     createdAt: serverTimestamp(),
   });
   await batch.commit();
+*/
 }

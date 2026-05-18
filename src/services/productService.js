@@ -12,6 +12,17 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase/firebaseConfig";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import {
+  archiveProduct as archiveProductInApp,
+  createProduct as createProductInApp,
+  createProductCategory as createProductCategoryInApp,
+  subscribeToCatalogCategories,
+  subscribeToCatalogProducts,
+  subscribeToPosProducts,
+  updateProduct as updateProductInApp,
+  updateProductCategory as updateProductCategoryInApp,
+  updateProductStatus as updateProductStatusInApp,
+} from "./app/catalogGateway";
 
 const productsCollection = collection(db, "products");
 const categoriesCollection = collection(db, "productCategories");
@@ -456,34 +467,15 @@ function normalizeModifierPayload(modifier, businessId, productId = "") {
 }
 
 export function subscribeToProducts(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
-  const productsQuery = query(productsCollection, where("business_id", "==", businessId));
-
-  return onSnapshot(productsQuery, (snapshot) => {
-    callback(sortByOrderAndName(snapshot.docs.map((snapshotDoc) => normalizeProductDocument({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
-  }, createSubscriptionErrorHandler({ scope: "products:subscribeToProducts", callback, emptyValue: [] }));
+  return subscribeToCatalogProducts(businessId, (products) => callback(sortByOrderAndName(products)));
 }
 
 export function subscribeToAvailableProducts(businessId, callback) {
-  return subscribeToProducts(businessId, (products) => {
-    callback(products.filter((product) => canSellProduct(product)).map(normalizeProductForPOS));
-  });
+  return subscribeToPosProducts(businessId, callback);
 }
 
 export function subscribeToProductCategories(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
-  const categoriesQuery = query(categoriesCollection, where("business_id", "==", businessId));
-  return onSnapshot(categoriesQuery, (snapshot) => {
-    callback(sortByOrderAndName(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
-  }, createSubscriptionErrorHandler({ scope: "products:subscribeToProductCategories", callback, emptyValue: [] }));
+  return subscribeToCatalogCategories(businessId, (categories) => callback(sortByOrderAndName(categories)));
 }
 
 export function subscribeToProductModifiers(businessId, callback) {
@@ -530,41 +522,23 @@ export async function seedDefaultProductCategories(businessId) {
 }
 
 export async function createProduct(businessId, product) {
-  const payload = normalizeProductPayload(product, businessId);
-  const createdProduct = await addDoc(productsCollection, {
-    ...payload,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-  return createdProduct.id;
+  return createProductInApp(businessId, normalizeProductPayload(product, businessId));
 }
 
 export async function updateProduct(productId, businessId, product) {
   if (!productId) throw new Error("El id del producto es obligatorio para actualizar.");
-  const payload = normalizeProductPayload(product, businessId);
-  await updateDoc(doc(db, "products", productId), {
-    ...payload,
-    updatedAt: serverTimestamp(),
-  });
+  await updateProductInApp(productId, businessId, normalizeProductPayload(product, businessId));
 }
 
 export async function archiveProduct(productId) {
   if (!productId) throw new Error("El id del producto es obligatorio para archivar.");
-  await updateDoc(doc(db, "products", productId), {
-    status: "archived",
-    is_available: false,
-    updatedAt: serverTimestamp(),
-  });
+  await archiveProductInApp(productId);
 }
 
 export async function updateProductStatus(productId, status) {
   if (!productId) throw new Error("El id del producto es obligatorio.");
   if (!PRODUCT_STATUSES.includes(status)) throw new Error("El estado del producto no es valido.");
-  await updateDoc(doc(db, "products", productId), {
-    status,
-    is_available: status === "active" || status === "temporary",
-    updatedAt: serverTimestamp(),
-  });
+  await updateProductStatusInApp(productId, status);
 }
 
 export async function createProductCategory(businessId, category, existingCategories = []) {
@@ -573,12 +547,7 @@ export async function createProductCategory(businessId, category, existingCatego
     (item) => normalizeText(item.name).toLowerCase() === payload.name.toLowerCase()
   );
   if (duplicated) throw new Error("Ya existe una categoria con ese nombre en este negocio.");
-  const createdCategory = await addDoc(categoriesCollection, {
-    ...payload,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-  return createdCategory.id;
+  return createProductCategoryInApp(businessId, payload);
 }
 
 export async function updateProductCategory(categoryId, businessId, category, existingCategories = []) {
@@ -588,10 +557,7 @@ export async function updateProductCategory(categoryId, businessId, category, ex
     (item) => item.id !== categoryId && normalizeText(item.name).toLowerCase() === payload.name.toLowerCase()
   );
   if (duplicated) throw new Error("Ya existe una categoria con ese nombre en este negocio.");
-  await updateDoc(doc(db, "productCategories", categoryId), {
-    ...payload,
-    updatedAt: serverTimestamp(),
-  });
+  await updateProductCategoryInApp(categoryId, businessId, payload);
 }
 
 export async function createProductModifier(businessId, productId, modifier) {

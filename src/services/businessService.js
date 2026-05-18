@@ -3,6 +3,7 @@ import { updateProfile } from "firebase/auth";
 import { auth, db } from "../firebase/firebaseConfig";
 import { buildBusinessId, LEGACY_BUSINESS_ID } from "./authService";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import { getSupabaseClient } from "../lib/supabaseClient";
 
 function toHex(buffer) {
   return Array.from(new Uint8Array(buffer))
@@ -154,7 +155,21 @@ export async function updateBusinessAccount(businessId, values) {
     payload.audit_pin_updated_at = serverTimestamp();
   }
 
+  const client = getSupabaseClient();
+  const { error } = await client
+    .from("businesses")
+    .update({
+      name: payload.name,
+      logo_url: payload.logo_url,
+      audit_pin_hash: values?.auditPin ? payload.audit_pin_hash : undefined,
+    })
+    .eq("id", normalizedBusinessId);
+
+  if (error) throw error;
+  return;
+/*
   await setDoc(doc(db, "businesses", normalizedBusinessId), payload, { merge: true });
+*/
 }
 
 export async function updateBusinessUserProfile(userId, values) {
@@ -176,11 +191,25 @@ export async function updateBusinessUserProfile(userId, values) {
     updatedAt: serverTimestamp(),
   };
 
+  const client = getSupabaseClient();
+  const { error } = await client
+    .from("profiles")
+    .update({
+      display_name: displayName,
+      phone: payload.phone,
+      avatar_url: payload.avatar_url,
+    })
+    .eq("id", normalizedUserId);
+
+  if (error) throw error;
+  return;
+/*
   await setDoc(doc(db, "business_users", normalizedUserId), payload, { merge: true });
 
   if (auth.currentUser) {
     await updateProfile(auth.currentUser, { displayName });
   }
+*/
 }
 
 export async function verifyBusinessAuditPin(businessId, pin) {
@@ -195,12 +224,18 @@ export async function verifyBusinessAuditPin(businessId, pin) {
     return false;
   }
 
-  const snapshot = await getDoc(doc(db, "businesses", normalizedBusinessId));
-  if (!snapshot.exists()) {
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("businesses")
+    .select("audit_pin_hash")
+    .eq("id", normalizedBusinessId)
+    .maybeSingle();
+
+  if (error || !data) {
     return false;
   }
 
-  const storedHash = String(snapshot.data().audit_pin_hash || "").trim();
+  const storedHash = String(data.audit_pin_hash || "").trim();
   if (!storedHash) {
     return false;
   }

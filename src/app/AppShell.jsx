@@ -96,6 +96,7 @@ function AppShellContent() {
     userProfile,
     business,
     businessId,
+    authError,
     isLoading,
     login,
     registerOwner,
@@ -347,6 +348,37 @@ function AppShellContent() {
       <Suspense fallback={<SplashScreen />}>
         <AuthScreen onLogin={handleLogin} onRegister={handleRegister} isBusy={isAuthBusy} />
       </Suspense>
+    );
+  }
+
+  if (!businessId) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f4f6f8] px-4 text-slate-900">
+        <section className="w-full max-w-xl rounded-[28px] border border-amber-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-600">
+            Acceso Supabase pendiente
+          </p>
+          <h1 className="mt-3 text-2xl font-bold text-slate-950">
+            Tu usuario no tiene un negocio activo asociado.
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            La sesion inicio correctamente, pero Supabase no encontro una membresia activa en
+            <span className="font-semibold"> business_users</span>. Asocia este usuario al negocio antes de operar POS y caja.
+          </p>
+          {authError ? (
+            <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              {authError.message || "No fue posible resolver el negocio activo."}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={logout}
+            className="mt-5 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+          >
+            Cerrar sesion
+          </button>
+        </section>
+      </main>
     );
   }
 

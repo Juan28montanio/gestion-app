@@ -77,6 +77,9 @@ export function subscribeToOperatingExpenses(businessId, callback) {
     return () => {};
   }
 
+  callback([]);
+  return () => {};
+/*
   const expensesQuery = query(
     operatingExpensesCollection,
     where("business_id", "==", businessId)
@@ -93,6 +96,7 @@ export function subscribeToOperatingExpenses(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export async function createOperatingExpense(expense) {

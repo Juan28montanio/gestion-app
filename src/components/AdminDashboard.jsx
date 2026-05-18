@@ -255,6 +255,7 @@ export default function AdminDashboard({
   const [payablePaymentMethod, setPayablePaymentMethod] = useState("cash");
   const [payablePaymentAmount, setPayablePaymentAmount] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [cashActionError, setCashActionError] = useState("");
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -676,6 +677,7 @@ export default function AdminDashboard({
 
   const handleOpenCash = async () => {
     setIsBusy(true);
+    setCashActionError("");
     try {
       await openCashSession(businessId, {
         cashierName:
@@ -689,14 +691,17 @@ export default function AdminDashboard({
 
   const handleCloseCash = async () => {
     if (!openSession) {
+      setCashActionError("No hay una caja abierta para cerrar. Actualiza la vista o abre una nueva jornada.");
       return;
     }
 
     if (cashCounted === "") {
+      setCashActionError("Ingresa el efectivo contado antes de cerrar caja.");
       return;
     }
 
     setIsBusy(true);
+    setCashActionError("");
     try {
       const report = await closeCashSession({
         businessId,
@@ -712,7 +717,19 @@ export default function AdminDashboard({
       });
       setIsCloseModalOpen(false);
       setCashCounted("");
+      setOpenSession(null);
       openPrintableReport(report);
+    } catch (error) {
+      const message = String(error?.message || "");
+      if (message.includes("Cash session is not open")) {
+        setOpenSession(null);
+        setIsCloseModalOpen(false);
+        setCashCounted("");
+        setCashActionError("La caja ya estaba cerrada en Supabase. La vista fue actualizada.");
+        return;
+      }
+
+      setCashActionError(message || "No fue posible cerrar la caja. Revisa la sesion y vuelve a intentar.");
     } finally {
       setIsBusy(false);
     }
@@ -1047,6 +1064,11 @@ export default function AdminDashboard({
         {moduleMode === "cash" && activeFinanceTab === "cash" ? (
           <>
             <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              {cashActionError ? (
+                <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  {cashActionError}
+                </div>
+              ) : null}
               <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -2240,6 +2262,7 @@ export default function AdminDashboard({
         onClose={() => {
           setIsCloseModalOpen(false);
           setCashCounted("");
+          setCashActionError("");
         }}
         maxWidthClass="max-w-4xl"
         icon={{ main: <ReceiptText size={20} />, close: "X" }}
@@ -2247,6 +2270,11 @@ export default function AdminDashboard({
         description="Revisa el conteo, confirma el resumen y cierra la jornada con su reporte."
       >
         <div className="grid gap-6">
+          {cashActionError ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              {cashActionError}
+            </div>
+          ) : null}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_320px]">
             <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-5 shadow-sm">
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">

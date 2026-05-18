@@ -13,6 +13,11 @@ import { db } from "../firebase/firebaseConfig";
 import { closeOrderAndLogSale } from "./financeService";
 import { QUICK_SALE_TABLE } from "../utils/posConstants";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import { closePosSale } from "./app/salesGateway";
+import {
+  subscribeActiveTableOrders,
+  listActiveTableOrders,
+} from "./supabase/salonService";
 
 const ordersCollection = collection(db, "orders");
 const tablesCollection = collection(db, "tables");
@@ -185,11 +190,8 @@ export async function createOrder(businessId, tableId, items, options = {}) {
 }
 
 export function subscribeToActiveOrders(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
+  return subscribeActiveTableOrders(businessId, callback);
+/*
   const ordersQuery = query(
     ordersCollection,
     where("business_id", "==", businessId),
@@ -203,6 +205,7 @@ export function subscribeToActiveOrders(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export function subscribeToOrderHistory(businessId, callback) {
@@ -211,6 +214,19 @@ export function subscribeToOrderHistory(businessId, callback) {
     return () => {};
   }
 
+  let cancelled = false;
+  listActiveTableOrders(businessId)
+    .then((orders) => {
+      if (!cancelled) callback(sortOrders(orders));
+    })
+    .catch((error) => {
+      console.error("orders history", error);
+      if (!cancelled) callback([]);
+    });
+  return () => {
+    cancelled = true;
+  };
+/*
   const ordersQuery = query(
     ordersCollection,
     where("business_id", "==", businessId)
@@ -225,10 +241,21 @@ export function subscribeToOrderHistory(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export function subscribeToActiveOrder(businessId, tableId, callback) {
   if (!tableId) {
+    return () => {};
+  }
+
+  const unsubscribe = subscribeActiveTableOrders(businessId, (orders) => {
+    callback(orders.find((order) => order.table_id === tableId || order.tableId === tableId) || null);
+  });
+  return unsubscribe;
+/*
+  if (tableId === QUICK_SALE_TABLE.id) {
+    callback(null);
     return () => {};
   }
 
@@ -247,6 +274,7 @@ export function subscribeToActiveOrder(businessId, tableId, callback) {
     callback,
     emptyValue: null,
   }));
+*/
 }
 
 export async function submitOrder({
@@ -282,6 +310,10 @@ export async function submitOrder({
     throw new Error("La orden requiere business_id y table_id.");
   }
 
+  if (payload.table_id === QUICK_SALE_TABLE.id) {
+    return orderId || `supabase-quick-sale-${Date.now()}`;
+  }
+
   if (orderId) {
     await updateDoc(doc(db, "orders", orderId), payload);
     if (table?.id !== QUICK_SALE_TABLE.id) {
@@ -314,9 +346,27 @@ export async function requestPayment({
   splitPayments,
   customer,
   actor,
+  items = [],
+  table = null,
   tableSessionId,
   sessionId,
 }) {
+  if (tableId === QUICK_SALE_TABLE.id || String(orderId || "").startsWith("supabase-quick-sale")) {
+    await closePosSale({
+      businessId,
+      table: table || QUICK_SALE_TABLE,
+      items,
+      subtotal,
+      chargedTotal,
+      paymentMethod,
+      splitPayments,
+      customer,
+      actor,
+      ticketConsumption,
+    });
+    return;
+  }
+
   await closeOrderAndLogSale(orderId, paymentMethod, {
     businessId,
     tableId,

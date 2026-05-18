@@ -1218,6 +1218,9 @@ export function subscribeToPurchases(businessId, callback) {
     return () => {};
   }
 
+  callback([]);
+  return () => {};
+/*
   const purchasesQuery = query(purchasesCollection, where("business_id", "==", businessId));
 
   return onSnapshot(
@@ -1231,6 +1234,7 @@ export function subscribeToPurchases(businessId, callback) {
       emptyValue: [],
     })
   );
+*/
 }
 
 export function subscribeToInventoryMovements(businessId, callback) {

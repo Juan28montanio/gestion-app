@@ -104,6 +104,12 @@ export default function POSOrder({
   }, [cartItems]);
 
   useEffect(() => {
+    if (!selectedTable?.id) {
+      onSelectTable?.(QUICK_SALE_TABLE);
+    }
+  }, [onSelectTable, selectedTable?.id]);
+
+  useEffect(() => {
     const unsubscribeProducts = subscribeToAvailableProducts(businessId, setProducts);
     const unsubscribeTables = subscribeToTables(businessId, (nextTables) =>
       setTables(nextTables.filter((table) => !table.deletedAt))
@@ -425,7 +431,9 @@ export default function POSOrder({
       await requestPayment({
         businessId,
         tableId: selectedTable.id,
+        table: selectedTable,
         orderId: resolvedOrderId,
+        items: cartItems,
         paymentMethod: paymentMethodOverride,
         chargedTotal: chargedTotalOverride,
         cashReceived: paymentMethodOverride === "cash" ? cashReceivedOverride : 0,
@@ -528,7 +536,9 @@ export default function POSOrder({
       await requestPayment({
         businessId,
         tableId: selectedTable.id,
+        table: selectedTable,
         orderId: resolvedOrderId,
+        items: cartItems,
         paymentMethod: "ticket_wallet",
         chargedTotal: 0,
         subtotal: payableSubtotal,

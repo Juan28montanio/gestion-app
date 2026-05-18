@@ -21,6 +21,14 @@ import { getPaymentMethodConfig, registerDebtPayment } from "../utils/posFinance
 import { buildOperationalSaleItemDetail } from "../utils/sales";
 import { getSalesLedger } from "./salesLedgerService";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import {
+  getCashSessionLockInfo as getCashSessionLockInfoInApp,
+  closeCashSession as closeCashSessionInApp,
+  getCurrentOpenCashSession as getCurrentOpenCashSessionInApp,
+  openCashSession as openCashSessionInApp,
+  subscribeToCashSessions as subscribeToCashSessionsInApp,
+  subscribeToOpenCashSession as subscribeToOpenCashSessionInApp,
+} from "./app/cashGateway";
 
 const cashClosingsCollection = collection(db, "cash_closings");
 const salesHistoryCollection = collection(db, "sales_history");
@@ -129,6 +137,8 @@ function buildPurchaseSummary(purchases, salesTotal) {
 }
 
 export function getCashSessionLockInfo(session) {
+  return getCashSessionLockInfoInApp(session);
+/*
   if (!session) {
     return {
       blocked: true,
@@ -167,9 +177,12 @@ export function getCashSessionLockInfo(session) {
     message: "",
     hoursOpen,
   };
+*/
 }
 
 export function subscribeToOpenCashSession(businessId, callback) {
+  return subscribeToOpenCashSessionInApp(businessId, callback);
+/*
   if (!businessId) {
     callback(null);
     return () => {};
@@ -196,9 +209,12 @@ export function subscribeToOpenCashSession(businessId, callback) {
     callback,
     emptyValue: null,
   }));
+*/
 }
 
 export function subscribeToCashClosings(businessId, callback) {
+  return subscribeToCashSessionsInApp(businessId, callback);
+/*
   if (!businessId) {
     callback([]);
     return () => {};
@@ -221,9 +237,12 @@ export function subscribeToCashClosings(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export async function getCurrentOpenCashSession(businessId) {
+  return getCurrentOpenCashSessionInApp(businessId);
+/*
   const normalizedBusinessId = String(businessId || "").trim();
 
   if (!normalizedBusinessId) {
@@ -247,9 +266,12 @@ export async function getCurrentOpenCashSession(businessId) {
     });
 
   return sessions[0] || null;
+*/
 }
 
 export async function openCashSession(businessId, options = {}) {
+  return openCashSessionInApp(businessId, options);
+/*
   const normalizedBusinessId = String(businessId || "").trim();
 
   if (!normalizedBusinessId) {
@@ -346,9 +368,12 @@ export async function openCashSession(businessId, options = {}) {
   await batch.commit();
 
   return createdRef.id;
+*/
 }
 
 export async function closeCashSession({ businessId, closingId, cashCounted, context = {} }) {
+  return closeCashSessionInApp({ businessId, closingId, cashCounted, context });
+/*
   const normalizedBusinessId = String(businessId || "").trim();
   const normalizedClosingId = String(closingId || "").trim();
 
@@ -671,6 +696,7 @@ export async function closeCashSession({ businessId, closingId, cashCounted, con
     movementEntries,
     purchaseSummary,
   };
+*/
 }
 
 export async function settlePendingDebtSale(saleId, paymentMethod) {

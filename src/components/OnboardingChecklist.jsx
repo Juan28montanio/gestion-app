@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Circle, CreditCard, Package, ReceiptText, Store, Utensils } from "lucide-react";
-import { doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "../firebase/firebaseConfig";
 import { subscribeToPaymentMethods } from "../services/accountService";
 import { subscribeToOpenCashSession, subscribeToCashClosings } from "../services/cashClosingService";
 import { subscribeToProducts } from "../services/productService";
@@ -33,9 +31,6 @@ export default function OnboardingChecklist({ businessId, activeSection, onNavig
       subscribeToOpenCashSession(businessId, (openSession) => setState((current) => ({ ...current, openSession }))),
       subscribeToCashClosings(businessId, (closings) => setState((current) => ({ ...current, closings }))),
       subscribeToSalesLedger(businessId, (sales) => setState((current) => ({ ...current, sales }))),
-      onSnapshot(doc(db, "onboardingProgress", businessId), (snapshot) => {
-        setState((current) => ({ ...current, dismissed: Boolean(snapshot.data()?.dismissed) }));
-      }),
     ];
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe?.());
@@ -113,17 +108,6 @@ export default function OnboardingChecklist({ businessId, activeSection, onNavig
   const completedCount = steps.filter((step) => step.complete).length;
   const nextStep = steps.find((step) => !step.complete);
 
-  useEffect(() => {
-    if (!businessId) return;
-    setDoc(doc(db, "onboardingProgress", businessId), {
-      business_id: businessId,
-      completedSteps: steps.filter((step) => step.complete).map((step) => step.id),
-      nextStepId: nextStep?.id || "",
-      completedAt: completedCount === steps.length ? serverTimestamp() : null,
-      updatedAt: serverTimestamp(),
-    }, { merge: true }).catch(() => {});
-  }, [businessId, completedCount, nextStep?.id, steps]);
-
   if (!businessId || state.dismissed || completedCount === steps.length || activeSection === "account") {
     return null;
   }
@@ -152,14 +136,7 @@ export default function OnboardingChecklist({ businessId, activeSection, onNavig
           ) : null}
           <button
             type="button"
-            onClick={() =>
-              setDoc(doc(db, "onboardingProgress", businessId), {
-                business_id: businessId,
-                dismissed: true,
-                dismissedAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              }, { merge: true })
-            }
+            onClick={() => setState((current) => ({ ...current, dismissed: true }))}
             className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
           >
             Ocultar

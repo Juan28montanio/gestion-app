@@ -1,133 +1,58 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../firebase/firebaseConfig";
 import {
-  buildBusinessId,
-  LEGACY_BUSINESS_ID,
-  loginWithEmailPassword,
-  reauthenticateCurrentUserPassword,
-  logoutUser,
-  registerBusinessOwner,
-} from "../services/authService";
-import {
-  migrateLegacyBusinessUser,
-  subscribeToBusiness,
-  subscribeToBusinessUser,
+  login,
+  logout,
+  registerOwner,
+  subscribeToAuthSession,
   updateBusinessAccount,
   updateBusinessUserProfile,
   verifyBusinessAuditPin,
-} from "../services/businessService";
-import { resetBusinessWorkspace } from "../services/workspaceService";
+  verifySessionPassword,
+} from "../services/app/authGateway";
 
 const AuthContext = createContext(null);
 
+async function resetBusinessWorkspace() {
+  throw new Error("El reinicio de espacio de trabajo se migrara a una RPC Supabase antes de habilitarlo.");
+}
+
 export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
-  const [business, setBusiness] = useState(null);
+  const [authSession, setAuthSession] = useState({
+    currentUser: null,
+    userProfile: null,
+    business: null,
+    businessId: "",
+    authError: null,
+  });
   const [isLoading, setIsLoading] = useState(true);
-  const [isProfileResolved, setIsProfileResolved] = useState(false);
-  const fallbackBusinessId = currentUser?.uid ? buildBusinessId(currentUser.uid) : "";
-  const resolvedBusinessId = userProfile?.business_id || fallbackBusinessId;
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setUserProfile(null);
-      setBusiness(null);
-      setIsProfileResolved(!user);
+    const unsubscribe = subscribeToAuthSession((nextSession) => {
+      setAuthSession(nextSession);
       setIsLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!currentUser?.uid) {
-      setUserProfile(null);
-      setIsProfileResolved(true);
-      return undefined;
-    }
-
-    const unsubscribe = subscribeToBusinessUser(currentUser.uid, (profile) => {
-      setUserProfile(profile || null);
-      setIsProfileResolved(true);
-    });
-
-    return () => unsubscribe();
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!currentUser?.uid || !userProfile?.business_id) {
-      return undefined;
-    }
-
-    let isCancelled = false;
-
-    const runMigration = async () => {
-      if (userProfile.business_id !== LEGACY_BUSINESS_ID) {
-        return;
-      }
-
-      setIsProfileResolved(false);
-
-      try {
-        await migrateLegacyBusinessUser(currentUser, userProfile);
-      } finally {
-        if (!isCancelled) {
-          setIsProfileResolved(true);
-        }
-      }
-    };
-
-    runMigration();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [currentUser, userProfile]);
-
-  useEffect(() => {
-    if (!isProfileResolved) {
-      return undefined;
-    }
-
-    const businessId = resolvedBusinessId || "";
-    if (!businessId) {
-      setBusiness(null);
-      return undefined;
-    }
-
-    const unsubscribe = subscribeToBusiness(businessId, (currentBusiness) => {
-      setBusiness(
-        currentBusiness || {
-          id: businessId,
-          name: "SmartProfit",
-          logo_url: "",
-        }
-      );
-    });
-
-    return () => unsubscribe();
-  }, [isProfileResolved, resolvedBusinessId]);
-
   const value = useMemo(
     () => ({
-      currentUser,
-      userProfile,
-      business,
-      businessId: business?.id || resolvedBusinessId || "",
-      isLoading: isLoading || (Boolean(currentUser) && !isProfileResolved),
-      login: loginWithEmailPassword,
-      registerOwner: registerBusinessOwner,
-      logout: logoutUser,
-      verifySessionPassword: reauthenticateCurrentUserPassword,
+      currentUser: authSession.currentUser,
+      userProfile: authSession.userProfile,
+      business: authSession.business,
+      businessId: authSession.businessId || "",
+      authError: authSession.authError || null,
+      isLoading,
+      login,
+      registerOwner,
+      logout,
+      verifySessionPassword,
       saveBusinessAccount: updateBusinessAccount,
       saveUserProfile: updateBusinessUserProfile,
       verifyAuditPin: verifyBusinessAuditPin,
       resetWorkspace: resetBusinessWorkspace,
     }),
-    [business, currentUser, isLoading, isProfileResolved, resolvedBusinessId, userProfile]
+    [authSession, isLoading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

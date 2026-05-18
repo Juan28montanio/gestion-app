@@ -2,6 +2,10 @@ import { collection, getDocs, onSnapshot, query, where } from "firebase/firestor
 import { db } from "../firebase/firebaseConfig";
 import { normalizePaymentBreakdown } from "../utils/payments";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
+import {
+  subscribeToSalesLedger as subscribeToAppSalesLedger,
+} from "./app/salesGateway";
+import { getSalesLedger as getSupabaseSalesLedger } from "./supabase/salesService";
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -161,6 +165,8 @@ export function buildSalesLedger({ sales = [], saleItems = [], payments = [], le
 }
 
 export async function getSalesLedger(businessId) {
+  return getSupabaseSalesLedger(businessId);
+/*
   const normalizedBusinessId = normalizeText(businessId);
   if (!normalizedBusinessId) return [];
 
@@ -177,9 +183,12 @@ export async function getSalesLedger(businessId) {
     payments: mapSnapshot(paymentsSnapshot),
     legacySales: mapSnapshot(legacySnapshot),
   });
+*/
 }
 
 export function subscribeToSalesLedger(businessId, callback) {
+  return subscribeToAppSalesLedger(businessId, callback);
+/*
   const normalizedBusinessId = normalizeText(businessId);
   if (!normalizedBusinessId) {
     callback([]);
@@ -224,4 +233,5 @@ export function subscribeToSalesLedger(businessId, callback) {
   ];
 
   return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+*/
 }

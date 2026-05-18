@@ -12,6 +12,21 @@ import {
 import { db } from "../firebase/firebaseConfig";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
 import { calculateItemsCount, calculateOrderTotal, canOpenTable } from "../utils/salon";
+import {
+  callCancelOrderItem,
+  callOpenTableSession,
+  callReassignWaiter,
+  callReleaseCleanTable,
+  callRequestTableBill,
+  callSendOrderToKitchen,
+  callTransferTableSession,
+  callUpdateKitchenTicketStatus,
+  fetchActiveOrderForTableSession,
+  forceTableCleaningState,
+  subscribeActiveTableSessions,
+  subscribeKitchenTickets as subscribeKitchenTicketsFromSupabase,
+  subscribeTableEvents as subscribeTableEventsFromSupabase,
+} from "./supabase/salonService";
 
 const tablesCollection = collection(db, "tables");
 const sessionsCollection = collection(db, "tableSessions");
@@ -140,11 +155,8 @@ function buildOrderSummary(items = []) {
 }
 
 export function subscribeToActiveTableSessions(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
+  return subscribeActiveTableSessions(businessId, callback);
+/*
   const sessionsQuery = query(
     sessionsCollection,
     where("business_id", "==", businessId),
@@ -160,14 +172,12 @@ export function subscribeToActiveTableSessions(businessId, callback) {
       emptyValue: [],
     })
   );
+*/
 }
 
 export function subscribeToKitchenTickets(businessId, callback) {
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
-
+  return subscribeKitchenTicketsFromSupabase(businessId, callback);
+/*
   const ticketsQuery = query(
     kitchenTicketsCollection,
     where("business_id", "==", businessId),
@@ -183,14 +193,12 @@ export function subscribeToKitchenTickets(businessId, callback) {
       emptyValue: [],
     })
   );
+*/
 }
 
 export function subscribeToTableEvents(businessId, tableId, callback) {
-  if (!businessId || !tableId) {
-    callback([]);
-    return () => {};
-  }
-
+  return subscribeTableEventsFromSupabase(businessId, tableId, callback);
+/*
   const eventsQuery = query(
     eventsCollection,
     where("business_id", "==", businessId),
@@ -206,6 +214,7 @@ export function subscribeToTableEvents(businessId, tableId, callback) {
       emptyValue: [],
     })
   );
+*/
 }
 
 export async function openTableSession({
@@ -217,6 +226,8 @@ export async function openTableSession({
   notes,
   createdBy,
 }) {
+  return callOpenTableSession({ businessId, table, waiter, guestsCount, customer, notes });
+/*
   const normalizedBusinessId = String(businessId || "").trim();
   const tableId = String(table?.id || "").trim();
   const normalizedGuestsCount = Number(guestsCount || 0);
@@ -309,6 +320,7 @@ export async function openTableSession({
   });
 
   return sessionRef.id;
+*/
 }
 
 export async function sendOrderToKitchen({
@@ -320,6 +332,8 @@ export async function sendOrderToKitchen({
   customer,
   createdBy,
 }) {
+  return callSendOrderToKitchen({ businessId, table, session, currentOrder, items, customer });
+/*
   const normalizedBusinessId = String(businessId || "").trim();
   const tableId = String(table?.id || session?.tableId || session?.table_id || "").trim();
   const sessionId = String(session?.id || table?.current_session_id || "").trim();
@@ -464,6 +478,7 @@ export async function sendOrderToKitchen({
   });
 
   return orderRef.id;
+*/
 }
 
 export async function updateKitchenTicketStatus({
@@ -472,6 +487,8 @@ export async function updateKitchenTicketStatus({
   status,
   createdBy,
 }) {
+  return callUpdateKitchenTicketStatus({ businessId, ticket, status, createdBy });
+/*
   const ticketId = String(ticket?.id || "").trim();
   const nextStatus = String(status || "").trim();
 
@@ -546,9 +563,12 @@ export async function updateKitchenTicketStatus({
       })
     );
   });
+*/
 }
 
 export async function requestTableBill({ businessId, table, session, order, createdBy }) {
+  return callRequestTableBill({ businessId, table, session, order, createdBy });
+/*
   const tableId = String(table?.id || "").trim();
   const sessionId = String(session?.id || table?.current_session_id || "").trim();
   const orderId = String(order?.id || table?.current_order_id || "").trim();
@@ -587,9 +607,12 @@ export async function requestTableBill({ businessId, table, session, order, crea
       })
     );
   });
+*/
 }
 
 export async function cancelOrderItem({ businessId, table, session, order, lineId, reason, createdBy }) {
+  return callCancelOrderItem({ businessId, table, session, order, lineId, reason, createdBy });
+/*
   const normalizedReason = String(reason || "").trim();
   const orderId = String(order?.id || "").trim();
 
@@ -662,9 +685,12 @@ export async function cancelOrderItem({ businessId, table, session, order, lineI
       })
     );
   });
+*/
 }
 
 export async function releaseCleanTable({ businessId, table, createdBy }) {
+  return callReleaseCleanTable({ businessId, table, createdBy });
+/*
   const tableId = String(table?.id || "").trim();
 
   if (!tableId) {
@@ -693,9 +719,12 @@ export async function releaseCleanTable({ businessId, table, createdBy }) {
       })
     );
   });
+*/
 }
 
 export async function reassignWaiter({ businessId, table, session, waiter, createdBy }) {
+  return callReassignWaiter({ businessId, table, session, waiter, createdBy });
+/*
   const sessionId = String(session?.id || "").trim();
   const tableId = String(table?.id || session?.table_id || "").trim();
   const waiterName = getUserName(waiter);
@@ -730,9 +759,12 @@ export async function reassignWaiter({ businessId, table, session, waiter, creat
       })
     );
   });
+*/
 }
 
 export async function transferTableSession({ businessId, sourceTable, targetTable, session, order, createdBy }) {
+  return callTransferTableSession({ businessId, sourceTable, targetTable, session, order, createdBy });
+/*
   const sourceTableId = String(sourceTable?.id || "").trim();
   const targetTableId = String(targetTable?.id || "").trim();
   const sessionId = String(session?.id || "").trim();
@@ -800,9 +832,12 @@ export async function transferTableSession({ businessId, sourceTable, targetTabl
       })
     );
   });
+*/
 }
 
 export async function fetchActiveOrderForSession(businessId, sessionId) {
+  return fetchActiveOrderForTableSession(businessId, sessionId);
+/*
   const snapshot = await getDocs(
     query(
       ordersCollection,
@@ -813,11 +848,15 @@ export async function fetchActiveOrderForSession(businessId, sessionId) {
   );
 
   return snapshot.docs[0] ? { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } : null;
+*/
 }
 
 export async function forceTableCleaning({ tableId }) {
+  return forceTableCleaningState(tableId);
+/*
   await updateDoc(doc(tablesCollection, tableId), {
     status: "cleaning",
     updatedAt: serverTimestamp(),
   });
+*/
 }

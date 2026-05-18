@@ -11,6 +11,7 @@ import {
 import { db } from "../firebase/firebaseConfig";
 import { createSubscriptionErrorHandler } from "./subscriptionService";
 import { getCurrentOpenCashSession } from "./cashClosingService";
+import { getCashMovements } from "./app/cashGateway";
 import { getPaymentMethodConfig, roundCurrency } from "../utils/posFinance";
 
 function normalizeText(value) {
@@ -119,6 +120,25 @@ export function subscribeToCashMovements(businessId, callback) {
     return () => {};
   }
 
+  let cancelled = false;
+  const publish = () => {
+    getCashMovements(businessId)
+      .then((movements) => {
+        if (!cancelled) callback(sortByCreatedAt(movements));
+      })
+      .catch((error) => {
+        console.error("[financeControl:cashMovements]", error);
+        if (!cancelled) callback([]);
+      });
+  };
+
+  publish();
+  const intervalId = window.setInterval(publish, 15000);
+  return () => {
+    cancelled = true;
+    window.clearInterval(intervalId);
+  };
+/*
   const movementsQuery = query(collection(db, "cashMovements"), where("business_id", "==", businessId));
   return onSnapshot(movementsQuery, (snapshot) => {
     callback(sortByCreatedAt(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
@@ -127,6 +147,7 @@ export function subscribeToCashMovements(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export function subscribeToAccountsReceivable(businessId, callback) {
@@ -135,6 +156,9 @@ export function subscribeToAccountsReceivable(businessId, callback) {
     return () => {};
   }
 
+  callback([]);
+  return () => {};
+/*
   const receivablesQuery = query(collection(db, "accountsReceivable"), where("business_id", "==", businessId));
   return onSnapshot(receivablesQuery, (snapshot) => {
     callback(sortByCreatedAt(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
@@ -143,6 +167,7 @@ export function subscribeToAccountsReceivable(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export function subscribeToAccountsPayable(businessId, callback) {
@@ -151,6 +176,9 @@ export function subscribeToAccountsPayable(businessId, callback) {
     return () => {};
   }
 
+  callback([]);
+  return () => {};
+/*
   const payablesQuery = query(collection(db, "accountsPayable"), where("business_id", "==", businessId));
   return onSnapshot(payablesQuery, (snapshot) => {
     callback(sortByCreatedAt(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
@@ -159,6 +187,7 @@ export function subscribeToAccountsPayable(businessId, callback) {
     callback,
     emptyValue: [],
   }));
+*/
 }
 
 export async function registerPayablePayment({

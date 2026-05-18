@@ -144,7 +144,8 @@ function ToggleRow({ label, description, checked, onChange, disabled = false }) 
 }
 
 function formatAuditDate(value) {
-  const date = value?.toDate?.() || null;
+  const date = value?.toDate?.() || (value ? new Date(value) : null);
+  if (date && Number.isNaN(date.getTime())) return "Fecha pendiente";
   return date ? date.toLocaleString("es-CO") : "Fecha pendiente";
 }
 
