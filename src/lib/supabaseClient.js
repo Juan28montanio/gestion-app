@@ -1,7 +1,29 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const DEFAULT_SUPABASE_URL = "https://dmicvtkgbyoleckykzez.supabase.co";
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_o58zwsv5E4AeoR8BBPwUPg_63oRLTVg";
+
+function readEnv(...names) {
+  for (const name of names) {
+    const value = import.meta.env[name];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
+const supabaseUrl =
+  readEnv("VITE_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL") ||
+  DEFAULT_SUPABASE_URL;
+const supabaseAnonKey =
+  readEnv(
+    "VITE_SUPABASE_ANON_KEY",
+    "VITE_SUPABASE_PUBLISHABLE_KEY",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+  ) || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
@@ -18,7 +40,7 @@ export const supabase = isSupabaseConfigured
 export function getSupabaseClient() {
   if (!supabase) {
     throw new Error(
-      "Falta configurar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY para usar Supabase."
+      "Falta configurar las variables publicas de Supabase para usar la base de datos."
     );
   }
 
