@@ -13,6 +13,9 @@ function sortByCreatedAt(items = []) {
   });
 }
 
+const CASH_INCOME_TYPES = new Set(["sale_income", "debt_payment", "debt_payment_income", "manual_income"]);
+const CASH_EXPENSE_TYPES = new Set(["purchase_expense", "supplier_payment", "operating_expense", "operational_expense"]);
+
 export function calculateExpectedCash({
   openingAmount = 0,
   cashIncome = 0,
@@ -43,6 +46,18 @@ export function groupMovementsByMethod(movements = []) {
   }, {});
 }
 
+function groupMovementsByMethodWhen(movements = [], predicate = () => true) {
+  return movements.reduce((summary, movement) => {
+    if (!predicate(movement)) {
+      return summary;
+    }
+
+    const method = normalizeText(movement.method || movement.paymentMethod || "cash") || "cash";
+    summary[method] = roundCurrency((summary[method] || 0) + Number(movement.amount || 0));
+    return summary;
+  }, {});
+}
+
 export function summarizeCashSession(session, movements = []) {
   const validMovements = movements.filter((movement) => {
     const status = normalizeText(movement.status || "valid").toLowerCase();
@@ -50,16 +65,16 @@ export function summarizeCashSession(session, movements = []) {
   });
   const openingAmount = Number(session?.openingAmount ?? session?.opening_amount ?? 0);
   const cashIncome = validMovements
-    .filter((movement) => movement.method === "cash" && ["sale_income", "debt_payment_income", "manual_income"].includes(movement.type))
+    .filter((movement) => movement.method === "cash" && CASH_INCOME_TYPES.has(movement.type))
     .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const digitalIncome = validMovements
-    .filter((movement) => movement.method !== "cash" && ["sale_income", "debt_payment_income", "manual_income"].includes(movement.type))
+    .filter((movement) => movement.method !== "cash" && CASH_INCOME_TYPES.has(movement.type))
     .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const cashExpense = validMovements
-    .filter((movement) => movement.method === "cash" && ["purchase_expense", "supplier_payment", "operational_expense"].includes(movement.type))
+    .filter((movement) => movement.method === "cash" && CASH_EXPENSE_TYPES.has(movement.type))
     .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const digitalExpense = validMovements
-    .filter((movement) => movement.method !== "cash" && ["purchase_expense", "supplier_payment", "operational_expense"].includes(movement.type))
+    .filter((movement) => movement.method !== "cash" && CASH_EXPENSE_TYPES.has(movement.type))
     .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const refunds = validMovements
     .filter((movement) => movement.type === "refund")
@@ -83,6 +98,7 @@ export function summarizeCashSession(session, movements = []) {
     openingAmount,
     cashIncome,
     digitalIncome,
+    totalCollected: roundCurrency(cashIncome + digitalIncome),
     cashExpense,
     digitalExpense,
     refunds,
@@ -90,6 +106,8 @@ export function summarizeCashSession(session, movements = []) {
     adjustments,
     expectedCash,
     byMethod: groupMovementsByMethod(validMovements),
+    incomeByMethod: groupMovementsByMethodWhen(validMovements, (movement) => CASH_INCOME_TYPES.has(movement.type)),
+    expenseByMethod: groupMovementsByMethodWhen(validMovements, (movement) => CASH_EXPENSE_TYPES.has(movement.type)),
     movementCount: validMovements.length,
   };
 }

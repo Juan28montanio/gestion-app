@@ -171,11 +171,34 @@ export async function updateProductStatus(productId, status) {
 export async function createProductCategory(businessId, category) {
   const client = getSupabaseClient();
   const payload = normalizeCategoryPayload(category, businessId);
+
+  const { data: existing, error: lookupError } = await client
+    .from("product_categories")
+    .select("id")
+    .eq("business_id", payload.business_id)
+    .eq("name", payload.name)
+    .maybeSingle();
+
+  if (lookupError) throw lookupError;
+  if (existing?.id) return existing.id;
+
   const { data, error } = await client
     .from("product_categories")
     .insert(payload)
     .select("*")
     .single();
+
+  if (error?.code === "23505") {
+    const { data: duplicated, error: duplicatedLookupError } = await client
+      .from("product_categories")
+      .select("id")
+      .eq("business_id", payload.business_id)
+      .eq("name", payload.name)
+      .maybeSingle();
+
+    if (duplicatedLookupError) throw duplicatedLookupError;
+    if (duplicated?.id) return duplicated.id;
+  }
 
   if (error) throw error;
   return data.id;
@@ -186,6 +209,17 @@ export async function updateProductCategory(categoryId, businessId, category) {
 
   const client = getSupabaseClient();
   const payload = normalizeCategoryPayload(category, businessId);
+  const { data: duplicated, error: lookupError } = await client
+    .from("product_categories")
+    .select("id")
+    .eq("business_id", payload.business_id)
+    .eq("name", payload.name)
+    .neq("id", categoryId)
+    .maybeSingle();
+
+  if (lookupError) throw lookupError;
+  if (duplicated?.id) throw new Error("Ya existe una categoria con ese nombre en este negocio.");
+
   const { error } = await client
     .from("product_categories")
     .update(payload)

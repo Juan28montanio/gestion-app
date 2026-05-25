@@ -138,6 +138,7 @@ declare
   v_session public.cash_sessions%rowtype;
   v_expected_amount numeric(12, 2);
   v_difference_amount numeric(12, 2);
+  v_payment_method_totals jsonb;
 begin
   perform public.assert_business_member(p_business_id);
 
@@ -162,9 +163,13 @@ begin
 
   select coalesce(sum(
     case
-      when type in ('opening', 'sale_income', 'debt_payment') then amount
-      when type in ('purchase_expense', 'operating_expense') then -amount
-      when type = 'adjustment' then amount
+      when type = 'opening' then amount
+      when type in ('sale_income', 'debt_payment', 'debt_payment_income', 'manual_income')
+        and coalesce(method, 'cash') = 'cash' then amount
+      when type in ('purchase_expense', 'operating_expense', 'operational_expense', 'supplier_payment')
+        and coalesce(method, 'cash') = 'cash' then -amount
+      when type = 'adjustment'
+        and coalesce(method, 'cash') = 'cash' then amount
       else 0
     end
   ), 0)
@@ -173,6 +178,20 @@ begin
   where business_id = p_business_id
     and cash_session_id = p_cash_session_id
     and status = 'valid';
+
+  select coalesce(jsonb_object_agg(method_key, total_amount), '{}'::jsonb)
+  into v_payment_method_totals
+  from (
+    select
+      coalesce(method, 'cash') as method_key,
+      sum(amount)::numeric(12, 2) as total_amount
+    from public.cash_movements
+    where business_id = p_business_id
+      and cash_session_id = p_cash_session_id
+      and status = 'valid'
+      and type in ('sale_income', 'debt_payment', 'debt_payment_income', 'manual_income')
+    group by coalesce(method, 'cash')
+  ) method_totals;
 
   v_difference_amount := p_counted_amount - v_expected_amount;
 
@@ -234,7 +253,8 @@ begin
       'status', 'closed',
       'counted_amount', p_counted_amount,
       'expected_amount', v_expected_amount,
-      'difference_amount', v_difference_amount
+      'difference_amount', v_difference_amount,
+      'payment_method_totals', v_payment_method_totals
     ),
     p_notes
   );
@@ -243,7 +263,8 @@ begin
     'cash_session_id', p_cash_session_id,
     'counted_amount', p_counted_amount,
     'expected_amount', v_expected_amount,
-    'difference_amount', v_difference_amount
+    'difference_amount', v_difference_amount,
+    'payment_method_totals', v_payment_method_totals
   );
 end;
 $$;

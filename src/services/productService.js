@@ -2,6 +2,7 @@ import {
   archiveProduct as archiveProductInApp,
   createProduct as createProductInApp,
   createProductCategory as createProductCategoryInApp,
+  getCatalogCategories,
   subscribeToCatalogCategories,
   subscribeToCatalogProducts,
   subscribeToPosProducts,
@@ -475,8 +476,18 @@ export async function seedDefaultProductCategories(businessId) {
   const normalizedBusinessId = normalizeText(businessId);
   if (!normalizedBusinessId) return;
 
+  const existingCategories = await getCatalogCategories(normalizedBusinessId).catch(() => []);
+  const existingNames = new Set(
+    existingCategories.map((category) => normalizeText(category.name).toLowerCase()).filter(Boolean)
+  );
+  const missingCategories = DEFAULT_PRODUCT_CATEGORIES.filter(
+    (category) => !existingNames.has(normalizeText(category.name).toLowerCase())
+  );
+
+  if (!missingCategories.length) return;
+
   await Promise.allSettled(
-    DEFAULT_PRODUCT_CATEGORIES.map((category) =>
+    missingCategories.map((category) =>
       createProductCategoryInApp(normalizedBusinessId, normalizeCategoryPayload(category, normalizedBusinessId))
     )
   );

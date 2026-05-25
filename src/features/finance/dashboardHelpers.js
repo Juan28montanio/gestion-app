@@ -594,19 +594,21 @@ export function buildClosingPreview({
   todayMovements,
   cashCollected,
   cashCounted,
+  sessionSummary = null,
 }) {
   if (!openSession) {
     return null;
   }
 
-  const openingAmount = Number(openSession.opening_amount || 0);
+  const openingAmount = Number(sessionSummary?.openingAmount ?? openSession.opening_amount ?? 0);
   const todayExpenses = todayMovements
     .filter((movement) => movement.type === "expense")
     .reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const cashExpenseImpact = summarizeCashExpenseImpact(todayMovements);
   const countedCashValue = Number(cashCounted || 0);
-  const expectedCash =
-    openingAmount + Number(cashCollected || 0) - Number(cashExpenseImpact.total || 0);
+  const cashIncome = Number(sessionSummary?.cashIncome ?? cashCollected ?? 0);
+  const cashExpenses = Number(sessionSummary?.cashExpense ?? cashExpenseImpact.total ?? 0);
+  const expectedCash = Number(sessionSummary?.expectedCash ?? openingAmount + cashIncome - cashExpenses);
 
   return {
     openingAmount,
@@ -614,9 +616,10 @@ export function buildClosingPreview({
     countedCash: countedCashValue,
     difference: countedCashValue - expectedCash,
     expenses: todayExpenses,
-    cashExpenses: cashExpenseImpact.total,
-    cashPurchases: cashExpenseImpact.purchases,
-    cashOperatingExpenses: cashExpenseImpact.operating,
+    cashCollected: cashIncome,
+    cashExpenses,
+    cashPurchases: Number(sessionSummary?.cashPurchases ?? cashExpenseImpact.purchases ?? 0),
+    cashOperatingExpenses: Number(sessionSummary?.cashOperatingExpenses ?? cashExpenseImpact.operating ?? 0),
     ticketWalletUnits: todayMovements.reduce(
       (sum, movement) => sum + Number(movement.raw?.ticket_units_consumed || 0),
       0

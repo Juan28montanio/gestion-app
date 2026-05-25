@@ -474,10 +474,11 @@ export default function AdminDashboard({
       buildClosingPreview({
         openSession,
         todayMovements,
-        cashCollected: paymentMethodTotals.cash,
+        cashCollected: currentSessionSummary.cashIncome,
         cashCounted,
+        sessionSummary: currentSessionSummary,
       }),
-    [cashCounted, openSession, paymentMethodTotals.cash, todayMovements]
+    [cashCounted, currentSessionSummary, openSession, todayMovements]
   );
   const closingPurchaseSummary = useMemo(
     () => buildClosingPurchaseSummary(todayMovements, todaySummary.income),
@@ -713,6 +714,10 @@ export default function AdminDashboard({
           operatorName:
             userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Operador SmartProfit",
           cashierEmail: currentUser?.email || userProfile?.email || "",
+          openSession,
+          sessionSummary: currentSessionSummary,
+          sessionMovements: currentSessionMovements,
+          closingPreview,
         },
       });
       setIsCloseModalOpen(false);
@@ -1127,8 +1132,8 @@ export default function AdminDashboard({
                 tone="green"
                 icon={TrendingUp}
                 label="Ventas del turno"
-                value={formatCOP(todaySummary.income)}
-                note={balanceVariation.label}
+                value={formatCOP(currentSessionSummary.totalCollected || 0)}
+                note="Recaudo asociado a la caja abierta."
               />
               <ExecutiveKpi
                 tone="slate"
