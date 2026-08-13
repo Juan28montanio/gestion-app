@@ -1,5 +1,130 @@
 -- Operational Salon RPCs. Apply after schema-operational.sql.
 
+create or replace function public.save_table_layout(
+  p_business_id uuid,
+  p_table_id uuid default null,
+  p_table jsonb default '{}'::jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_table_id uuid;
+  v_number integer;
+  v_capacity integer;
+  v_name text;
+  v_zone text;
+  v_status text;
+  v_icon text;
+  v_code text;
+  v_shape text;
+  v_size text;
+  v_position jsonb;
+  v_is_active boolean;
+begin
+  perform public.assert_business_member(p_business_id);
+
+  v_number := nullif(p_table->>'number', '')::integer;
+  v_capacity := coalesce(nullif(p_table->>'capacity', '')::integer, 2);
+  v_name := coalesce(nullif(trim(p_table->>'name'), ''), concat('Mesa ', v_number));
+  v_zone := coalesce(nullif(trim(p_table->>'zone'), ''), 'Salon principal');
+  v_status := coalesce(nullif(trim(p_table->>'status'), ''), 'free');
+  v_icon := coalesce(nullif(trim(p_table->>'icon'), ''), 'UtensilsCrossed');
+  v_code := coalesce(p_table->>'code', '');
+  v_shape := coalesce(nullif(trim(p_table->>'shape'), ''), 'square');
+  v_size := coalesce(nullif(trim(p_table->>'size'), ''), 'md');
+  v_position := coalesce(p_table->'position', jsonb_build_object('x', 0, 'y', 0));
+  v_is_active := coalesce((p_table->>'is_active')::boolean, (p_table->>'isActive')::boolean, true);
+
+  if v_number is null or v_number <= 0 then
+    raise exception 'Table number must be positive' using errcode = '22003';
+  end if;
+
+  if v_capacity <= 0 then
+    raise exception 'Table capacity must be positive' using errcode = '22003';
+  end if;
+
+  if p_table_id is null then
+    insert into public.tables (
+      business_id,
+      number,
+      name,
+      capacity,
+      zone,
+      status,
+      icon,
+      code,
+      shape,
+      size,
+      position,
+      is_active,
+      metadata
+    )
+    values (
+      p_business_id,
+      v_number,
+      v_name,
+      v_capacity,
+      v_zone,
+      v_status,
+      v_icon,
+      v_code,
+      v_shape,
+      v_size,
+      v_position,
+      v_is_active,
+      jsonb_build_object('source', 'save_table_layout')
+    )
+    returning id into v_table_id;
+  else
+    update public.tables
+    set
+      number = v_number,
+      name = v_name,
+      capacity = v_capacity,
+      zone = v_zone,
+      status = case
+        when status in ('occupied', 'order_sent', 'preparing', 'ready', 'waiting_payment') then status
+        else v_status
+      end,
+      icon = v_icon,
+      code = v_code,
+      shape = v_shape,
+      size = v_size,
+      position = v_position,
+      is_active = v_is_active
+    where id = p_table_id
+      and business_id = p_business_id
+    returning id into v_table_id;
+
+    if v_table_id is null then
+      raise exception 'Table not found' using errcode = 'P0002';
+    end if;
+  end if;
+
+  insert into public.table_events (
+    business_id,
+    table_id,
+    event_type,
+    description,
+    created_by,
+    new_value
+  )
+  values (
+    p_business_id,
+    v_table_id,
+    'table_updated',
+    case when p_table_id is null then 'Mesa creada.' else 'Mesa actualizada.' end,
+    auth.uid(),
+    p_table
+  );
+
+  return v_table_id;
+end;
+$$;
+
 create or replace function public.salon_assert_table_available(
   p_business_id uuid,
   p_table_id uuid

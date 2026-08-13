@@ -536,7 +536,7 @@ export default function RecipeBookManager({
   };
 
   return (
-    <section className="space-y-6">
+    <section data-testid="technical-sheets-module" className="space-y-6">
       <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
@@ -548,6 +548,7 @@ export default function RecipeBookManager({
           <button
             type="button"
             onClick={openCreateModal}
+            data-testid="technical-sheet-create-button"
             className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
           >
             <Plus size={16} />
@@ -558,29 +559,29 @@ export default function RecipeBookManager({
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Total</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{recipeSummary.total}</p>
+            <p data-testid="technical-sheets-total-count" className="mt-2 text-2xl font-black text-slate-950">{recipeSummary.total}</p>
             <p className="mt-1 text-sm text-slate-500">Fichas registradas.</p>
           </article>
           <article className="rounded-[24px] bg-emerald-50 p-4 ring-1 ring-emerald-200">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Activas</p>
-            <p className="mt-2 text-2xl font-black text-emerald-900">{recipeSummary.active}</p>
+            <p data-testid="technical-sheets-active-count" className="mt-2 text-2xl font-black text-emerald-900">{recipeSummary.active}</p>
             <p className="mt-1 text-sm text-emerald-800/80">Listas para operar.</p>
           </article>
           <article className="rounded-[24px] bg-amber-50 p-4 ring-1 ring-amber-200">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Borradores</p>
-            <p className="mt-2 text-2xl font-black text-amber-900">{recipeSummary.draft}</p>
+            <p data-testid="technical-sheets-draft-count" className="mt-2 text-2xl font-black text-amber-900">{recipeSummary.draft}</p>
             <p className="mt-1 text-sm text-amber-800/80">Pendientes de completar.</p>
           </article>
           {canViewCosts ? (
             <article className="rounded-[24px] bg-rose-50 p-4 ring-1 ring-rose-200">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-700">Margen bajo</p>
-              <p className="mt-2 text-2xl font-black text-rose-900">{recipeSummary.lowMargin}</p>
+              <p data-testid="technical-sheets-low-margin-count" className="mt-2 text-2xl font-black text-rose-900">{recipeSummary.lowMargin}</p>
               <p className="mt-1 text-sm text-rose-800/80">Requieren precio o receta.</p>
             </article>
           ) : (
             <article className="rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-200">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Costos</p>
-              <p className="mt-2 text-base font-semibold text-slate-700">Restringidos</p>
+              <p data-testid="technical-sheets-costs-restricted" className="mt-2 text-base font-semibold text-slate-700">Restringidos</p>
               <p className="mt-1 text-sm text-slate-500">Requiere permiso technicalSheets.viewCosts.</p>
             </article>
           )}
@@ -589,16 +590,16 @@ export default function RecipeBookManager({
         <div className="mt-6 grid gap-3 md:grid-cols-3">
           <article className="rounded-[22px] border border-slate-200 bg-white px-4 py-4">
             <p className="text-sm font-semibold text-slate-900">Riesgo por abastecimiento</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.atRisk}</p>
+            <p data-testid="technical-sheets-at-risk-count" className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.atRisk}</p>
           </article>
           <article className="rounded-[22px] border border-slate-200 bg-white px-4 py-4">
             <p className="text-sm font-semibold text-slate-900">Sin procedimiento</p>
-            <p className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.undocumentedOps}</p>
+            <p data-testid="technical-sheets-undocumented-count" className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.undocumentedOps}</p>
           </article>
           {canViewCosts ? (
             <article className="rounded-[22px] border border-slate-200 bg-white px-4 py-4">
               <p className="text-sm font-semibold text-slate-900">Margen promedio</p>
-              <p className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.averageMargin.toFixed(0)}%</p>
+              <p data-testid="technical-sheets-average-margin" className="mt-2 text-2xl font-black text-slate-950">{recipeOperationalSummary.averageMargin.toFixed(0)}%</p>
             </article>
           ) : null}
         </div>
@@ -655,12 +656,16 @@ export default function RecipeBookManager({
             return (
               <article
                 key={sheet.id}
+                data-testid="technical-sheet-card"
+                data-technical-sheet-id={sheet.id}
+                data-product-id={sheet.product_id || ""}
+                data-status={getTechnicalSheetStatus(sheet)}
                 className="rounded-[28px] bg-white/85 p-5 shadow-lg ring-1 ring-white/70 backdrop-blur"
               >
                 <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr_auto] xl:items-center">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-semibold text-slate-950">{getTechnicalSheetName(sheet)}</h3>
+                      <h3 data-testid="technical-sheet-name" className="text-lg font-semibold text-slate-950">{getTechnicalSheetName(sheet)}</h3>
                       <StatusBadge status={getTechnicalSheetStatus(sheet)} />
                       {canViewCosts ? <FinancialBadge costing={costing} /> : null}
                     </div>
@@ -672,7 +677,7 @@ export default function RecipeBookManager({
                     <div className="grid gap-3 sm:grid-cols-4">
                       <div>
                         <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Costo/porcion</p>
-                        <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.costPerPortion)}</p>
+                        <p data-testid="technical-sheet-list-cost-per-portion" className="mt-1 font-semibold text-slate-950">{formatCOP(costing.costPerPortion)}</p>
                       </div>
                       <div>
                         <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Precio</p>
@@ -680,11 +685,11 @@ export default function RecipeBookManager({
                       </div>
                       <div>
                         <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Sugerido</p>
-                        <p className="mt-1 font-semibold text-slate-950">{formatCOP(costing.suggestedPrice)}</p>
+                        <p data-testid="technical-sheet-list-suggested-price" className="mt-1 font-semibold text-slate-950">{formatCOP(costing.suggestedPrice)}</p>
                       </div>
                       <div>
                         <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Food cost</p>
-                        <p className="mt-1 font-semibold text-slate-950">{costing.foodCostPercent.toFixed(1)}%</p>
+                        <p data-testid="technical-sheet-list-food-cost" className="mt-1 font-semibold text-slate-950">{costing.foodCostPercent.toFixed(1)}%</p>
                       </div>
                     </div>
                   ) : (
@@ -693,10 +698,10 @@ export default function RecipeBookManager({
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2 xl:justify-end">
-                    <button type="button" onClick={() => setDetailSheet(sheet)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 transition hover:bg-slate-200" title="Ver detalle">
+                    <button type="button" data-testid="technical-sheet-detail-button" onClick={() => setDetailSheet(sheet)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 transition hover:bg-slate-200" title="Ver detalle">
                       <Eye size={16} />
                     </button>
-                    <button type="button" onClick={() => openEditModal(sheet)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 transition hover:bg-slate-200" title="Editar">
+                    <button type="button" data-testid="technical-sheet-edit-button" onClick={() => openEditModal(sheet)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 transition hover:bg-slate-200" title="Editar">
                       <Pencil size={16} />
                     </button>
                     <button type="button" onClick={() => duplicateSheet(sheet)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 transition hover:bg-slate-200" title="Duplicar">

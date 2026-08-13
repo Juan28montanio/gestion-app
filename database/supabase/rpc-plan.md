@@ -1,6 +1,6 @@
 # Supabase RPC Migration Plan
 
-This app currently relies on Firestore client transactions, batched writes and Cloud Functions for privileged work. In PostgreSQL, the following operations should move to SQL RPC functions or Supabase Edge Functions so they remain atomic and protected by server-side checks.
+This app keeps critical writes in PostgreSQL RPC functions or Supabase Edge Functions so they remain atomic and protected by server-side checks.
 
 ## High Priority
 
@@ -46,7 +46,7 @@ This app currently relies on Firestore client transactions, batched writes and C
    - Creates order items, kitchen tickets and table events in one transaction.
 
 10. `reset_business_workspace`
-    - Supabase replacement for the current Firebase callable function.
+    - Supabase-side reset operation for controlled workspace cleanup.
     - Must require owner/admin role and delete or archive business-scoped operational data.
 
 ## Lower Priority
@@ -70,4 +70,4 @@ This app currently relies on Firestore client transactions, batched writes and C
 - Keep append-only tables for `audit_logs`, `cash_movements` and `inventory_movements`.
 - Return normalized rows shaped for the existing service layer to reduce UI churn.
 - Avoid trusting client-calculated totals for final sale, cash and inventory state.
-- Preserve Firebase IDs in `legacy_firebase_id` columns until reconciliation is complete.
+- Preserve imported source IDs in `legacy_firebase_id` columns until reconciliation is complete.

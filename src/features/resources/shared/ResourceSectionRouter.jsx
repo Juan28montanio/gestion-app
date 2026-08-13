@@ -52,6 +52,7 @@ export default function ResourceSectionRouter({
         products={products}
         supplies={supplies}
         recipeBooks={recipeBooks}
+        userProfile={userProfile}
         focusedProductId={focusedRecipeProductId}
         onFocusHandled={onFocusHandled}
       />

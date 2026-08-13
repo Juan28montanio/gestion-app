@@ -26,6 +26,8 @@ export default function SidebarNav({
                     type="button"
                     onClick={() => onSelect(item.id)}
                     title={isCollapsed ? item.label : undefined}
+                    data-testid={`nav-module-${item.id}`}
+                    aria-current={isActive ? "page" : undefined}
                     className={`group flex items-center rounded-2xl border px-3 py-3 text-left transition ${
                       isActive
                         ? "border-slate-900 bg-slate-900 text-white shadow-sm"

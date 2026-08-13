@@ -10,6 +10,7 @@ export default function POSSearchSelector({
   getLabel,
   getDescription,
   icon: Icon,
+  testId,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -28,10 +29,12 @@ export default function POSSearchSelector({
   }, [getDescription, getLabel, items, search]);
 
   return (
-    <div className="relative min-w-0">
+    <div className="relative min-w-0" data-testid={testId ? `${testId}-section` : undefined}>
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
+        data-testid={testId}
+        aria-expanded={isOpen}
         className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 text-left ring-1 ring-slate-200 transition hover:ring-emerald-300"
       >
         <div className="min-w-0">
@@ -51,6 +54,7 @@ export default function POSSearchSelector({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={`Buscar ${label.toLowerCase()}...`}
+              data-testid={testId ? `${testId}-search-input` : undefined}
               className="w-full bg-transparent text-sm outline-none"
             />
           </div>
@@ -66,6 +70,8 @@ export default function POSSearchSelector({
                     onSelectItem(item);
                     setIsOpen(false);
                   }}
+                  data-testid={testId ? `${testId}-option` : undefined}
+                  data-option-id={item.id}
                   className={`flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition ${
                     isSelected
                       ? "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white"

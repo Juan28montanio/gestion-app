@@ -1,14 +1,4 @@
-import {
-  accumulatePaymentBreakdown,
-  createEmptyPaymentTotals,
-  expenseAffectsCash,
-  PAYMENT_METHOD_LABELS,
-  resolvePurchasePaymentMethod,
-} from "../utils/payments";
-import { getPaymentMethodConfig, registerDebtPayment } from "../utils/posFinance";
-import { buildOperationalSaleItemDetail } from "../utils/sales";
-import { getSalesLedger } from "./salesLedgerService";
-import { createSubscriptionErrorHandler } from "./subscriptionService";
+import { PAYMENT_METHOD_LABELS } from "../utils/payments";
 import {
   getCashSessionLockInfo as getCashSessionLockInfoInApp,
   closeCashSession as closeCashSessionInApp,
@@ -17,36 +7,13 @@ import {
   subscribeToCashSessions as subscribeToCashSessionsInApp,
   subscribeToOpenCashSession as subscribeToOpenCashSessionInApp,
 } from "./app/cashGateway";
+import { settleSaleDebtWithRpc } from "./supabase/cashService";
 
 export function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function normalizeDate(value) {
-  if (!value) {
-    return null;
-  }
-
-  if (value?.toDate) {
-    return value.toDate();
-  }
-
-  if (typeof value === "string") {
-    const [year, month, day] = value.split("-").map(Number);
-    if (year && month && day) {
-      return new Date(year, month - 1, day, 0, 0, 0, 0);
-    }
-
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  return null;
 }
 
 function formatCOP(value) {
@@ -64,621 +31,34 @@ function buildClosingCode(closedAt = new Date(), sequence = 1) {
   return `CIERRE-${month}${day}${year}-${String(sequence || 1).padStart(3, "0")}`;
 }
 
-function isActivePurchase(purchase) {
-  const status = String(purchase?.status || "confirmada").trim().toLowerCase();
-  return !["anulada", "cancelada", "canceled", "cancelled"].includes(status);
-}
-
-function buildPurchaseSummary(purchases, salesTotal) {
-  const total = purchases.reduce((sum, purchase) => sum + Number(purchase.total || 0), 0);
-  const supplierTotals = purchases.reduce((accumulator, purchase) => {
-    const key = String(purchase.supplier_name || "Sin proveedor").trim();
-    accumulator[key] = (accumulator[key] || 0) + Number(purchase.total || 0);
-    return accumulator;
-  }, {});
-  const categoryTotals = purchases.reduce((accumulator, purchase) => {
-    (purchase.items || []).forEach((item) => {
-      const key = String(item.category || "Sin categoria").trim();
-      accumulator[key] = (accumulator[key] || 0) + Number(item.total_cost || item.line_total || 0);
-    });
-    return accumulator;
-  }, {});
-
-  const topSupplier = Object.entries(supplierTotals).sort((a, b) => b[1] - a[1])[0];
-  const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0];
-  const topSuppliers = Object.entries(supplierTotals)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([name, supplierTotal]) => ({
-      name,
-      total: Number(supplierTotal || 0),
-    }));
-  const highlightedPurchases = purchases
-    .slice()
-    .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
-    .slice(0, 3)
-    .map((purchase) => ({
-      supplierName: String(purchase.supplier_name || "Sin proveedor").trim(),
-      invoiceNumber: String(purchase.invoice_number || "Sin consecutivo").trim(),
-      total: Number(purchase.total || 0),
-      date: purchase.purchase_date || "",
-      itemsCount: Array.isArray(purchase.items) ? purchase.items.length : 0,
-    }));
-
-  return {
-    count: purchases.length,
-    total,
-    shareOfSalesPct: salesTotal > 0 ? (total / salesTotal) * 100 : null,
-    topSupplierName: topSupplier?.[0] || "",
-    topSupplierTotal: Number(topSupplier?.[1] || 0),
-    topCategoryName: topCategory?.[0] || "",
-    topCategoryTotal: Number(topCategory?.[1] || 0),
-    topSuppliers,
-    highlightedPurchases,
-  };
-}
-
 export function getCashSessionLockInfo(session) {
   return getCashSessionLockInfoInApp(session);
-/*
-  if (!session) {
-    return {
-      blocked: true,
-      reason: "no_open_session",
-      message: "Debes abrir caja para comenzar a cobrar en esta jornada.",
-    };
-  }
 
-  const openedAt = normalizeDate(session.opened_at || session.createdAt);
-  const now = new Date();
-  const todayKey = getLocalDateKey(now);
-  const sessionDateKey = session.opened_date_key || getLocalDateKey(openedAt || now);
-  const hoursOpen = openedAt ? (now.getTime() - openedAt.getTime()) / 36e5 : 0;
-
-  if (session.status === "open" && sessionDateKey !== todayKey) {
-    return {
-      blocked: true,
-      reason: "previous_day_open",
-      message: "Debe realizar el cierre de caja anterior para iniciar una nueva jornada.",
-      hoursOpen,
-    };
-  }
-
-  if (session.status === "open" && hoursOpen >= 12) {
-    return {
-      blocked: true,
-      reason: "too_long_open",
-      message: "Debe realizar el cierre de caja anterior para iniciar una nueva jornada.",
-      hoursOpen,
-    };
-  }
-
-  return {
-    blocked: false,
-    reason: "ok",
-    message: "",
-    hoursOpen,
-  };
-*/
 }
 
 export function subscribeToOpenCashSession(businessId, callback) {
   return subscribeToOpenCashSessionInApp(businessId, callback);
-/*
-  if (!businessId) {
-    callback(null);
-    return () => {};
-  }
 
-  const closingsQuery = query(
-    cashClosingsCollection,
-    where("business_id", "==", businessId),
-    where("status", "==", "open")
-  );
-
-  return onSnapshot(closingsQuery, (snapshot) => {
-    const sessions = snapshot.docs
-      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-      .sort((a, b) => {
-        const aTime = normalizeDate(a.opened_at || a.createdAt)?.getTime?.() || 0;
-        const bTime = normalizeDate(b.opened_at || b.createdAt)?.getTime?.() || 0;
-        return bTime - aTime;
-      });
-
-    callback(sessions[0] || null);
-  }, createSubscriptionErrorHandler({
-    scope: "cash_closings:subscribeToOpenCashSession",
-    callback,
-    emptyValue: null,
-  }));
-*/
 }
 
 export function subscribeToCashClosings(businessId, callback) {
   return subscribeToCashSessionsInApp(businessId, callback);
-/*
-  if (!businessId) {
-    callback([]);
-    return () => {};
-  }
 
-  const closingsQuery = query(cashClosingsCollection, where("business_id", "==", businessId));
-
-  return onSnapshot(closingsQuery, (snapshot) => {
-    const closings = snapshot.docs
-      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-      .sort((a, b) => {
-        const aTime = normalizeDate(a.closed_at || a.opened_at || a.createdAt)?.getTime?.() || 0;
-        const bTime = normalizeDate(b.closed_at || b.opened_at || b.createdAt)?.getTime?.() || 0;
-        return bTime - aTime;
-      });
-
-    callback(closings);
-  }, createSubscriptionErrorHandler({
-    scope: "cash_closings:subscribeToCashClosings",
-    callback,
-    emptyValue: [],
-  }));
-*/
 }
 
 export async function getCurrentOpenCashSession(businessId) {
   return getCurrentOpenCashSessionInApp(businessId);
-/*
-  const normalizedBusinessId = String(businessId || "").trim();
 
-  if (!normalizedBusinessId) {
-    return null;
-  }
-
-  const snapshot = await getDocs(
-    query(
-      cashClosingsCollection,
-      where("business_id", "==", normalizedBusinessId),
-      where("status", "==", "open")
-    )
-  );
-
-  const sessions = snapshot.docs
-    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-    .sort((a, b) => {
-      const aTime = normalizeDate(a.opened_at || a.createdAt)?.getTime?.() || 0;
-      const bTime = normalizeDate(b.opened_at || b.createdAt)?.getTime?.() || 0;
-      return bTime - aTime;
-    });
-
-  return sessions[0] || null;
-*/
 }
 
 export async function openCashSession(businessId, options = {}) {
   return openCashSessionInApp(businessId, options);
-/*
-  const normalizedBusinessId = String(businessId || "").trim();
 
-  if (!normalizedBusinessId) {
-    throw new Error("El business_id es obligatorio para abrir caja.");
-  }
-
-  const existingSession = await getCurrentOpenCashSession(normalizedBusinessId);
-  if (existingSession) {
-    return existingSession.id;
-  }
-
-  const openingAmount = Number(options.openingAmount || 0);
-  const cashierName = String(options.cashierName || "Operador SmartProfit").trim();
-  const cashierEmail = String(options.cashierEmail || "").trim().toLowerCase();
-  const now = new Date();
-  const openedDateKey = getLocalDateKey(now);
-  const previousSessionsSnapshot = await getDocs(
-    query(
-      cashClosingsCollection,
-      where("business_id", "==", normalizedBusinessId),
-      where("opened_date_key", "==", openedDateKey)
-    )
-  );
-  const dailySequence = previousSessionsSnapshot.size + 1;
-  const createdRef = doc(cashClosingsCollection);
-  const actor = {
-    id: String(options.cashierId || options.userId || "").trim(),
-    name: cashierName,
-    email: cashierEmail,
-  };
-  const batch = writeBatch(db);
-
-  batch.set(createdRef, {
-    businessId: normalizedBusinessId,
-    business_id: normalizedBusinessId,
-    status: "open",
-    cashierId: actor.id || null,
-    cashier_id: actor.id || null,
-    opening_amount: openingAmount,
-    openingAmount,
-    cashier_name: cashierName,
-    cashierName,
-    cashier_email: cashierEmail,
-    cashierEmail,
-    openingNotes: String(options.notes || options.openingNotes || "").trim(),
-    opening_notes: String(options.notes || options.openingNotes || "").trim(),
-    opened_at: serverTimestamp(),
-    openedAt: serverTimestamp(),
-    opened_date_key: openedDateKey,
-    daily_sequence: dailySequence,
-    notification_sent: false,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  batch.set(doc(collection(db, "cashMovements")), {
-    businessId: normalizedBusinessId,
-    business_id: normalizedBusinessId,
-    cashSessionId: createdRef.id,
-    cash_session_id: createdRef.id,
-    type: "opening_balance",
-    method: "cash",
-    amount: openingAmount,
-    description: "Base inicial de caja",
-    sourceType: "cash_session",
-    source_type: "cash_session",
-    sourceId: createdRef.id,
-    source_id: createdRef.id,
-    status: "valid",
-    createdBy: actor,
-    created_by: actor,
-    createdAt: serverTimestamp(),
-  });
-
-  batch.set(doc(collection(db, "auditLogs")), {
-    business_id: normalizedBusinessId,
-    businessId: normalizedBusinessId,
-    user_id: actor.id || "",
-    userId: actor.id || "",
-    user_name: actor.name,
-    userName: actor.name,
-    module: "cash",
-    action: "cash.open",
-    entity_type: "cash_closings",
-    entityType: "cash_closings",
-    entity_id: createdRef.id,
-    entityId: createdRef.id,
-    previousValue: null,
-    newValue: { openingAmount, cashierName, status: "open" },
-    reason: "Apertura de caja",
-    createdAt: serverTimestamp(),
-  });
-
-  await batch.commit();
-
-  return createdRef.id;
-*/
 }
 
 export async function closeCashSession({ businessId, closingId, cashCounted, context = {} }) {
   return closeCashSessionInApp({ businessId, closingId, cashCounted, context });
-/*
-  const normalizedBusinessId = String(businessId || "").trim();
-  const normalizedClosingId = String(closingId || "").trim();
 
-  if (!normalizedBusinessId || !normalizedClosingId) {
-    throw new Error("Debes indicar la caja abierta para realizar el cierre.");
-  }
-
-  if (cashCounted === "" || cashCounted === null || typeof cashCounted === "undefined") {
-    throw new Error("Debes ingresar el efectivo contado para cerrar caja.");
-  }
-
-  const closingRef = doc(db, "cash_closings", normalizedClosingId);
-  const closingSnapshot = await getDoc(closingRef);
-
-  if (!closingSnapshot.exists()) {
-    throw new Error("La caja seleccionada no existe.");
-  }
-
-  const closingData = closingSnapshot.data();
-  if (String(closingData.business_id || "").trim() !== normalizedBusinessId) {
-    throw new Error("La caja abierta no pertenece al negocio activo.");
-  }
-
-  if (String(closingData.status || "").trim().toLowerCase() !== "open") {
-    throw new Error("La caja seleccionada ya fue cerrada.");
-  }
-
-  const openedAt = normalizeDate(closingData.opened_at || closingData.createdAt) || new Date();
-  const now = new Date();
-
-  const [salesLedger, purchasesSnapshot, operatingExpensesSnapshot, ordersSnapshot] = await Promise.all([
-    getSalesLedger(normalizedBusinessId),
-    getDocs(query(purchasesCollection, where("business_id", "==", normalizedBusinessId))),
-    getDocs(query(operatingExpensesCollection, where("business_id", "==", normalizedBusinessId))),
-    getDocs(query(ordersCollection, where("business_id", "==", normalizedBusinessId))),
-  ]);
-
-  const relevantSales = salesLedger
-    .filter((sale) => {
-      const saleDate = normalizeDate(sale.closed_at || sale.createdAt);
-      if (!saleDate) {
-        return false;
-      }
-
-      const belongsToSession = sale.closing_id === normalizedClosingId || sale.cash_session_id === normalizedClosingId;
-      const isOrphanSale = !sale.closing_id && saleDate >= openedAt && saleDate <= now;
-      return sale.type === "income" && (belongsToSession || isOrphanSale);
-    });
-
-  const relevantPurchases = purchasesSnapshot.docs
-    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-    .filter((purchase) => {
-      const purchaseDate = normalizeDate(purchase.purchase_date);
-      return isActivePurchase(purchase) && purchaseDate && purchaseDate >= openedAt && purchaseDate <= now;
-    });
-
-  const relevantOperatingExpenses = operatingExpensesSnapshot.docs
-    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-    .filter((expense) => {
-      const expenseDate = normalizeDate(expense.expense_date);
-      return expenseDate && expenseDate >= openedAt && expenseDate <= now;
-    });
-
-  const relevantOrders = ordersSnapshot.docs
-    .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-    .filter((order) => {
-      const activityDate = normalizeDate(
-        order.cancelled_at || order.closed_at || order.updatedAt || order.created_at || order.createdAt
-      );
-      return activityDate && activityDate >= openedAt && activityDate <= now;
-    });
-
-  const byMethod = relevantSales.reduce((accumulator, sale) => {
-    accumulatePaymentBreakdown(
-      accumulator,
-      sale.payment_breakdown,
-      sale.payment_method || "cash",
-      Number(sale.total) || 0
-    );
-    return accumulator;
-  }, createEmptyPaymentTotals());
-  const ticketWalletUnits = relevantSales.reduce(
-    (sum, sale) => sum + Number(sale.ticket_units_consumed || 0),
-    0
-  );
-
-  const totalSales = relevantSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
-  const purchaseExpensesTotal = relevantPurchases.reduce(
-    (sum, purchase) => sum + Number(purchase.total || 0),
-    0
-  );
-  const operatingExpensesTotal = relevantOperatingExpenses.reduce(
-    (sum, expense) => sum + Number(expense.total || expense.amount || 0),
-    0
-  );
-  const totalExpenses = purchaseExpensesTotal + operatingExpensesTotal;
-  const purchaseSummary = buildPurchaseSummary(relevantPurchases, totalSales);
-  const cashPurchaseExpenses = relevantPurchases.reduce((sum, purchase) => {
-    return expenseAffectsCash({
-      source: "purchase",
-      paymentMethod: purchase.payment_method,
-      supplierPaymentTerms: purchase.supplier_payment_terms,
-    })
-      ? sum + Number(purchase.total || 0)
-      : sum;
-  }, 0);
-  const cashOperatingExpenses = relevantOperatingExpenses.reduce((sum, expense) => {
-    return expenseAffectsCash({
-      source: "operating_expense",
-      paymentMethod: expense.payment_method,
-    })
-      ? sum + Number(expense.total || expense.amount || 0)
-      : sum;
-  }, 0);
-  const expectedCash =
-    Number(closingData.opening_amount || 0) +
-    Number(byMethod.cash || 0) -
-    cashPurchaseExpenses -
-    cashOperatingExpenses;
-  const countedCash = Number(cashCounted || 0);
-  const cashDifference = countedCash - expectedCash;
-  const closeStatus =
-    cashDifference === 0
-      ? "balanced"
-      : context.closingNotes || context.notes
-        ? "closed_with_note"
-        : cashDifference < 0
-          ? "shortage"
-          : "overage";
-  const totalCollected = Object.entries(byMethod).reduce(
-    (sum, [method, amount]) =>
-      getPaymentMethodConfig(method).affectsCashRegister ? sum + Number(amount || 0) : sum,
-    0
-  );
-  const auditEntries = relevantOrders
-    .filter((order) => {
-      const status = String(order.status || "").trim().toLowerCase();
-      return status === "cancelada" || status === "anulada";
-    })
-    .map((order) => ({
-      id: order.id,
-      type: "Orden anulada",
-      tableName: order.table_name || order.table_id || "Salon",
-      detail:
-        (order.items || [])
-          .map((item) => `${item.quantity}x ${item.name}`)
-          .join(", ") || "Sin detalle",
-      at: normalizeDate(order.cancelled_at || order.updatedAt || order.created_at || order.createdAt),
-    }));
-  const closingCode = buildClosingCode(now, Number(closingData.daily_sequence || 1));
-  const cashierName = String(
-    closingData.cashier_name || closingData.opened_by_name || "Operador SmartProfit"
-  ).trim();
-  const cashierEmail = String(
-    context.cashierEmail || closingData.cashier_email || ""
-  ).trim();
-  const operatorName = String(context.operatorName || cashierName).trim();
-  const businessName = String(context.businessName || "").trim();
-  const movementEntries = [
-    ...relevantSales.map((sale) => ({
-      type: "Ingreso",
-      concept:
-        sale.concept ||
-        (sale.customer_name
-          ? `${sale.table_name || sale.table_id || "Mesa"} - ${sale.customer_name}`
-          : sale.table_name || sale.table_id || "Venta POS"),
-      detail: (sale.items || []).map(buildOperationalSaleItemDetail).join(", ") || "Sin detalle",
-      paymentMethod: sale.payment_method || "cash",
-      operationalType: (sale.items || []).some(
-        (item) => String(item?.recipe_mode || item?.recipeMode || "direct") === "composed"
-      )
-        ? "Venta compuesta"
-        : "Venta directa",
-      amount: Number(sale.total || 0),
-      at: normalizeDate(sale.closed_at || sale.createdAt),
-    })),
-    ...relevantPurchases.map((purchase) => ({
-      type: "Egreso",
-      concept: purchase.concept || purchase.supplier_name || purchase.invoice_number || "Compra",
-      detail:
-        (purchase.items || [])
-          .map((item) => `${item.quantity}x ${item.ingredient_name || item.manual_name || "Insumo"}`)
-          .join(", ") || "Sin detalle",
-      paymentMethod: resolvePurchasePaymentMethod(
-        purchase.payment_method,
-        purchase.supplier_payment_terms
-      ),
-      amount: Number(purchase.total || 0),
-      at: normalizeDate(purchase.purchase_date),
-    })),
-    ...relevantOperatingExpenses.map((expense) => ({
-      type: "Egreso",
-      concept: expense.concept || "Gasto operativo",
-      detail: expense.notes || expense.vendor_name || expense.category || "Sin detalle",
-      paymentMethod: expense.payment_method || "cash",
-      amount: Number(expense.total || expense.amount || 0),
-      at: normalizeDate(expense.expense_date),
-    })),
-  ].sort((left, right) => (right.at?.getTime?.() || 0) - (left.at?.getTime?.() || 0));
-
-  const batch = writeBatch(db);
-
-  relevantSales
-    .filter((sale) => !sale.closing_id)
-    .forEach((sale) => {
-      if (sale.source === "canonical") {
-        batch.update(doc(db, "sales", sale.id), {
-          cashSessionId: normalizedClosingId,
-          cash_session_id: normalizedClosingId,
-          updatedAt: serverTimestamp(),
-        });
-        return;
-      }
-
-      batch.update(doc(db, "sales_history", sale.id), {
-        closing_id: normalizedClosingId,
-        updatedAt: serverTimestamp(),
-      });
-    });
-
-  batch.update(closingRef, {
-    status: "closed",
-    closeStatus,
-    close_status: closeStatus,
-    closed_at: serverTimestamp(),
-    closedAt: serverTimestamp(),
-    closing_code: closingCode,
-    cashier_name: cashierName,
-    countedCash,
-    counted_cash: countedCash,
-    expectedCash,
-    expected_cash: expectedCash,
-    difference: cashDifference,
-    closingNotes: String(context.closingNotes || context.notes || "").trim(),
-    closing_notes: String(context.closingNotes || context.notes || "").trim(),
-    sales_total: totalSales,
-    expenses_total: totalExpenses,
-    net_balance: totalSales - totalExpenses,
-    total_collected: totalCollected,
-    by_method: byMethod,
-    ticket_wallet_units: ticketWalletUnits,
-    cash_expected: expectedCash,
-    cash_counted: countedCash,
-    cash_difference: cashDifference,
-    operating_expenses_total: operatingExpensesTotal,
-    purchase_expenses_total: purchaseExpensesTotal,
-    total_sales_count: relevantSales.length,
-    audit_count: auditEntries.length,
-    summary: {
-      openingAmount: Number(closingData.opening_amount || 0),
-      salesTotal: totalSales,
-      expensesTotal: totalExpenses,
-      netBalance: totalSales - totalExpenses,
-      totalCollected,
-      byMethod,
-      ticketWalletUnits,
-      cashExpected: expectedCash,
-      cashCounted: countedCash,
-      cashDifference,
-      closeStatus,
-      operatingExpensesTotal,
-      purchaseExpensesTotal,
-      cashPurchaseExpenses,
-      cashOperatingExpenses,
-      totalSalesCount: relevantSales.length,
-    },
-    updatedAt: serverTimestamp(),
-  });
-
-  batch.set(doc(collection(db, "auditLogs")), {
-    business_id: normalizedBusinessId,
-    businessId: normalizedBusinessId,
-    user_id: context.operatorId || context.cashierId || "",
-    userId: context.operatorId || context.cashierId || "",
-    user_name: operatorName,
-    userName: operatorName,
-    module: "cash",
-    action: "cash.close",
-    entity_type: "cash_closings",
-    entityType: "cash_closings",
-    entity_id: normalizedClosingId,
-    entityId: normalizedClosingId,
-    previousValue: closingData,
-    newValue: {
-      cashExpected: expectedCash,
-      cashCounted: countedCash,
-      cashDifference,
-      closeStatus,
-    },
-    reason: "Cierre de caja",
-    createdAt: serverTimestamp(),
-  });
-
-  await batch.commit();
-
-  return {
-    id: normalizedClosingId,
-    openedAt,
-    closedAt: now,
-    closingCode,
-    cashierName,
-    cashierEmail,
-    operatorName,
-    businessName,
-    openingAmount: Number(closingData.opening_amount || 0),
-    salesTotal: totalSales,
-    expensesTotal: totalExpenses,
-    netBalance: totalSales - totalExpenses,
-    totalCollected,
-    byMethod,
-    ticketWalletUnits,
-    cashExpected: expectedCash,
-    cashCounted: countedCash,
-    cashDifference,
-    operatingExpensesTotal,
-    purchaseExpensesTotal,
-    cashPurchaseExpenses,
-    totalSalesCount: relevantSales.length,
-    auditEntries,
-    movementEntries,
-    purchaseSummary,
-  };
-*/
 }
 
 export async function settlePendingDebtSale(saleId, paymentMethod) {
@@ -689,9 +69,26 @@ export async function settlePendingDebtSale(saleId, paymentMethod) {
     throw new Error("Debes indicar la venta pendiente y el metodo de pago.");
   }
 
-  throw new Error(
-    "El saldo de ventas pendientes requiere una RPC de cartera en Supabase. Esta accion queda bloqueada temporalmente."
-  );
+  throw new Error("Para cobrar cartera desde Caja usa la accion de cartera sincronizada con negocio activo.");
+}
+
+export async function settlePendingDebtSaleForBusiness({ businessId, saleId, paymentMethod, amount = null }) {
+  const normalizedBusinessId = String(businessId || "").trim();
+  const normalizedSaleId = String(saleId || "").trim();
+  const normalizedPaymentMethod = String(paymentMethod || "").trim() || "cash";
+
+  if (!normalizedBusinessId || !normalizedSaleId) {
+    throw new Error("Debes indicar el negocio y la venta pendiente.");
+  }
+
+  return settleSaleDebtWithRpc({
+    p_business_id: normalizedBusinessId,
+    p_sale_id: normalizedSaleId,
+    p_amount: amount,
+    p_method: normalizedPaymentMethod,
+    p_reference: null,
+    p_notes: "Cobro desde cierre de caja",
+  });
 }
 
 export function buildCashClosingReportHtml(report) {

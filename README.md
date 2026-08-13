@@ -1,15 +1,15 @@
 # SmartProfit
 
-SmartProfit es un SaaS operativo para restaurantes, cafes y negocios de comida. La narrativa del producto es simple: vende, controla caja y entiende tu utilidad diaria.
+SmartProfit es una app operativa para restaurantes, cafes y negocios de comida. El foco actual es operar con Supabase como backend principal: autenticacion, base de datos PostgreSQL, storage y RPCs transaccionales.
 
-## Stack real
+## Stack Operativo
 
 - React 19 + Vite 6
-- Firebase Auth
-- Firestore
-- Firebase Storage
-- Firebase Hosting
-- Firebase Cloud Functions v2 para operaciones privilegiadas
+- Supabase Auth
+- Supabase PostgreSQL
+- Supabase Storage
+- Supabase Realtime para modulos operativos
+- Vercel para hosting
 - Tailwind CSS
 - Vitest y ESLint
 
@@ -17,18 +17,18 @@ SmartProfit es un SaaS operativo para restaurantes, cafes y negocios de comida. 
 
 ```bash
 npm install
-npm --prefix functions install
 ```
 
 Crea `.env` a partir de `.env.example`:
 
 ```bash
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_DATA_BACKEND=supabase
+VITE_PRODUCTS_BACKEND=supabase
+VITE_CUSTOMERS_BACKEND=supabase
+VITE_SALES_BACKEND=supabase
 ```
 
 ## Scripts
@@ -38,71 +38,56 @@ npm run dev
 npm run lint
 npm run test
 npm run test:smoke
-npm run functions:lint
+npm run check:supabase
+npm run check:supabase:rpc
 npm run build
 npm run preview
 ```
 
-## Firebase
+## Swagger / OpenAPI
 
-Verificar reglas:
+La documentacion del backend Supabase esta en `docs/openapi.json` y cubre las RPCs publicas de caja, ventas, salon y finanzas.
 
-```bash
-npx firebase-tools deploy --only firestore:rules --dry-run
-```
-
-Desplegar reglas y Functions:
+Para verla en Swagger UI, abre `docs/swagger.html` en el navegador o sirve el repo con cualquier servidor estatico. Las llamadas documentadas usan el formato PostgREST de Supabase:
 
 ```bash
-npx firebase-tools deploy --only firestore:rules,functions
+POST https://<project-ref>.supabase.co/rest/v1/rpc/<rpc_name>
+Authorization: Bearer <supabase-jwt>
+apikey: <supabase-anon-or-publishable-key>
 ```
 
-Cloud Functions v2 requiere facturacion activa y APIs habilitadas (`cloudfunctions`, `cloudbuild`, `artifactregistry`). Si el deploy falla por billing, las funciones privilegiadas quedan pendientes de despliegue aunque el codigo compile.
+## Supabase
 
-Desplegar Hosting:
+Los SQL base viven en `database/supabase/`:
+
+- `schema.sql`: modelo principal.
+- `rls.sql`: politicas RLS por negocio.
+- `rpc-core.sql`: RPCs criticas de ventas y caja.
+- `schema-operational.sql`: mesas, sesiones de mesa y cocina.
+- `rpc-operational.sql`: operaciones de salon.
+
+Para actualizar el cierre de caja con efectivo fisico por sesion, aplicar:
 
 ```bash
-npm run build
-npx firebase-tools deploy --only hosting
+database/supabase/patch-close-cash-session-cash-only.sql
 ```
 
-## Modelo canonico
+## Modelo Principal
 
-- `sales`: fuente principal de ventas.
-- `saleItems`: items vendidos por venta.
-- `payments`: pagos reales y su estado.
-- `cashMovements`: movimientos que afectaron caja.
-- `inventoryMovements`: entradas, salidas, ajustes y reversos.
-- `accountsReceivable`: cartera de clientes.
-- `accountsPayable`: obligaciones con proveedores.
-- `sales_history`: compatibilidad temporal legacy.
+- `profiles`: perfiles de usuarios autenticados.
+- `businesses`: negocios.
+- `business_users`: miembros, roles y estado.
+- `business_settings`: configuracion operativa.
+- `products`, `product_categories`: catalogo.
+- `customers`: clientes.
+- `sales`, `sale_items`, `payments`: ventas y pagos.
+- `cash_sessions`, `cash_movements`: caja y arqueo.
+- `tables`, `table_sessions`, `kitchen_tickets`, `table_events`: salon operativo.
+- `audit_logs`: auditoria.
 
-El servicio `salesLedgerService` arma la lectura operativa desde el modelo canonico y conserva fallback legacy para evitar perdida de datos historicos.
+## Operacion
 
-## Operaciones protegidas
-
-Estas operaciones corren por Cloud Functions con Firebase Admin:
-
-- `resetBusinessWorkspace`
-- `seedDemoData`
-- `cleanupDemoData`
-
-El cliente no necesita permisos de borrado sobre ventas, pagos, caja, inventario, cierres ni cartera. Las reglas deben permanecer estrictas; no relajar deletes para resolver problemas de reset o demo.
-
-## Flujo de demo comercial
-
-1. En Cuenta > Soporte, usar "Empezar con datos de ejemplo".
-2. Abrir Guia de uso > Demo guiada de 10 minutos.
-3. Mostrar Caja: estado del turno, efectivo esperado, pagos digitales y alertas.
-4. Mostrar POS: venta rapida.
-5. Mostrar Insumos y costos: compra, inventario y costeo.
-6. Mostrar Caja: cierre y diferencia.
-7. Mostrar Finanzas: utilidad estimada, por cobrar, por pagar y decision sugerida.
-8. En Cuenta > Soporte, usar "Limpiar solo datos demo" si se quiere volver a operar con datos reales.
-
-## Mantenimiento
-
-- No eliminar `sales_history` hasta que ticketeras y reportes legacy escriban tambien en `sales/payments`.
-- No mover calculos criticos de caja a componentes UI.
-- Cualquier anulacion o reverso debe registrar auditoria y movimiento inverso, no borrar datos historicos.
-- Antes de avanzar a beta abierta, validar Functions en el proyecto Firebase real y probar una venta completa con reglas desplegadas.
+- El frontend no debe escribir datos criticos directamente si existe una RPC para esa accion.
+- Caja y ventas deben pasar por RPCs para mantener atomicidad.
+- Toda tabla multiempresa debe filtrar por `business_id` y estar protegida por RLS.
+- Las acciones aun no migradas a RPC deben quedar bloqueadas con error explicito, no con fallback externo.

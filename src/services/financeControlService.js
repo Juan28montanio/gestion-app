@@ -1,4 +1,6 @@
 import { getCashMovements } from "./app/cashGateway";
+import { getSupabaseClient } from "../lib/supabaseClient";
+import { settleAccountPayableWithRpc, settleSaleDebtWithRpc } from "./supabase/cashService";
 import { roundCurrency } from "../utils/posFinance";
 
 function normalizeText(value) {
@@ -136,16 +138,7 @@ export function subscribeToCashMovements(businessId, callback) {
     cancelled = true;
     window.clearInterval(intervalId);
   };
-/*
-  const movementsQuery = query(collection(db, "cashMovements"), where("business_id", "==", businessId));
-  return onSnapshot(movementsQuery, (snapshot) => {
-    callback(sortByCreatedAt(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
-  }, createSubscriptionErrorHandler({
-    scope: "cashMovements:subscribeToCashMovements",
-    callback,
-    emptyValue: [],
-  }));
-*/
+
 }
 
 export function subscribeToAccountsReceivable(businessId, callback) {
@@ -154,18 +147,41 @@ export function subscribeToAccountsReceivable(businessId, callback) {
     return () => {};
   }
 
-  callback([]);
-  return () => {};
-/*
-  const receivablesQuery = query(collection(db, "accountsReceivable"), where("business_id", "==", businessId));
-  return onSnapshot(receivablesQuery, (snapshot) => {
-    callback(sortByCreatedAt(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
-  }, createSubscriptionErrorHandler({
-    scope: "accountsReceivable:subscribeToAccountsReceivable",
-    callback,
-    emptyValue: [],
-  }));
-*/
+  const client = getSupabaseClient();
+  let cancelled = false;
+
+  const publish = () => {
+    listAccountsReceivable(businessId)
+      .then((accounts) => {
+        if (!cancelled) callback(accounts);
+      })
+      .catch((error) => {
+        console.error("[financeControl:receivables]", error);
+        if (!cancelled) callback([]);
+      });
+  };
+
+  const channels = ["sales", "payments"].map((table) =>
+    client
+      .channel(`finance_receivables:${table}:${businessId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table,
+          filter: `business_id=eq.${businessId}`,
+        },
+        publish
+      )
+      .subscribe()
+  );
+
+  publish();
+  return () => {
+    cancelled = true;
+    channels.forEach((channel) => client.removeChannel(channel));
+  };
 }
 
 export function subscribeToAccountsPayable(businessId, callback) {
@@ -174,18 +190,41 @@ export function subscribeToAccountsPayable(businessId, callback) {
     return () => {};
   }
 
-  callback([]);
-  return () => {};
-/*
-  const payablesQuery = query(collection(db, "accountsPayable"), where("business_id", "==", businessId));
-  return onSnapshot(payablesQuery, (snapshot) => {
-    callback(sortByCreatedAt(snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))));
-  }, createSubscriptionErrorHandler({
-    scope: "accountsPayable:subscribeToAccountsPayable",
-    callback,
-    emptyValue: [],
-  }));
-*/
+  const client = getSupabaseClient();
+  let cancelled = false;
+
+  const publish = () => {
+    listAccountsPayable(businessId)
+      .then((accounts) => {
+        if (!cancelled) callback(accounts);
+      })
+      .catch((error) => {
+        console.error("[financeControl:payables]", error);
+        if (!cancelled) callback([]);
+      });
+  };
+
+  const channels = ["accounts_payable", "purchases", "cash_movements"].map((table) =>
+    client
+      .channel(`finance_payables:${table}:${businessId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table,
+          filter: `business_id=eq.${businessId}`,
+        },
+        publish
+      )
+      .subscribe()
+  );
+
+  publish();
+  return () => {
+    cancelled = true;
+    channels.forEach((channel) => client.removeChannel(channel));
+  };
 }
 
 export async function registerPayablePayment({
@@ -209,115 +248,16 @@ export async function registerPayablePayment({
     throw new Error("El pago a proveedor debe ser mayor a cero.");
   }
 
-  throw new Error(
-    "Los pagos a proveedor aun no tienen RPC segura en Supabase. Esta accion queda bloqueada temporalmente."
-  );
-
-  /*
-  const openSession = await getCurrentOpenCashSession(normalizedBusinessId);
-  if (!openSession) {
-    throw new Error("Debes abrir caja antes de registrar un pago a proveedor.");
-  }
-
-  return runTransaction(db, async (transaction) => {
-    const payableRef = doc(db, "accountsPayable", normalizedPayableId);
-    const payableSnapshot = await transaction.get(payableRef);
-
-    if (!payableSnapshot.exists()) {
-      throw new Error("La cuenta por pagar no existe.");
-    }
-
-    const payable = payableSnapshot.data();
-    if (normalizeText(payable.business_id || payable.businessId) !== normalizedBusinessId) {
-      throw new Error("La cuenta por pagar no pertenece al negocio activo.");
-    }
-
-    const pendingAmount = Number(payable.pendingAmount ?? payable.pending_amount ?? 0);
-    if (paymentAmount > pendingAmount) {
-      throw new Error("El pago no puede superar el saldo pendiente.");
-    }
-
-    const paidAmount = roundCurrency(Number(payable.paidAmount ?? payable.paid_amount ?? 0) + paymentAmount);
-    const nextPending = roundCurrency(pendingAmount - paymentAmount);
-    const nextStatus = nextPending <= 0 ? "paid" : "partial";
-    const resolvedActor = normalizeActor(actor);
-    const payablePaymentRef = doc(collection(db, "payablePayments"));
-    const paymentConfig = getPaymentMethodConfig(normalizedMethod);
-    const cashMovementRef = paymentConfig.affectsCashRegister ? doc(collection(db, "cashMovements")) : null;
-
-    transaction.update(payableRef, {
-      paidAmount,
-      paid_amount: paidAmount,
-      pendingAmount: nextPending,
-      pending_amount: nextPending,
-      status: nextStatus,
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.set(payablePaymentRef, {
-      businessId: normalizedBusinessId,
-      business_id: normalizedBusinessId,
-      accountPayableId: normalizedPayableId,
-      account_payable_id: normalizedPayableId,
-      supplierId: payable.supplierId || payable.supplier_id || null,
-      supplier_id: payable.supplier_id || payable.supplierId || null,
-      amount: paymentAmount,
-      method: normalizedMethod,
-      reference: normalizeText(reference),
-      paidBy: resolvedActor,
-      paid_by: resolvedActor,
-      cashSessionId: openSession.id,
-      cash_session_id: openSession.id,
-      createdAt: serverTimestamp(),
-    });
-
-    if (cashMovementRef) {
-      transaction.set(cashMovementRef, {
-        businessId: normalizedBusinessId,
-        business_id: normalizedBusinessId,
-        cashSessionId: openSession.id,
-        cash_session_id: openSession.id,
-        purchaseId: payable.purchaseId || payable.purchase_id || null,
-        purchase_id: payable.purchase_id || payable.purchaseId || null,
-        payableId: normalizedPayableId,
-        payable_id: normalizedPayableId,
-        type: "supplier_payment",
-        method: normalizedMethod,
-        amount: paymentAmount,
-        description: `Pago proveedor ${payable.supplierName || payable.supplier_name || ""}`.trim(),
-        sourceType: "account_payable",
-        source_type: "account_payable",
-        sourceId: normalizedPayableId,
-        source_id: normalizedPayableId,
-        status: "valid",
-        createdBy: resolvedActor,
-        created_by: resolvedActor,
-        createdAt: serverTimestamp(),
-      });
-    }
-
-    transaction.set(doc(collection(db, "auditLogs")), {
-      business_id: normalizedBusinessId,
-      businessId: normalizedBusinessId,
-      user_id: resolvedActor.id,
-      userId: resolvedActor.id,
-      user_name: resolvedActor.name,
-      userName: resolvedActor.name,
-      module: "finance",
-      action: "payable.payment",
-      entity_type: "accountsPayable",
-      entityType: "accountsPayable",
-      entity_id: normalizedPayableId,
-      entityId: normalizedPayableId,
-      previousValue: payable,
-      newValue: { paidAmount, pendingAmount: nextPending, status: nextStatus },
-      reason: "Pago a proveedor",
-      createdAt: serverTimestamp(),
-    });
-
-    return payablePaymentRef.id;
+  return settleAccountPayableWithRpc({
+    p_business_id: normalizedBusinessId,
+    p_account_payable_id: normalizedPayableId,
+    p_amount: paymentAmount,
+    p_method: normalizedMethod,
+    p_reference: normalizeText(reference) || null,
+    p_notes: normalizeText(actor?.email || actor?.name)
+      ? `Registrado por ${normalizeText(actor?.name || actor?.email)}`
+      : null,
   });
-  */
 }
 
 export async function registerReceivablePayment({
@@ -341,145 +281,22 @@ export async function registerReceivablePayment({
     throw new Error("El abono debe ser mayor a cero.");
   }
 
-  throw new Error(
-    "Los abonos de cartera aun no tienen RPC segura en Supabase. Esta accion queda bloqueada temporalmente."
-  );
-
-  /*
-  const openSession = await getCurrentOpenCashSession(normalizedBusinessId);
-  if (!openSession) {
-    throw new Error("Debes abrir caja antes de registrar un abono de cartera.");
-  }
-
-  return runTransaction(db, async (transaction) => {
-    const receivableRef = doc(db, "accountsReceivable", normalizedReceivableId);
-    const receivableSnapshot = await transaction.get(receivableRef);
-
-    if (!receivableSnapshot.exists()) {
-      throw new Error("La cuenta por cobrar no existe.");
-    }
-
-    const receivable = receivableSnapshot.data();
-    if (normalizeText(receivable.business_id || receivable.businessId) !== normalizedBusinessId) {
-      throw new Error("La cuenta por cobrar no pertenece al negocio activo.");
-    }
-
-    const pendingAmount = Number(receivable.pendingAmount ?? receivable.pending_amount ?? 0);
-    if (paymentAmount > pendingAmount) {
-      throw new Error("El abono no puede superar el saldo pendiente.");
-    }
-
-    const paidAmount = roundCurrency(Number(receivable.paidAmount ?? receivable.paid_amount ?? 0) + paymentAmount);
-    const nextPending = roundCurrency(pendingAmount - paymentAmount);
-    const nextStatus = nextPending <= 0 ? "paid" : "partial";
-    const resolvedActor = normalizeActor(actor);
-    const paymentConfig = getPaymentMethodConfig(normalizedMethod);
-    const paymentRef = doc(collection(db, "payments"));
-    const receivablePaymentRef = doc(collection(db, "receivablePayments"));
-    const cashMovementRef = paymentConfig.affectsCashRegister ? doc(collection(db, "cashMovements")) : null;
-
-    transaction.update(receivableRef, {
-      paidAmount,
-      paid_amount: paidAmount,
-      pendingAmount: nextPending,
-      pending_amount: nextPending,
-      status: nextStatus,
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.set(paymentRef, {
-      businessId: normalizedBusinessId,
-      business_id: normalizedBusinessId,
-      saleId: receivable.saleId || receivable.sale_id || null,
-      sale_id: receivable.sale_id || receivable.saleId || null,
-      method: normalizedMethod,
-      amount: paymentAmount,
-      reference: normalizeText(reference),
-      status: "completed",
-      affectsCashRegister: paymentConfig.affectsCashRegister,
-      affects_cash_register: paymentConfig.affectsCashRegister,
-      cashSessionId: paymentConfig.affectsCashRegister ? openSession.id : null,
-      cash_session_id: paymentConfig.affectsCashRegister ? openSession.id : null,
-      customerId: receivable.customerId || receivable.customer_id || null,
-      customer_id: receivable.customer_id || receivable.customerId || null,
-      receivedBy: resolvedActor,
-      received_by: resolvedActor,
-      createdAt: serverTimestamp(),
-    });
-
-    transaction.set(receivablePaymentRef, {
-      businessId: normalizedBusinessId,
-      business_id: normalizedBusinessId,
-      accountReceivableId: normalizedReceivableId,
-      account_receivable_id: normalizedReceivableId,
-      customerId: receivable.customerId || receivable.customer_id || null,
-      customer_id: receivable.customer_id || receivable.customerId || null,
-      amount: paymentAmount,
-      method: normalizedMethod,
-      reference: normalizeText(reference),
-      receivedBy: resolvedActor,
-      received_by: resolvedActor,
-      paymentId: paymentRef.id,
-      payment_id: paymentRef.id,
-      cashSessionId: openSession.id,
-      cash_session_id: openSession.id,
-      createdAt: serverTimestamp(),
-    });
-
-    if (cashMovementRef) {
-      transaction.set(cashMovementRef, {
-        businessId: normalizedBusinessId,
-        business_id: normalizedBusinessId,
-        cashSessionId: openSession.id,
-        cash_session_id: openSession.id,
-        saleId: receivable.saleId || receivable.sale_id || null,
-        sale_id: receivable.sale_id || receivable.saleId || null,
-        paymentId: paymentRef.id,
-        payment_id: paymentRef.id,
-        receivableId: normalizedReceivableId,
-        receivable_id: normalizedReceivableId,
-        type: "debt_payment_income",
-        method: normalizedMethod,
-        amount: paymentAmount,
-        description: `Abono cartera ${receivable.customerName || receivable.customer_name || ""}`.trim(),
-        sourceType: "account_receivable",
-        source_type: "account_receivable",
-        sourceId: normalizedReceivableId,
-        source_id: normalizedReceivableId,
-        status: "valid",
-        createdBy: resolvedActor,
-        created_by: resolvedActor,
-        createdAt: serverTimestamp(),
-      });
-    }
-
-    transaction.set(doc(collection(db, "auditLogs")), {
-      business_id: normalizedBusinessId,
-      businessId: normalizedBusinessId,
-      user_id: resolvedActor.id,
-      userId: resolvedActor.id,
-      user_name: resolvedActor.name,
-      userName: resolvedActor.name,
-      module: "finance",
-      action: "receivable.payment",
-      entity_type: "accountsReceivable",
-      entityType: "accountsReceivable",
-      entity_id: normalizedReceivableId,
-      entityId: normalizedReceivableId,
-      previousValue: receivable,
-      newValue: { paidAmount, pendingAmount: nextPending, status: nextStatus },
-      reason: "Abono de cartera",
-      createdAt: serverTimestamp(),
-    });
-
-    return receivablePaymentRef.id;
+  return settleSaleDebtWithRpc({
+    p_business_id: normalizedBusinessId,
+    p_sale_id: normalizedReceivableId,
+    p_amount: paymentAmount,
+    p_method: normalizedMethod,
+    p_reference: normalizeText(reference) || null,
+    p_notes: normalizeText(actor?.email || actor?.name)
+      ? `Registrado por ${normalizeText(actor?.name || actor?.email)}`
+      : null,
   });
-  */
 }
 
 export async function reverseCashMovement({ movementId, reason, actor = {} }) {
   const normalizedMovementId = normalizeText(movementId);
   const normalizedReason = normalizeText(reason);
+  void actor;
 
   if (!normalizedMovementId || !normalizedReason) {
     throw new Error("El movimiento y el motivo son obligatorios.");
@@ -489,51 +306,122 @@ export async function reverseCashMovement({ movementId, reason, actor = {} }) {
     "La reversa de movimientos requiere una RPC de auditoria en Supabase. Esta accion queda bloqueada temporalmente."
   );
 
-  /*
-  await runTransaction(db, async (transaction) => {
-    const movementRef = doc(db, "cashMovements", normalizedMovementId);
-    const movementSnapshot = await transaction.get(movementRef);
-
-    if (!movementSnapshot.exists()) {
-      throw new Error("El movimiento de caja no existe.");
-    }
-
-    const movement = movementSnapshot.data();
-    const resolvedActor = normalizeActor(actor);
-    transaction.update(movementRef, {
-      status: "reversed",
-      reversedAt: serverTimestamp(),
-      reversed_at: serverTimestamp(),
-      reverseReason: normalizedReason,
-      reverse_reason: normalizedReason,
-      reversedBy: resolvedActor,
-      reversed_by: resolvedActor,
-      updatedAt: serverTimestamp(),
-    });
-
-    transaction.set(doc(collection(db, "auditLogs")), {
-      business_id: movement.business_id || movement.businessId || "",
-      businessId: movement.business_id || movement.businessId || "",
-      user_id: resolvedActor.id,
-      userId: resolvedActor.id,
-      user_name: resolvedActor.name,
-      userName: resolvedActor.name,
-      module: "cash",
-      action: "cashMovement.reverse",
-      entity_type: "cashMovements",
-      entityType: "cashMovements",
-      entity_id: normalizedMovementId,
-      entityId: normalizedMovementId,
-      previousValue: movement,
-      newValue: { status: "reversed" },
-      reason: normalizedReason,
-      createdAt: serverTimestamp(),
-    });
-  });
-  */
+  
 }
 
 export async function getAccountPayable(accountPayableId) {
-  void accountPayableId;
-  return null;
+  const normalizedPayableId = normalizeText(accountPayableId);
+  if (!normalizedPayableId) return null;
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("accounts_payable")
+    .select("*")
+    .eq("id", normalizedPayableId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? normalizePayable(data) : null;
+}
+
+function normalizeDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeReceivable(row = {}) {
+  const customer = row.customers || {};
+  const pendingAmount = roundCurrency(row.pending_amount ?? 0);
+  const createdAt = normalizeDate(row.created_at);
+
+  return {
+    id: row.id,
+    saleId: row.id,
+    sale_id: row.id,
+    business_id: row.business_id,
+    collection: "accountsReceivable",
+    customer_id: row.customer_id || null,
+    customerId: row.customer_id || null,
+    customer_name: customer.name || row.metadata?.client_payload?.customer_name || "Cliente sin nombre",
+    customerName: customer.name || row.metadata?.client_payload?.customerName || "Cliente sin nombre",
+    pendingAmount,
+    pending_amount: pendingAmount,
+    pending_debt_remaining: pendingAmount,
+    debt_amount: pendingAmount,
+    originalAmount: roundCurrency(row.total ?? 0),
+    original_amount: roundCurrency(row.total ?? 0),
+    paidAmount: roundCurrency(row.paid_amount ?? 0),
+    paid_amount: roundCurrency(row.paid_amount ?? 0),
+    status: row.payment_status || row.status || "partial",
+    payment_status: row.payment_status || "partial",
+    createdAt,
+    created_at: row.created_at,
+    closed_at: row.closed_at,
+    concept: row.sale_number || row.metadata?.client_payload?.concept || "Venta pendiente",
+    source: "supabase",
+  };
+}
+
+export async function listAccountsReceivable(businessId) {
+  const normalizedBusinessId = normalizeText(businessId);
+  if (!normalizedBusinessId) return [];
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("sales")
+    .select("id,business_id,customer_id,total,paid_amount,pending_amount,status,payment_status,sale_number,closed_at,created_at,metadata,customers(name)")
+    .eq("business_id", normalizedBusinessId)
+    .gt("pending_amount", 0)
+    .not("payment_status", "in", "(cancelled,refunded)")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(normalizeReceivable);
+}
+
+function normalizePayable(row = {}) {
+  const pendingAmount = roundCurrency(row.pending_amount ?? 0);
+  const createdAt = normalizeDate(row.created_at);
+
+  return {
+    id: row.id,
+    business_id: row.business_id,
+    supplier_id: row.supplier_id || null,
+    supplierId: row.supplier_id || null,
+    supplier_name: row.supplier_name || "Proveedor",
+    supplierName: row.supplier_name || "Proveedor",
+    purchase_id: row.purchase_id || null,
+    purchaseId: row.purchase_id || null,
+    concept: row.concept || "Compra a proveedor",
+    originalAmount: roundCurrency(row.original_amount ?? 0),
+    original_amount: roundCurrency(row.original_amount ?? 0),
+    paidAmount: roundCurrency(row.paid_amount ?? 0),
+    paid_amount: roundCurrency(row.paid_amount ?? 0),
+    pendingAmount,
+    pending_amount: pendingAmount,
+    status: row.status || "pending",
+    dueDate: row.due_date || null,
+    due_date: row.due_date || null,
+    createdAt,
+    created_at: row.created_at,
+    source: "supabase",
+  };
+}
+
+export async function listAccountsPayable(businessId) {
+  const normalizedBusinessId = normalizeText(businessId);
+  if (!normalizedBusinessId) return [];
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("accounts_payable")
+    .select("*")
+    .eq("business_id", normalizedBusinessId)
+    .not("status", "eq", "cancelled")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(normalizePayable);
 }

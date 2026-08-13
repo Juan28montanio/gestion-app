@@ -253,25 +253,6 @@ export function sanitizeBusinessProfile(values = {}) {
   };
 }
 
-function toDatabasePaymentMethod(method, businessId) {
-  const normalized = normalizePaymentMethodConfig(method);
-  return {
-    business_id: businessId,
-    key: normalized.key,
-    name: normalized.name,
-    active: normalized.active,
-    affects_physical_cash: normalized.affectsPhysicalCash,
-    affects_digital_cash: normalized.affectsDigitalCash,
-    requires_reference: normalized.requiresReference,
-    requires_customer: normalized.requiresCustomer,
-    allows_change: normalized.allowsChange,
-    is_credit: normalized.isCredit,
-    is_non_cash_consumption: normalized.isNonCashConsumption,
-    sort_order: normalized.sortOrder,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
 export function subscribeToBusinessUsers(businessId, callback) {
   if (!businessId) {
     callback([]);
@@ -317,19 +298,7 @@ export function subscribeToBusinessUsers(businessId, callback) {
   return () => {
     client.removeChannel(channel);
   };
-/*
-  const usersQuery = query(collection(db, "business_users"), where("business_id", "==", businessId));
-  return onSnapshot(usersQuery, (snapshot) => {
-    const users = snapshot.docs
-      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-      .sort((a, b) => String(a.display_name || a.email).localeCompare(String(b.display_name || b.email)));
-    callback(users);
-  }, createSubscriptionErrorHandler({
-    scope: "business_users:subscribeToBusinessUsers",
-    callback,
-    emptyValue: [],
-  }));
-*/
+
 }
 
 export function subscribeToPaymentMethods(businessId, callback) {
@@ -377,24 +346,7 @@ export function subscribeToPaymentMethods(businessId, callback) {
   return () => {
     client.removeChannel(channel);
   };
-/*
-  if (!businessId) {
-    callback(DEFAULT_PAYMENT_METHODS);
-    return () => {};
-  }
 
-  const methodsQuery = query(collection(db, "paymentMethods"), where("business_id", "==", businessId));
-  return onSnapshot(methodsQuery, (snapshot) => {
-    const methods = snapshot.docs.map((snapshotDoc) =>
-      normalizePaymentMethodConfig({ id: snapshotDoc.id, ...snapshotDoc.data() })
-    );
-    callback((methods.length ? methods : DEFAULT_PAYMENT_METHODS).sort((a, b) => a.sortOrder - b.sortOrder));
-  }, createSubscriptionErrorHandler({
-    scope: "paymentMethods:subscribeToPaymentMethods",
-    callback,
-    emptyValue: DEFAULT_PAYMENT_METHODS,
-  }));
-*/
 }
 
 export function subscribeToBusinessSettings(businessId, callback) {
@@ -439,20 +391,7 @@ export function subscribeToBusinessSettings(businessId, callback) {
   return () => {
     client.removeChannel(channel);
   };
-/*
-  if (!businessId) {
-    callback(validateBusinessSettings());
-    return () => {};
-  }
 
-  return onSnapshot(doc(db, "businessSettings", businessId), (snapshot) => {
-    callback(validateBusinessSettings(snapshot.exists() ? snapshot.data() : {}));
-  }, createSubscriptionErrorHandler({
-    scope: "businessSettings:subscribeToBusinessSettings",
-    callback,
-    emptyValue: validateBusinessSettings(),
-  }));
-*/
 }
 
 export function subscribeToAuditLogs(businessId, callback) {
@@ -504,24 +443,7 @@ export function subscribeToAuditLogs(businessId, callback) {
   return () => {
     client.removeChannel(channel);
   };
-/*
-  const logsQuery = query(collection(db, "auditLogs"), where("business_id", "==", businessId));
-  return onSnapshot(logsQuery, (snapshot) => {
-    const logs = snapshot.docs
-      .map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-      .sort((a, b) => {
-        const left = a.createdAt?.toMillis?.() || 0;
-        const right = b.createdAt?.toMillis?.() || 0;
-        return right - left;
-      })
-      .slice(0, 50);
-    callback(logs);
-  }, createSubscriptionErrorHandler({
-    scope: "auditLogs:subscribeToAuditLogs",
-    callback,
-    emptyValue: [],
-  }));
-*/
+
 }
 
 export async function createAuditLog({
@@ -557,28 +479,7 @@ export async function createAuditLog({
 
   if (error) throw error;
   return data.id;
-/*
-  const ref = await addDoc(collection(db, "auditLogs"), {
-    business_id: normalizedBusinessId,
-    businessId: normalizedBusinessId,
-    user_id: actor?.id || "",
-    userId: actor?.id || "",
-    user_name: actor?.name || actor?.email || "Usuario",
-    userName: actor?.name || actor?.email || "Usuario",
-    module,
-    action,
-    entity_type: entityType,
-    entityType,
-    entity_id: entityId || "",
-    entityId: entityId || "",
-    previousValue,
-    newValue,
-    reason,
-    createdAt: serverTimestamp(),
-  });
 
-  return ref.id;
-*/
 }
 
 export async function updateBusinessProfileWithAudit(businessId, values, actor, previousValue) {
@@ -624,29 +525,7 @@ export async function updateBusinessProfileWithAudit(businessId, values, actor, 
     reason: "Actualizacion de datos del negocio",
   });
   return;
-/*
-  const batch = writeBatch(db);
-  batch.set(doc(db, "businesses", normalizedBusinessId), payload, { merge: true });
-  batch.set(doc(collection(db, "auditLogs")), {
-    business_id: normalizedBusinessId,
-    businessId: normalizedBusinessId,
-    user_id: actor?.id || "",
-    userId: actor?.id || "",
-    user_name: actor?.name || actor?.email || "Usuario",
-    userName: actor?.name || actor?.email || "Usuario",
-    module: "account",
-    action: "account.manageBusiness",
-    entity_type: "business",
-    entityType: "business",
-    entity_id: normalizedBusinessId,
-    entityId: normalizedBusinessId,
-    previousValue,
-    newValue: payload,
-    reason: "Actualizacion de datos del negocio",
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
-*/
+
 }
 
 export async function updateBusinessUserRole({ businessId, targetUserId, role, status, actor, previousValue }) {
@@ -700,46 +579,7 @@ export async function updateBusinessUserRole({ businessId, targetUserId, role, s
     reason: "Cambio de rol o estado de usuario",
   });
   return;
-/*
-  const usersSnapshot = await getDocs(query(collection(db, "business_users"), where("business_id", "==", normalizedBusinessId)));
-  const adminCount = usersSnapshot.docs.filter((snapshotDoc) => {
-    const data = snapshotDoc.data();
-    const userRole = snapshotDoc.id === normalizedTargetUserId ? normalizedRole : normalizeUserRole(data.role);
-    const userStatus = snapshotDoc.id === normalizedTargetUserId ? status : data.status;
-    return ["owner", "admin"].includes(userRole) && String(userStatus || "active") === "active";
-  }).length;
 
-  if (adminCount < 1) {
-    throw new Error("Debe existir al menos un administrador activo.");
-  }
-
-  const batch = writeBatch(db);
-  batch.set(doc(db, "business_users", normalizedTargetUserId), {
-    role: normalizedRole,
-    status: String(status || "active").trim() || "active",
-    permissions: getDefaultPermissionsByRole(normalizedRole),
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-  batch.set(doc(collection(db, "auditLogs")), {
-    business_id: normalizedBusinessId,
-    businessId: normalizedBusinessId,
-    user_id: actor?.id || "",
-    userId: actor?.id || "",
-    user_name: actor?.name || actor?.email || "Usuario",
-    userName: actor?.name || actor?.email || "Usuario",
-    module: "account",
-    action: "users.manage",
-    entity_type: "business_user",
-    entityType: "business_user",
-    entity_id: normalizedTargetUserId,
-    entityId: normalizedTargetUserId,
-    previousValue,
-    newValue: { role: normalizedRole, status },
-    reason: "Cambio de rol o estado de usuario",
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
-*/
 }
 
 export async function savePaymentMethods(businessId, methods, actor) {
@@ -781,40 +621,7 @@ export async function savePaymentMethods(businessId, methods, actor) {
     reason: "Actualizacion de metodos de pago",
   });
   return;
-/*
-  const batch = writeBatch(db);
-  methods.forEach((method) => {
-    const normalized = normalizePaymentMethodConfig(method);
-    if (!normalized.key) return;
-    batch.set(
-      doc(db, "paymentMethods", `${normalizedBusinessId}_${normalized.key}`),
-      {
-        ...toDatabasePaymentMethod(normalized, normalizedBusinessId),
-        createdAt: method.createdAt || serverTimestamp(),
-      },
-      { merge: true }
-    );
-  });
-  batch.set(doc(collection(db, "auditLogs")), {
-    business_id: normalizedBusinessId,
-    businessId: normalizedBusinessId,
-    user_id: actor?.id || "",
-    userId: actor?.id || "",
-    user_name: actor?.name || actor?.email || "Usuario",
-    userName: actor?.name || actor?.email || "Usuario",
-    module: "account",
-    action: "paymentMethods.update",
-    entity_type: "paymentMethods",
-    entityType: "paymentMethods",
-    entity_id: normalizedBusinessId,
-    entityId: normalizedBusinessId,
-    previousValue: null,
-    newValue: methods,
-    reason: "Actualizacion de metodos de pago",
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
-*/
+
 }
 
 export async function saveBusinessSettings(businessId, settings, actor) {
@@ -854,31 +661,5 @@ export async function saveBusinessSettings(businessId, settings, actor) {
     reason: "Actualizacion de configuracion operativa",
   });
   return;
-/*
-  const batch = writeBatch(db);
-  batch.set(doc(db, "businessSettings", normalizedBusinessId), {
-    ...normalizedSettings,
-    business_id: normalizedBusinessId,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-  batch.set(doc(collection(db, "auditLogs")), {
-    business_id: normalizedBusinessId,
-    businessId: normalizedBusinessId,
-    user_id: actor?.id || "",
-    userId: actor?.id || "",
-    user_name: actor?.name || actor?.email || "Usuario",
-    userName: actor?.name || actor?.email || "Usuario",
-    module: "account",
-    action: "settings.update",
-    entity_type: "businessSettings",
-    entityType: "businessSettings",
-    entity_id: normalizedBusinessId,
-    entityId: normalizedBusinessId,
-    previousValue: null,
-    newValue: normalizedSettings,
-    reason: "Actualizacion de configuracion operativa",
-    createdAt: serverTimestamp(),
-  });
-  await batch.commit();
-*/
+
 }

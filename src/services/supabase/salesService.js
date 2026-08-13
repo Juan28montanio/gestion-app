@@ -1,5 +1,6 @@
 import { getSupabaseClient } from "../../lib/supabaseClient";
 import { adaptSupabaseSale, adaptSupabaseSalesLedger } from "./adapters/salesAdapter";
+import { toBusinessError } from "./supabaseErrorMessages";
 
 export async function listSales(businessId, options = {}) {
   const client = getSupabaseClient();
@@ -89,10 +90,9 @@ export function subscribeToSalesLedger(businessId, callback) {
   };
 }
 
-// TODO: migrate sale closing, payments, inventory impact and cash impact to RPC SQL.
 export async function closeSaleWithRpc(payload) {
   const client = getSupabaseClient();
-  const { data, error } = await client.rpc("close_sale", payload);
-  if (error) throw error;
+  const { data, error } = await client.rpc("close_sale_with_inventory_explosion", payload);
+  if (error) throw toBusinessError(error, "No fue posible cerrar la venta.");
   return data;
 }

@@ -58,9 +58,9 @@ function StatusPill({ status }) {
   );
 }
 
-function MetricCard({ label, value, hint, tone = "bg-white text-slate-950 ring-slate-200" }) {
+function MetricCard({ label, value, hint, tone = "bg-white text-slate-950 ring-slate-200", testId }) {
   return (
-    <div className={`rounded-2xl px-4 py-3 ring-1 ${tone}`}>
+    <div data-testid={testId} className={`rounded-2xl px-4 py-3 ring-1 ${tone}`}>
       <p className="text-xs uppercase tracking-[0.16em] text-slate-400">{label}</p>
       <p className="mt-2 text-lg font-black">{value}</p>
       {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
@@ -283,14 +283,14 @@ export default function ResourceProductsPanel({
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {visibleProducts.map((product) => (
-                <tr key={product.id}>
+                <tr key={product.id} data-testid="catalog-product-row" data-product-id={product.id}>
                   <td className="px-4 py-4">
-                    <p className="font-semibold text-slate-950">{product.name}</p>
+                    <p data-testid="catalog-product-name" className="font-semibold text-slate-950">{product.name}</p>
                     <p className="text-xs text-slate-500">{product.category} · {TYPE_LABELS[product.type] || product.type}</p>
                   </td>
                   <td className="px-4 py-4 font-mono font-semibold">{formatCOP(product.price)}</td>
                   {canViewCosts ? (
-                    <td className="px-4 py-4">
+                    <td data-testid="catalog-product-costing-cell" className="px-4 py-4">
                       <p className="font-mono text-slate-900">{formatCOP(product.estimatedCost)}</p>
                       <p className="text-xs text-slate-500">{product.grossMarginPercent.toFixed(1)}% margen · {product.foodCostPercent.toFixed(1)}% FC</p>
                     </td>
@@ -325,11 +325,19 @@ export default function ResourceProductsPanel({
             const flowSummary = getProductFlowSummary({ product, recipeBook: product.recipeBook });
             const semaforoClasses = getProfitabilityClasses(product.recipeBook?.profitability_status);
             return (
-              <article key={product.id} className="group rounded-[24px] bg-slate-50 p-5 shadow-sm ring-1 ring-slate-200">
+              <article
+                key={product.id}
+                data-testid="catalog-product-card"
+                data-product-id={product.id}
+                data-has-technical-sheet={Boolean(product.recipeBook || product.costing?.linkedTechnicalSheetId)}
+                data-estimated-cost={product.estimatedCost}
+                data-gross-margin-percent={product.grossMarginPercent}
+                className="group rounded-[24px] bg-slate-50 p-5 shadow-sm ring-1 ring-slate-200"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{product.category}</p>
-                    <h3 className="mt-2 text-lg font-semibold text-slate-950">{product.name}</h3>
+                    <h3 data-testid="catalog-product-name" className="mt-2 text-lg font-semibold text-slate-950">{product.name}</h3>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <StatusPill status={product.status} />
                       <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">{TYPE_LABELS[product.type] || product.type}</span>
@@ -337,14 +345,14 @@ export default function ResourceProductsPanel({
                     </div>
                   </div>
                   {canViewCosts ? (
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${semaforoClasses}`}>
+                    <span data-testid="catalog-product-recipe-status" className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${semaforoClasses}`}>
                       {product.recipeBook ? `${product.grossMarginPercent.toFixed(1)}% margen` : "Sin ficha"}
                     </span>
                   ) : null}
                 </div>
                 <div className={`mt-5 grid gap-3 ${canViewCosts ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-                  <MetricCard label="Precio" value={formatCOP(product.price)} />
-                  {canViewCosts ? <MetricCard label="Costo" value={formatCOP(product.estimatedCost)} /> : null}
+                  <MetricCard testId="catalog-product-price" label="Precio" value={formatCOP(product.price)} />
+                  {canViewCosts ? <MetricCard testId="catalog-product-estimated-cost" label="Costo" value={formatCOP(product.estimatedCost)} /> : null}
                   <MetricCard label="Estacion" value={product.operation?.kitchenStationName || "Sin prep."} hint={flowSummary.compact} />
                 </div>
                 <div className="mt-5 grid gap-2 sm:grid-cols-4">
@@ -382,7 +390,7 @@ export default function ResourceProductsPanel({
       {isCatalogMode ? (
         <div className="mb-5 flex gap-2 overflow-x-auto border-b border-slate-200 pb-2">
           {CATALOG_TABS.map((tab) => (
-            <button key={tab.id} type="button" onClick={() => onSelectTab(tab.id)} className={`whitespace-nowrap rounded-2xl px-4 py-2 text-sm font-semibold ${activeTab === tab.id ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600"}`}>
+            <button key={tab.id} type="button" onClick={() => onSelectTab(tab.id)} data-testid={`catalog-tab-${tab.id}`} className={`whitespace-nowrap rounded-2xl px-4 py-2 text-sm font-semibold ${activeTab === tab.id ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600"}`}>
               {tab.label}
             </button>
           ))}
@@ -449,11 +457,11 @@ export default function ResourceProductsPanel({
       ) : null}
 
       {activeTab === "profitability" ? (
-        <div className="grid gap-5">
+        <div data-testid="catalog-profitability-panel" className="grid gap-5">
           <div className="grid gap-4 md:grid-cols-3">
-            <MetricCard label="Sin ficha tecnica" value={profitability.withoutSheet.length} />
-            <MetricCard label="Sin costo calculado" value={profitability.withoutCost.length} />
-            <MetricCard label="Food cost alto" value={profitability.highFoodCost.length} />
+            <MetricCard testId="profitability-without-sheet-count" label="Sin ficha tecnica" value={profitability.withoutSheet.length} />
+            <MetricCard testId="profitability-without-cost-count" label="Sin costo calculado" value={profitability.withoutCost.length} />
+            <MetricCard testId="profitability-high-food-cost-count" label="Food cost alto" value={profitability.highFoodCost.length} />
           </div>
           {canViewCosts ? (
             <div className="grid gap-4 lg:grid-cols-2">
@@ -465,9 +473,9 @@ export default function ResourceProductsPanel({
                   <h3 className="font-semibold text-slate-950">{title}</h3>
                   <div className="mt-3 grid gap-2">
                     {items.map((product) => (
-                      <div key={product.id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-slate-200">
-                        <span>{product.name}</span>
-                        <span className="font-mono font-semibold">{product.grossMarginPercent.toFixed(1)}%</span>
+                      <div key={product.id} data-testid="profitability-ranking-row" data-product-id={product.id} className="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-slate-200">
+                        <span data-testid="profitability-ranking-name">{product.name}</span>
+                        <span data-testid="profitability-ranking-margin" className="font-mono font-semibold">{product.grossMarginPercent.toFixed(1)}%</span>
                       </div>
                     ))}
                   </div>

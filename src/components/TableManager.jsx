@@ -133,6 +133,7 @@ function TableStatusBadge({ status }) {
   const visualStatus = normalizeTableStatus(status);
   return (
     <span
+      data-testid="table-status"
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
         STATUS_STYLES[visualStatus] || STATUS_STYLES.free
       }`}
@@ -607,17 +608,18 @@ export default function TableManager({
 
   return (
     <section className="grid gap-5">
-      <div className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-slate-200 xl:p-6">
+      <section data-testid="salon-module" className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-slate-200 xl:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">Salon / Mesas / Pedidos</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+            <h2 data-testid="salon-title" className="text-xl font-semibold text-slate-900">Salon / Mesas / Pedidos</h2>
+            <p data-testid="salon-description" className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
               Centro operativo para abrir mesas, comandar productos, seguir cocina, cobrar y liberar con trazabilidad.
             </p>
           </div>
           <button
             type="button"
             onClick={() => openConfig()}
+            data-testid="new-table-button"
             className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
           >
             <Plus size={17} />
@@ -625,40 +627,41 @@ export default function TableManager({
           </button>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div data-testid="table-stats" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[
-            ["Total", summary.total, "bg-slate-50 text-slate-700 ring-slate-200"],
-            ["Libres", summary.free, "bg-emerald-50 text-emerald-800 ring-emerald-200"],
-            ["En atencion", summary.occupied, "bg-sky-50 text-sky-800 ring-sky-200"],
-            ["Por cobrar", summary.payment, "bg-violet-50 text-violet-800 ring-violet-200"],
-            ["Limpieza", summary.cleaning, "bg-slate-100 text-slate-700 ring-slate-300"],
-          ].map(([label, value, classes]) => (
-            <article key={label} className={`rounded-[22px] p-4 ring-1 ${classes}`}>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-75">{label}</p>
-              <p className="mt-2 text-2xl font-black">{value}</p>
+            ["total", "Total", summary.total, "bg-slate-50 text-slate-700 ring-slate-200"],
+            ["free", "Libres", summary.free, "bg-emerald-50 text-emerald-800 ring-emerald-200"],
+            ["in-service", "En atencion", summary.occupied, "bg-sky-50 text-sky-800 ring-sky-200"],
+            ["to-pay", "Por cobrar", summary.payment, "bg-violet-50 text-violet-800 ring-violet-200"],
+            ["cleaning", "Limpieza", summary.cleaning, "bg-slate-100 text-slate-700 ring-slate-300"],
+          ].map(([id, label, value, classes]) => (
+            <article key={label} data-testid={`stat-${id}`} className={`rounded-[22px] p-4 ring-1 ${classes}`}>
+              <p data-testid={`stat-${id}-label`} className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-75">{label}</p>
+              <p data-testid={`stat-${id}-value`} className="mt-2 text-2xl font-black">{value}</p>
             </article>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-slate-200 xl:p-6">
+      <div data-testid="zone-filter" className="rounded-[28px] bg-white p-5 shadow-lg ring-1 ring-slate-200 xl:p-6">
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
               <LayoutGrid size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">Mapa operativo</h3>
-              <p className="text-sm text-slate-500">Filtra por zona y toca una mesa para operar.</p>
+              <h3 data-testid="zone-filter-title" className="text-lg font-semibold text-slate-900">Mapa operativo</h3>
+              <p data-testid="zone-filter-description" className="text-sm text-slate-500">Filtra por zona y toca una mesa para operar.</p>
             </div>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div data-testid="zone-buttons" className="flex gap-2 overflow-x-auto pb-1">
             {zones.map((zone) => (
               <button
                 key={zone}
                 type="button"
                 onClick={() => setActiveZone(zone)}
+                data-testid={`zone-${String(zone === "all" ? "all" : zone).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                 className={`shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold transition ${
                   activeZone === zone
                     ? "bg-slate-950 text-white"
@@ -671,7 +674,7 @@ export default function TableManager({
           </div>
         </div>
 
-        <div className="grid auto-rows-[260px] gap-4 md:grid-cols-2 2xl:grid-cols-4">
+        <section data-testid="table-map" className="grid auto-rows-[260px] gap-4 md:grid-cols-2 2xl:grid-cols-4">
           {visibleTables.map((table) => {
             const Icon = getIconComponent(table.icon);
             const isSelected = selectedTableId === table.id;
@@ -679,6 +682,10 @@ export default function TableManager({
             return (
               <article
                 key={table.id}
+                data-testid="table-card"
+                data-table-id={table.id}
+                data-table-status={table.visualStatus}
+                data-table-zone={table.zone || "Salon principal"}
                 className={`relative flex h-[260px] flex-col rounded-[26px] border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${
                   isSelected ? "border-emerald-400 ring-2 ring-emerald-200" : "border-slate-200"
                 }`}
@@ -686,6 +693,8 @@ export default function TableManager({
                 <button
                   type="button"
                   onClick={() => openDetail(table)}
+                  data-testid="open-table-button"
+                  data-table-name={table.name || `Mesa ${table.number}`}
                   className="absolute inset-0 rounded-[26px]"
                   aria-label={`Abrir ${table.name || `Mesa ${table.number}`}`}
                 />
@@ -696,7 +705,7 @@ export default function TableManager({
                         <Icon size={18} />
                       </div>
                       <div className="min-w-0">
-                        <h4 className="truncate text-base font-semibold text-slate-950">
+                        <h4 data-testid="table-name" className="truncate text-base font-semibold text-slate-950">
                           {table.name || `Mesa ${table.number}`}
                         </h4>
                         <p className="truncate text-xs text-slate-500">{table.zone || "Salon principal"}</p>
@@ -709,17 +718,17 @@ export default function TableManager({
                 <div className="relative z-10 mt-4 grid grid-cols-3 gap-2">
                   <div className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200">
                     <UsersRound size={15} className="text-slate-400" />
-                    <p className="mt-2 text-lg font-black text-slate-900">{table.session?.guestsCount || table.guests_count || table.capacity}</p>
+                    <p data-testid="table-capacity" className="mt-2 text-lg font-black text-slate-900">{table.session?.guestsCount || table.guests_count || table.capacity}</p>
                     <p className="text-[11px] text-slate-500">personas</p>
                   </div>
                   <div className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200">
                     <ReceiptText size={15} className="text-slate-400" />
-                    <p className="mt-2 text-lg font-black text-slate-900">{table.totalItems}</p>
+                    <p data-testid="table-items" className="mt-2 text-lg font-black text-slate-900">{table.totalItems}</p>
                     <p className="text-[11px] text-slate-500">items</p>
                   </div>
                   <div className="rounded-2xl bg-slate-50 px-3 py-3 ring-1 ring-slate-200">
                     <Clock3 size={15} className="text-slate-400" />
-                    <p className="mt-2 text-sm font-black text-slate-900">{elapsed || "-"}</p>
+                    <p data-testid="table-time" className="mt-2 text-sm font-black text-slate-900">{elapsed || "-"}</p>
                     <p className="text-[11px] text-slate-500">tiempo</p>
                   </div>
                 </div>
@@ -757,7 +766,7 @@ export default function TableManager({
             <Plus size={28} />
             <span className="mt-3 text-sm font-semibold">Crear mesa</span>
           </button>
-        </div>
+        </section>
       </div>
 
       <ModalWrapper
@@ -880,13 +889,13 @@ export default function TableManager({
                   <h4 className="font-semibold text-slate-950">Abrir atencion</h4>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <Field label="Mesero">
-                      <input value={openForm.waiterName} onChange={(event) => setOpenForm((current) => ({ ...current, waiterName: event.target.value }))} className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200" />
+                      <input value={openForm.waiterName} onChange={(event) => setOpenForm((current) => ({ ...current, waiterName: event.target.value }))} data-testid="table-waiter-input" className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200" />
                     </Field>
                     <Field label="Personas">
-                      <input type="number" min="1" value={openForm.guestsCount} onChange={(event) => setOpenForm((current) => ({ ...current, guestsCount: event.target.value }))} className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200" />
+                      <input type="number" min="1" value={openForm.guestsCount} onChange={(event) => setOpenForm((current) => ({ ...current, guestsCount: event.target.value }))} data-testid="table-guests-input" className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200" />
                     </Field>
                     <Field label="Cliente opcional">
-                      <select value={openForm.customerId} onChange={(event) => setOpenForm((current) => ({ ...current, customerId: event.target.value }))} className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200">
+                      <select value={openForm.customerId} onChange={(event) => setOpenForm((current) => ({ ...current, customerId: event.target.value }))} data-testid="table-customer-select" className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200">
                         <option value="">Cliente ocasional</option>
                         {customers.map((customer) => (
                           <option key={customer.id} value={customer.id}>{customer.name}</option>
@@ -894,10 +903,10 @@ export default function TableManager({
                       </select>
                     </Field>
                     <Field label="Observacion">
-                      <input value={openForm.notes} onChange={(event) => setOpenForm((current) => ({ ...current, notes: event.target.value }))} className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200" />
+                      <input value={openForm.notes} onChange={(event) => setOpenForm((current) => ({ ...current, notes: event.target.value }))} data-testid="table-notes-input" className="rounded-2xl bg-white px-4 py-3 outline-none ring-1 ring-slate-200" />
                     </Field>
                   </div>
-                  <button type="button" onClick={handleOpenSession} disabled={busy} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
+                  <button type="button" onClick={handleOpenSession} disabled={busy} data-testid="open-table-session-button" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
                     <CheckCircle2 size={17} />
                     Abrir mesa
                   </button>
@@ -905,7 +914,7 @@ export default function TableManager({
               ) : null}
 
               {selectedState.visualStatus === "cleaning" ? (
-                <button type="button" onClick={handleReleaseTable} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-4 text-sm font-semibold text-white disabled:opacity-50">
+                <button type="button" onClick={handleReleaseTable} disabled={busy} data-testid="release-table-button" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-4 text-sm font-semibold text-white disabled:opacity-50">
                   <Eraser size={17} />
                   Marcar como limpia y liberar
                 </button>
@@ -929,7 +938,7 @@ export default function TableManager({
                     <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
                       <div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
                         <Search size={16} className="text-slate-400" />
-                        <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Buscar producto..." className="w-full bg-transparent text-sm outline-none" />
+                        <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Buscar producto..." data-testid="table-product-search-input" className="w-full bg-transparent text-sm outline-none" />
                       </div>
                       <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm outline-none ring-1 ring-slate-200">
                         {categories.map((item) => (
@@ -940,7 +949,7 @@ export default function TableManager({
 
                     <div className="mt-4 grid max-h-[280px] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
                       {filteredProducts.map((product) => (
-                        <button key={product.id} type="button" onClick={() => addDraftItem(product)} className="rounded-2xl bg-slate-50 p-4 text-left ring-1 ring-slate-200 transition hover:bg-white hover:ring-emerald-300">
+                        <button key={product.id} type="button" onClick={() => addDraftItem(product)} data-testid="table-product-card" className="rounded-2xl bg-slate-50 p-4 text-left ring-1 ring-slate-200 transition hover:bg-white hover:ring-emerald-300">
                           <p className="line-clamp-2 text-sm font-semibold text-slate-900">{product.name}</p>
                           <p className="mt-1 text-xs text-slate-500">{product.category || "Sin categoria"}</p>
                           <p className="mt-3 text-base font-black text-slate-950">{formatCOP(product.price || 0)}</p>
@@ -1003,7 +1012,7 @@ export default function TableManager({
                       ) : null}
                     </div>
 
-                    <button type="button" onClick={handleSendOrder} disabled={busy || draftItems.length === 0} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] ring-1 ring-[#d4a72c]/30 disabled:opacity-50">
+                    <button type="button" onClick={handleSendOrder} disabled={busy || draftItems.length === 0} data-testid="table-send-order-button" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] ring-1 ring-[#d4a72c]/30 disabled:opacity-50">
                       <Send size={17} />
                       Enviar a cocina/barra
                     </button>
@@ -1016,7 +1025,7 @@ export default function TableManager({
               <div className="rounded-[24px] bg-[linear-gradient(180deg,#0f172a_0%,#1f2937_100%)] p-5 text-white">
                 <h4 className="font-semibold">Acciones de mesa</h4>
                 <div className="mt-4 grid gap-3">
-                  <button type="button" onClick={() => openConfig(selectedState)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/10">
+                  <button type="button" onClick={() => openConfig(selectedState)} data-testid="edit-table-button" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/10">
                     <Pencil size={16} />
                     Editar mesa fisica
                   </button>
@@ -1025,13 +1034,13 @@ export default function TableManager({
                       <div className="grid gap-2">
                         <label className="text-xs uppercase tracking-[0.16em] text-slate-400">Mesero</label>
                         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                          <input value={openForm.waiterName} onChange={(event) => setOpenForm((current) => ({ ...current, waiterName: event.target.value }))} className="rounded-2xl bg-slate-900 px-3 py-2 text-sm outline-none ring-1 ring-white/10" />
-                          <button type="button" onClick={handleReassignWaiter} className="rounded-2xl bg-white/10 px-3 py-2 text-sm font-semibold">
+                          <input value={openForm.waiterName} onChange={(event) => setOpenForm((current) => ({ ...current, waiterName: event.target.value }))} data-testid="table-reassign-waiter-input" className="rounded-2xl bg-slate-900 px-3 py-2 text-sm outline-none ring-1 ring-white/10" />
+                          <button type="button" onClick={handleReassignWaiter} data-testid="table-reassign-waiter-button" className="rounded-2xl bg-white/10 px-3 py-2 text-sm font-semibold">
                             OK
                           </button>
                         </div>
                       </div>
-                      <button type="button" onClick={handleRequestBill} disabled={busy || !selectedState.order} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
+                      <button type="button" onClick={handleRequestBill} disabled={busy || !selectedState.order} data-testid="request-bill-button" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50">
                         <HandCoins size={16} />
                         Solicitar cuenta
                       </button>

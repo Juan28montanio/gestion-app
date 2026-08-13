@@ -626,12 +626,12 @@ export default function POSOrder({
 
   return (
     <>
-      <section className="grid gap-5 xl:gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(430px,0.9fr)]">
+      <section data-testid="pos-module" className="grid gap-5 xl:gap-6 2xl:grid-cols-[minmax(0,1fr)_minmax(430px,0.9fr)]">
         <div className="rounded-[28px] bg-white/85 p-5 shadow-lg ring-1 ring-white/70 backdrop-blur xl:p-6">
           <div className="mb-5">
             <div className="min-w-0">
               <h2 className="text-xl font-semibold text-slate-900">Punto de venta</h2>
-              <p className="mt-1 max-w-2xl break-words text-sm leading-6 text-slate-500">
+              <p data-testid="sale-mode-text" className="mt-1 max-w-2xl break-words text-sm leading-6 text-slate-500">
                 {selectedTable
                   ? selectedTable.isQuickSale
                     ? "Modo venta rapida activo."
@@ -654,6 +654,7 @@ export default function POSOrder({
                   ? "Venta inmediata sin ocupar mesa"
                   : `${table.capacity || table.seats} puestos`
               }
+              testId="select-sale-type-button"
             />
 
             <div className="min-w-0">
@@ -665,6 +666,7 @@ export default function POSOrder({
                     placeholder="Buscar producto..."
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
+                    data-testid="pos-product-search-input"
                     className="w-full min-w-0 bg-transparent text-sm outline-none"
                   />
                 </div>
@@ -672,12 +674,13 @@ export default function POSOrder({
                 <button
                   type="button"
                   onClick={() => setIsCartDrawerOpen(true)}
+                  data-testid="cart-button"
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white md:min-w-[196px] 2xl:hidden"
                 >
                   <ShoppingCart size={16} />
-                  <span>Ver carrito</span>
+                  <span data-testid="cart-label">Ver carrito</span>
                   <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium text-slate-200">
-                    {itemCount} Â· {formatCOP(chargedTotal)}
+                    <span data-testid="cart-count">{itemCount}</span> · <span data-testid="cart-total">{formatCOP(chargedTotal)}</span>
                   </span>
                 </button>
               </div>
@@ -700,12 +703,13 @@ export default function POSOrder({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div data-testid="category-navigation" className="flex flex-wrap gap-2">
             {categories.map((category) => (
               <button
                 key={category}
                 type="button"
                 onClick={() => setSelectedCategory(category)}
+                data-testid={`category-${String(category === "all" ? "all" : category).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                 className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
                   selectedCategory === category
                     ? "bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] text-white"
@@ -718,34 +722,38 @@ export default function POSOrder({
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
+          <div data-testid="products-grid" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
             {filteredProducts.length ? (
               filteredProducts.map((product) => (
                 <button
                   key={product.id}
                   type="button"
                   onClick={() => handleAddProduct(product)}
+                  data-testid="product-item"
+                  data-product-id={product.id}
+                  data-category={product.category || ""}
+                  data-price={product.price || 0}
                   className="group rounded-[28px] bg-white text-left shadow-lg ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-xl"
                 >
                   <div
                     className={`rounded-t-[28px] bg-gradient-to-br p-5 ${getCategoryStyle(product.category)}`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em]">
+                      <span data-testid="product-category" className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em]">
                         {product.category}
                       </span>
                       <div className="rounded-2xl bg-white/70 p-3">
                         <ShoppingBag size={18} />
                       </div>
                     </div>
-                    <h3 className="mt-8 line-clamp-2 text-lg font-semibold">{product.name}</h3>
+                    <h3 data-testid="product-name" className="mt-8 line-clamp-2 text-lg font-semibold">{product.name}</h3>
                   </div>
 
                   <div className="p-5">
                     <div className="flex items-end justify-between gap-3">
                       <div>
                         <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                          <span data-testid="product-has-recipe" className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
                             String(product.recipe_mode || "direct") === "composed"
                               ? "bg-[#fff7df] text-[#946200]"
                               : "bg-slate-100 text-slate-500"
@@ -756,19 +764,19 @@ export default function POSOrder({
                             {getCompactProductOperationalCopy(product)}
                           </span>
                         </div>
-                        <p className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                        <p data-testid="product-price-label" className="text-xs uppercase tracking-[0.18em] text-slate-400">
                           Precio
                         </p>
-                        <p className="mt-2 text-lg font-semibold text-slate-900">
+                        <p data-testid="product-price-amount" className="mt-2 text-lg font-semibold text-slate-900">
                           {formatCOP(product.price)}
                         </p>
-                        <p className="mt-2 hidden line-clamp-2 text-xs leading-5 text-slate-500 sm:block">
+                        <p data-testid="product-description" className="mt-2 hidden line-clamp-2 text-xs leading-5 text-slate-500 sm:block">
                           {getProductOperationalCopy(product).detail}
                         </p>
                       </div>
 
-                      <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-                        Stock {product.stock}
+                      <span data-testid="product-stock" className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                        Stock <span data-testid="product-stock-value">{product.stock}</span>
                       </span>
                     </div>
                   </div>
@@ -977,6 +985,7 @@ export default function POSOrder({
             <button
               type="button"
               onClick={() => setPaymentMode("total")}
+              data-testid="payment-total-mode-button"
               className={`rounded-3xl px-5 py-4 text-left ring-1 transition ${
                 paymentMode === "total"
                   ? "bg-emerald-50 text-emerald-900 ring-emerald-300"
@@ -989,6 +998,7 @@ export default function POSOrder({
             <button
               type="button"
               onClick={() => setPaymentMode("split")}
+              data-testid="payment-split-mode-button"
               className={`rounded-3xl px-5 py-4 text-left ring-1 transition ${
                 paymentMode === "split"
                   ? "bg-sky-50 text-sky-900 ring-sky-300"
@@ -1054,6 +1064,7 @@ export default function POSOrder({
                   <button
                     type="button"
                     onClick={handleAddSplitPaymentLine}
+                    data-testid="add-split-payment-line-button"
                     className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
                   >
                     <Plus size={16} />
@@ -1077,6 +1088,7 @@ export default function POSOrder({
                         <select
                           id={`split-method-${line.id}`}
                           value={line.method}
+                          data-testid="split-payment-method-select"
                           onChange={(event) =>
                             handleUpdateSplitPaymentLine(line.id, { method: event.target.value })
                           }
@@ -1103,6 +1115,7 @@ export default function POSOrder({
                           min="0"
                           step="1"
                           value={line.amount}
+                          data-testid="split-payment-amount-input"
                           onChange={(event) =>
                             handleUpdateSplitPaymentLine(line.id, { amount: event.target.value })
                           }
@@ -1115,6 +1128,7 @@ export default function POSOrder({
                           type="button"
                           onClick={() => handleRemoveSplitPaymentLine(line.id)}
                           disabled={splitPayments.length === 1}
+                          data-testid="remove-split-payment-line-button"
                           className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 disabled:opacity-50"
                         >
                           Quitar
@@ -1149,6 +1163,7 @@ export default function POSOrder({
                 setIsPaymentModalOpen(false);
                 setPaymentModalNotice("");
               }}
+              data-testid="payment-modal-back-button"
               className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700"
             >
               Volver
@@ -1157,6 +1172,8 @@ export default function POSOrder({
               type="button"
               onClick={paymentMode === "split" ? handleSplitPayment : handlePay}
               disabled={paymentMode === "split" ? !canConfirmSplitPayment : !canConfirmTotalPayment}
+              data-testid="confirm-payment-button"
+              aria-busy={loading}
               className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white"
             >
               {loading
@@ -1172,6 +1189,7 @@ export default function POSOrder({
               type="button"
               onClick={handleChargeToAccount}
               disabled={!canChargeToAccount}
+              data-testid="charge-to-account-button"
               className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800"
             >
               Cargar a cuenta de {selectedCustomer.name}
@@ -1203,5 +1221,6 @@ export default function POSOrder({
     </>
   );
 }
+
 
 

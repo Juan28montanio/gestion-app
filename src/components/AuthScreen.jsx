@@ -15,15 +15,21 @@ const EMPTY_REGISTER = {
   confirmPassword: "",
 };
 
-function AuthField({ label, type = "text", value, onChange, placeholder, hint }) {
+function AuthField({ label, type = "text", value, onChange, placeholder, hint, testId }) {
+  const inputId = testId ? testId.replace("-input", "") : undefined;
+
   return (
-    <label className="grid gap-2 text-sm text-slate-700">
+    <label data-testid={testId ? `${inputId}-field` : undefined} className="grid gap-2 text-sm text-slate-700" htmlFor={inputId}>
       <span className="font-medium">{label}</span>
       <input
+        id={inputId}
         type={type}
         value={value}
         onChange={onChange}
         placeholder={placeholder}
+        data-testid={testId}
+        aria-label={label}
+        required
         className="h-[52px] rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
       />
       {hint ? <span className="text-xs leading-5 text-slate-500">{hint}</span> : null}
@@ -150,6 +156,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                   setError("");
                   setMode("login");
                 }}
+                data-testid="auth-login-tab"
                 className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   mode === "login" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
                 }`}
@@ -162,6 +169,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                   setError("");
                   setMode("register");
                 }}
+                data-testid="auth-register-tab"
                 className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   mode === "register" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
                 }`}
@@ -171,7 +179,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
             </div>
 
             {mode === "login" ? (
-              <form onSubmit={handleLogin} className="grid gap-5">
+              <form data-testid="login-form" onSubmit={handleLogin} className="grid gap-5">
                 <div>
                   <h2 className="text-[2.4rem] font-bold tracking-[-0.04em] text-slate-950 sm:text-3xl">
                     Entra a tu operacion
@@ -189,6 +197,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                     setLoginForm((current) => ({ ...current, email: event.target.value }))
                   }
                   placeholder="admin@negocio.com"
+                  testId="login-email-input"
                 />
                 <AuthField
                   label="Contrasena"
@@ -198,24 +207,27 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                     setLoginForm((current) => ({ ...current, password: event.target.value }))
                   }
                   placeholder="Ingresa tu contrasena"
+                  testId="login-password-input"
                 />
 
                 {error ? (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {error}
+                  <div data-testid="login-error-container" role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    <span data-testid="login-error-message">{error}</span>
                   </div>
                 ) : null}
 
                 <button
                   type="submit"
                   disabled={isBusy}
+                  data-testid="login-submit-button"
+                  aria-busy={isBusy}
                   className="inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-slate-900 px-6 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
                 >
                   {isBusy ? <LoaderCircle className="animate-spin" size={18} /> : null}
                   Entrar al sistema
                 </button>
 
-                <p className="text-sm text-slate-500">
+                <p data-testid="login-register-section" className="text-sm text-slate-500">
                   Si aun no tienes una cuenta,{" "}
                   <button
                     type="button"
@@ -223,6 +235,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                       setError("");
                       setMode("register");
                     }}
+                    data-testid="login-register-link"
                     className="font-semibold text-slate-900"
                   >
                     registra tu negocio
@@ -231,7 +244,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                 </p>
               </form>
             ) : (
-              <form onSubmit={handleRegister} className="grid gap-5">
+              <form data-testid="register-form" onSubmit={handleRegister} className="grid gap-5">
                 <div>
                   <h2 className="text-[2.4rem] font-bold tracking-[-0.04em] text-slate-950 sm:text-3xl">
                     Crea tu espacio de trabajo
@@ -252,6 +265,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                   }
                   placeholder="Brunch Central"
                   hint="Este nombre aparecera en el sistema y en la cuenta principal."
+                  testId="register-business-name-input"
                 />
                 <AuthField
                   label="Nombre del administrador"
@@ -260,6 +274,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                     setRegisterForm((current) => ({ ...current, adminName: event.target.value }))
                   }
                   placeholder="Laura Mendoza"
+                  testId="register-admin-name-input"
                 />
                 <AuthField
                   label="Correo"
@@ -269,6 +284,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                     setRegisterForm((current) => ({ ...current, email: event.target.value }))
                   }
                   placeholder="admin@brunchcentral.com"
+                  testId="register-email-input"
                 />
                 <AuthField
                   label="Contrasena"
@@ -279,6 +295,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                   }
                   placeholder="Minimo 6 caracteres"
                   hint="Elige una contrasena facil de recordar para el administrador."
+                  testId="register-password-input"
                 />
                 <AuthField
                   label="Confirmar contrasena"
@@ -291,17 +308,20 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                     }))
                   }
                   placeholder="Repite la contrasena"
+                  testId="register-confirm-password-input"
                 />
 
                 {error ? (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {error}
+                  <div data-testid="register-error-container" role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    <span data-testid="register-error-message">{error}</span>
                   </div>
                 ) : null}
 
                 <button
                   type="submit"
                   disabled={isBusy}
+                  data-testid="register-submit-button"
+                  aria-busy={isBusy}
                   className="inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-slate-900 px-6 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-70"
                 >
                   {isBusy ? <LoaderCircle className="animate-spin" size={18} /> : null}
@@ -316,6 +336,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                       setError("");
                       setMode("login");
                     }}
+                    data-testid="go-to-login-button"
                     className="font-semibold text-slate-900"
                   >
                     vuelve al ingreso

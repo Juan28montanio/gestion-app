@@ -156,7 +156,7 @@ async function main() {
   }
 
   const [sales, saleItems, payments, cashMovements] = await Promise.all([
-    fetchRows(client, "sales", "id,cash_session_id"),
+    fetchRows(client, "sales", "id,cash_session_id,total,paid_amount,pending_amount,status,payment_status"),
     fetchRows(client, "sale_items", "id,sale_id,product_id"),
     fetchRows(client, "payments", "id,sale_id,cash_session_id"),
     fetchRows(client, "cash_movements", "id,sale_id,payment_id,cash_session_id"),
@@ -169,6 +169,16 @@ async function main() {
   const cashSessionIds = new Set(cashSessions.map((row) => row.id));
 
   const salesWithoutPayments = sales.filter((row) => !saleIdsWithPayments.has(row.id));
+  const pendingSalesWithoutPayments = salesWithoutPayments.filter((row) => Number(row.pending_amount || 0) > 0);
+  const paidSalesWithoutPayments = salesWithoutPayments.filter((row) => {
+    const pendingAmount = Number(row.pending_amount || 0);
+    const paidAmount = Number(row.paid_amount || 0);
+    const total = Number(row.total || 0);
+    return pendingAmount <= 0 && (paidAmount > 0 || total === 0 || row.payment_status === "paid");
+  });
+  const unusualSalesWithoutPayments = salesWithoutPayments.filter(
+    (row) => !pendingSalesWithoutPayments.includes(row) && !paidSalesWithoutPayments.includes(row)
+  );
   const itemsWithoutSale = saleItems.filter((row) => row.sale_id && !saleIds.has(row.sale_id));
   const paymentsWithoutSale = payments.filter((row) => row.sale_id && !saleIds.has(row.sale_id));
   const movementsWithoutSession = cashMovements.filter(
@@ -198,6 +208,9 @@ async function main() {
     authenticatedCounts,
     diagnostics: {
       salesWithoutPayments: salesWithoutPayments.length,
+      pendingSalesWithoutPayments: pendingSalesWithoutPayments.length,
+      paidSalesWithoutPayments: paidSalesWithoutPayments.length,
+      unusualSalesWithoutPayments: unusualSalesWithoutPayments.length,
       itemsWithoutSale: itemsWithoutSale.length,
       paymentsWithoutSale: paymentsWithoutSale.length,
       movementsWithoutSession: movementsWithoutSession.length,

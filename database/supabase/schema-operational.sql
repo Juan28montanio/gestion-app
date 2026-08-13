@@ -28,8 +28,8 @@ create table if not exists public.tables (
   updated_at timestamptz not null default now(),
   constraint tables_number_unique unique (business_id, number),
   constraint tables_capacity_positive check (capacity > 0),
-  constraint tables_status_check check (status in ('free', 'disabled', 'waiting_order', 'occupied', 'order_sent', 'preparing', 'ready', 'waiting_payment', 'cleaning')),
-  constraint tables_shape_check check (shape in ('square', 'round', 'bar', 'booth'))
+  constraint tables_status_check check (status in ('free', 'reserved', 'disabled', 'waiting_order', 'occupied', 'order_sent', 'preparing', 'ready', 'waiting_payment', 'cleaning')),
+  constraint tables_shape_check check (shape in ('square', 'round', 'rectangle', 'bar', 'booth'))
 );
 
 create table if not exists public.table_sessions (

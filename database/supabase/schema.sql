@@ -6,6 +6,7 @@ create extension if not exists pgcrypto;
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at = now();
@@ -49,7 +50,7 @@ create table if not exists public.business_users (
   email text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint business_users_role_check check (role in ('owner', 'admin', 'manager', 'cashier', 'waiter', 'kitchen', 'staff')),
+  constraint business_users_role_check check (role in ('owner', 'admin', 'manager', 'cashier', 'waiter', 'kitchen', 'accountant', 'staff')),
   constraint business_users_status_check check (status in ('active', 'inactive', 'invited', 'blocked')),
   constraint business_users_business_user_unique unique (business_id, user_id)
 );
@@ -269,10 +270,16 @@ create index if not exists products_business_id_name_idx on public.products(busi
 create index if not exists suppliers_business_id_name_idx on public.suppliers(business_id, name);
 create index if not exists customers_business_id_name_idx on public.customers(business_id, name);
 create index if not exists sales_business_id_created_at_idx on public.sales(business_id, created_at desc);
+create index if not exists sales_cash_session_id_idx on public.sales(cash_session_id);
+create index if not exists sales_customer_id_idx on public.sales(customer_id);
 create index if not exists sale_items_sale_id_idx on public.sale_items(sale_id);
 create index if not exists payments_sale_id_idx on public.payments(sale_id);
+create index if not exists payments_cash_session_id_idx on public.payments(cash_session_id);
 create index if not exists cash_sessions_business_status_idx on public.cash_sessions(business_id, status);
 create index if not exists cash_movements_business_created_at_idx on public.cash_movements(business_id, created_at desc);
+create index if not exists cash_movements_cash_session_id_idx on public.cash_movements(cash_session_id);
+create index if not exists cash_movements_sale_id_idx on public.cash_movements(sale_id);
+create index if not exists cash_movements_payment_id_idx on public.cash_movements(payment_id);
 create index if not exists inventory_movements_business_created_at_idx on public.inventory_movements(business_id, created_at desc);
 create index if not exists audit_logs_business_created_at_idx on public.audit_logs(business_id, created_at desc);
 

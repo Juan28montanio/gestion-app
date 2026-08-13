@@ -44,7 +44,6 @@ export async function listCashMovements(businessId, cashSessionId = "") {
   return data || [];
 }
 
-// TODO: open/close cash sessions should become RPC calls to keep totals atomic.
 export async function openCashSessionWithRpc(payload) {
   const client = getSupabaseClient();
   const { data, error } = await client.rpc("open_cash_session", payload);
@@ -55,6 +54,20 @@ export async function openCashSessionWithRpc(payload) {
 export async function closeCashSessionWithRpc(payload) {
   const client = getSupabaseClient();
   const { data, error } = await client.rpc("close_cash_session", payload);
+  if (error) throw error;
+  return data;
+}
+
+export async function settleSaleDebtWithRpc(payload) {
+  const client = getSupabaseClient();
+  const { data, error } = await client.rpc("settle_sale_debt", payload);
+  if (error) throw error;
+  return data;
+}
+
+export async function settleAccountPayableWithRpc(payload) {
+  const client = getSupabaseClient();
+  const { data, error } = await client.rpc("settle_account_payable", payload);
   if (error) throw error;
   return data;
 }

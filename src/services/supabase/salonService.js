@@ -179,7 +179,6 @@ export function subscribeTables(businessId, callback) {
 export async function createTableRow(businessId, tableInput) {
   const client = getSupabaseClient();
   const payload = {
-    business_id: businessId,
     number: Number(tableInput.number),
     name: String(tableInput.name || `Mesa ${tableInput.number}`).trim(),
     capacity: Number(tableInput.capacity || 2),
@@ -193,9 +192,13 @@ export async function createTableRow(businessId, tableInput) {
     is_active: tableInput.isActive ?? tableInput.is_active ?? true,
   };
 
-  const { data, error } = await client.from("tables").insert(payload).select("id").single();
+  const { data, error } = await client.rpc("save_table_layout", {
+    p_business_id: businessId,
+    p_table_id: null,
+    p_table: payload,
+  });
   if (error) throw error;
-  return data.id;
+  return data;
 }
 
 export async function updateTableRow(tableId, businessId, tableInput) {
@@ -214,7 +217,11 @@ export async function updateTableRow(tableId, businessId, tableInput) {
     is_active: tableInput.isActive ?? tableInput.is_active ?? true,
   };
 
-  const { error } = await client.from("tables").update(payload).eq("id", tableId).eq("business_id", businessId);
+  const { error } = await client.rpc("save_table_layout", {
+    p_business_id: businessId,
+    p_table_id: tableId,
+    p_table: payload,
+  });
   if (error) throw error;
 }
 

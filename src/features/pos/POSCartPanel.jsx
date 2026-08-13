@@ -67,14 +67,15 @@ export default function POSCartPanel({
 
   return (
     <div
+      data-testid={mobile ? "checkout-panel-mobile" : "checkout-panel"}
       className={`rounded-[28px] bg-[linear-gradient(180deg,#0f172a_0%,#1f2937_100%)] p-6 text-white shadow-lg ${
         mobile ? "h-full rounded-none" : ""
       }`}
     >
-      <div className="mb-5 flex items-start justify-between gap-3">
+      <header data-testid="checkout-header" className="mb-5 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">Carrito de pedido</h2>
-          <p className="text-sm text-slate-300">
+          <h2 data-testid="checkout-title" className="text-xl font-semibold">Carrito de pedido</h2>
+          <p data-testid="checkout-subtitle" className="text-sm text-slate-300">
             {selectedTable
               ? selectedTable.isQuickSale
                 ? "Venta rapida lista para pago inmediato."
@@ -87,14 +88,15 @@ export default function POSCartPanel({
           <button
             type="button"
             onClick={onClose}
+            data-testid="checkout-close"
             className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-slate-300"
           >
             <X size={18} />
           </button>
         ) : null}
-      </div>
+      </header>
 
-      <div className="mb-4">
+      <div data-testid="customer-section" className="mb-4">
         <POSSearchSelector
           label="Cliente"
           placeholder="Cliente ocasional"
@@ -152,12 +154,14 @@ export default function POSCartPanel({
           cartItems.map((item) => (
             <article
               key={item.lineId}
+              data-testid="cart-item"
+              data-item-id={item.productId || item.id || item.lineId}
               className="rounded-2xl border border-slate-800 bg-slate-900 p-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-medium">{item.name}</h3>
-                  <p className="text-xs text-slate-400">
+                  <h3 data-testid="item-name" className="font-medium">{item.name}</h3>
+                  <p data-testid="item-price" className="text-xs text-slate-400">
                     {item.useTicket
                       ? `Tiquetera aplicada · ${item.quantity} ticket(s)`
                       : `${formatCOP(item.price)} x ${item.quantity}`}
@@ -167,16 +171,18 @@ export default function POSCartPanel({
                 <button
                   type="button"
                   onClick={() => removeItem(item.lineId)}
+                  data-testid="item-remove-button"
                   className="text-xs font-medium text-rose-300"
                 >
                   Quitar
                 </button>
               </div>
 
-              <div className="mt-3 flex items-center gap-2">
+              <div data-testid="quantity-controls" className="mt-3 flex items-center gap-2">
                 <button
                   type="button"
                   className="rounded-full border border-slate-700 px-2 py-1 text-sm"
+                  data-testid="quantity-decrease"
                   onClick={() =>
                     updateItem(item.lineId, {
                       quantity: Math.max(1, (item.quantity || 1) - 1),
@@ -185,10 +191,11 @@ export default function POSCartPanel({
                 >
                   -
                 </button>
-                <span className="min-w-8 text-center text-sm">{item.quantity}</span>
+                <span data-testid="quantity-input" className="min-w-8 text-center text-sm">{item.quantity}</span>
                 <button
                   type="button"
                   className="rounded-full border border-slate-700 px-2 py-1 text-sm"
+                  data-testid="quantity-increase"
                   onClick={() =>
                     updateItem(item.lineId, {
                       quantity: (item.quantity || 1) + 1,
@@ -204,6 +211,7 @@ export default function POSCartPanel({
                 value={item.note || ""}
                 onChange={(event) => updateItem(item.lineId, { note: event.target.value })}
                 placeholder="Notas para cocina o barra..."
+                data-testid="item-notes"
                 className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none"
               />
               {selectedCustomerTicketState?.isActive && item.ticket_eligible ? (
@@ -243,31 +251,31 @@ export default function POSCartPanel({
           </div>
         ) : null}
 
-        <div className="mb-4 rounded-[24px] border border-emerald-400/15 bg-gradient-to-r from-emerald-500/15 via-emerald-400/8 to-white/5 px-4 py-4">
+        <section data-testid="payment-section" className="mb-4 rounded-[24px] border border-emerald-400/15 bg-gradient-to-r from-emerald-500/15 via-emerald-400/8 to-white/5 px-4 py-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
+              <p data-testid="total-label" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
                 Centro de cobro
               </p>
-              <p className="mt-2 text-2xl font-black text-white">{formatCOP(chargedTotal)}</p>
-              <p className={`mt-2 text-sm font-medium ${paymentReadiness.tone}`}>
+              <p data-testid="total-amount" className="mt-2 text-2xl font-black text-white">{formatCOP(chargedTotal)}</p>
+              <p data-testid="total-description" className={`mt-2 text-sm font-medium ${paymentReadiness.tone}`}>
                 {paymentReadiness.label}
               </p>
               <p className="mt-1 text-xs text-slate-300">{paymentReadiness.detail}</p>
             </div>
             <div className="rounded-2xl bg-slate-950/60 px-4 py-3 text-right">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Metodo actual</p>
-              <p className="mt-2 text-sm font-semibold text-white">
+              <p data-testid="payment-method-label" className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Metodo actual</p>
+              <p data-testid="payment-method-value" className="mt-2 text-sm font-semibold text-white">
                 {PAYMENT_METHOD_LABELS[paymentMethod] || paymentMethod}
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-          <div className="flex items-center justify-between text-sm text-slate-300">
+        <div data-testid="payment-breakdown" className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+          <div data-testid="line-subtotal" className="flex items-center justify-between text-sm text-slate-300">
             <span>Total real de productos</span>
-            <span>{formatCOP(subtotal)}</span>
+            <span data-testid="line-subtotal-value">{formatCOP(subtotal)}</span>
           </div>
           {ticketCoveredAmount > 0 ? (
             <div className="flex items-center justify-between text-sm text-amber-200">
@@ -275,11 +283,11 @@ export default function POSCartPanel({
               <span>-{formatCOP(ticketCoveredAmount)}</span>
             </div>
           ) : null}
-          <div className="flex items-center justify-between text-sm text-slate-200">
+          <div data-testid="line-to-charge" className="flex items-center justify-between text-sm text-slate-200">
             <span>Total a cobrar</span>
-            <span className="font-semibold">{formatCOP(payableSubtotal)}</span>
+            <span data-testid="line-to-charge-value" className="font-semibold">{formatCOP(payableSubtotal)}</span>
           </div>
-          <div className="grid gap-2">
+          <div data-testid="line-final-charged" className="grid gap-2">
             <label htmlFor={chargedTotalId} className="text-xs uppercase tracking-[0.18em] text-slate-400">
               Valor final cobrado
             </label>
@@ -290,12 +298,13 @@ export default function POSCartPanel({
               step="1"
               value={chargedTotalInput}
               onChange={(event) => setChargedTotalInput(event.target.value)}
+              data-testid="line-final-charged-input"
               className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none"
             />
           </div>
           {isCashPayment && chargedTotal > 0 ? (
             <div className="grid gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-              <div className="grid gap-2">
+              <div data-testid="line-received" className="grid gap-2">
                 <label
                   htmlFor={cashReceivedId}
                   className="text-xs uppercase tracking-[0.18em] text-emerald-200"
@@ -309,36 +318,39 @@ export default function POSCartPanel({
                   step="1"
                   value={cashReceivedInput}
                   onChange={(event) => setCashReceivedInput(event.target.value)}
+                  data-testid="line-received-input"
                   className="rounded-2xl border border-emerald-400/20 bg-slate-900 px-4 py-3 text-sm text-white outline-none"
                 />
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div data-testid="quick-amounts" className="flex flex-wrap gap-2">
                 {cashSuggestions.map((amount) => (
                   <button
                     key={`cash-suggestion-${amount}`}
                     type="button"
                     onClick={() => setCashReceivedInput(String(amount))}
+                    data-testid={amount === chargedTotal ? "exact-amount" : `amount-${amount}`}
                     className="rounded-full border border-emerald-400/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-emerald-100 transition hover:bg-white/15"
                   >
                     {amount === chargedTotal ? "Exacto" : formatCOP(amount)}
                   </button>
                 ))}
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="rounded-2xl bg-slate-950/60 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Cambio</p>
-                  <p className="mt-1 text-lg font-semibold text-emerald-200">{formatCOP(cashChange)}</p>
+              <div data-testid="change-section" className="grid gap-2 sm:grid-cols-2">
+                <div data-testid="change-display" className="rounded-2xl bg-slate-950/60 px-4 py-3">
+                  <p data-testid="change-label" className="text-xs uppercase tracking-[0.18em] text-slate-400">Cambio</p>
+                  <p data-testid="change-amount" className="mt-1 text-lg font-semibold text-emerald-200">{formatCOP(cashChange)}</p>
                 </div>
-                <div className="rounded-2xl bg-slate-950/60 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Falta por recibir</p>
-                  <p className="mt-1 text-lg font-semibold text-amber-200">{formatCOP(cashShortage)}</p>
+                <div data-testid="missing-section" className="rounded-2xl bg-slate-950/60 px-4 py-3">
+                  <p data-testid="missing-label" className="text-xs uppercase tracking-[0.18em] text-slate-400">Falta por recibir</p>
+                  <p data-testid="missing-amount" className="mt-1 text-lg font-semibold text-amber-200">{formatCOP(cashShortage)}</p>
                 </div>
               </div>
             </div>
           ) : null}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-300">{adjustmentLabel}</span>
+          <div data-testid="adjustments-section" className="flex items-center justify-between text-sm">
+            <span data-testid="adjustments-label" className="text-slate-300">{adjustmentLabel}</span>
             <span
+              data-testid="adjustments-value"
               className={
                 adjustmentAmount < 0
                   ? "font-semibold text-amber-300"
@@ -362,7 +374,7 @@ export default function POSCartPanel({
           ) : null}
         </div>
 
-        <div className="mb-5 mt-5">
+          <div data-testid="payment-methods" className="mb-5 mt-5">
           {selectedCustomer && selectedCustomerTicketState?.isActive && payableSubtotal === 0 && ticketCoveredAmount > 0 ? (
             <button
               type="button"
@@ -374,13 +386,14 @@ export default function POSCartPanel({
             </button>
           ) : null}
 
-          <p className="mb-3 text-sm text-slate-300">Metodo de pago</p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <p data-testid="payment-methods-label" className="mb-3 text-sm text-slate-300">Metodo de pago</p>
+          <div data-testid="payment-methods-grid" className="grid gap-2 sm:grid-cols-2">
             {paymentOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => setPaymentMethod(option.value)}
+                data-testid={`payment-method-${option.value}`}
                 className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${
                   paymentMethod === option.value
                     ? "border-emerald-400 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-950/20"
@@ -394,11 +407,12 @@ export default function POSCartPanel({
         </div>
 
         <div className="sticky bottom-0 z-10 -mx-2 mt-5 rounded-[24px] border border-slate-800 bg-[rgba(15,23,42,0.96)] p-3 shadow-[0_-12px_30px_rgba(2,6,23,0.35)] backdrop-blur">
-          <div className="grid gap-3">
+          <div data-testid="checkout-actions" className="grid gap-3">
             <button
               type="button"
               onClick={handleCommand}
               disabled={loading || !selectedTable || cartItems.length === 0 || selectedTable?.isQuickSale}
+              data-testid="immediate-sale-button"
               className="rounded-2xl border border-[#d4a72c]/30 bg-[#fff7df] px-4 py-3 text-sm font-semibold text-[#7a5200] transition hover:bg-[#fde9a8] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {selectedTable?.isQuickSale ? "Venta inmediata" : "Comandar"}
@@ -414,6 +428,8 @@ export default function POSCartPanel({
                   cashLockInfo?.blocked ||
                   (!activeOrder?.id && cartItems.length === 0)
                 }
+                data-testid="charge-now-button"
+                aria-busy={loading}
                 className="rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition hover:from-emerald-400 hover:to-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cobrar ahora
@@ -422,6 +438,7 @@ export default function POSCartPanel({
                 type="button"
                 onClick={handleOpenCancel}
                 disabled={loading || !selectedTable || !activeOrder?.id}
+                data-testid="cancel-order-button"
                 className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancelar orden

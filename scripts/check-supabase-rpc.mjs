@@ -123,6 +123,92 @@ async function main() {
     )
   );
 
+  results.push(
+    await expectRpcFailure(
+      client,
+      "settle_sale_debt",
+      {
+        p_business_id: businessId,
+        p_sale_id: "00000000-0000-0000-0000-000000000000",
+        p_amount: 1,
+        p_method: "cash",
+        p_reference: "safe rpc smoke",
+        p_notes: "safe rpc smoke",
+      },
+      ["Sale not found"]
+    )
+  );
+
+  results.push(
+    await expectRpcFailure(
+      client,
+      "save_purchase",
+      {
+        p_business_id: businessId,
+        p_purchase_id: null,
+        p_purchase: {},
+        p_items: [],
+        p_confirm: false,
+        p_notes: "safe rpc smoke",
+      },
+      ["Purchase must include at least one item"]
+    )
+  );
+
+  results.push(
+    await expectRpcFailure(
+      client,
+      "cancel_purchase",
+      {
+        p_purchase_id: "00000000-0000-0000-0000-000000000000",
+        p_reason: "safe rpc smoke",
+      },
+      ["Purchase not found"]
+    )
+  );
+
+  results.push(
+    await expectRpcFailure(
+      client,
+      "confirm_purchase",
+      {
+        p_business_id: businessId,
+        p_purchase_id: "00000000-0000-0000-0000-000000000000",
+        p_notes: "safe rpc smoke",
+      },
+      ["Purchase not found"]
+    )
+  );
+
+  results.push(
+    await expectRpcFailure(
+      client,
+      "settle_account_payable",
+      {
+        p_business_id: businessId,
+        p_account_payable_id: "00000000-0000-0000-0000-000000000000",
+        p_amount: 1,
+        p_method: "cash",
+        p_reference: "safe rpc smoke",
+        p_notes: "safe rpc smoke",
+      },
+      ["Account payable not found"]
+    )
+  );
+
+  results.push(
+    await expectRpcFailure(
+      client,
+      "save_table_layout",
+      {
+        p_business_id: businessId,
+        p_table_id: null,
+        p_table: { number: 0, capacity: 2, name: "safe rpc smoke" },
+      },
+      ["Table number must be positive"]
+    )
+  );
+
   console.log("Supabase RPC check");
   results.forEach((result) => console.log(formatResult(result)));
 

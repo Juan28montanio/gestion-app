@@ -1,5 +1,4 @@
 import {
-  BarChart3,
   Compass,
   Landmark,
   Package2,

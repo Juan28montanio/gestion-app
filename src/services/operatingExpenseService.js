@@ -1,14 +1,6 @@
 import { getSupabaseClient } from "../lib/supabaseClient";
 import { getOpenCashSession } from "./supabase/cashService";
 
-function sortOperatingExpenses(items = []) {
-  return [...items].sort((left, right) =>
-    String(right?.expense_date || "").localeCompare(String(left?.expense_date || ""), "es", {
-      sensitivity: "base",
-    })
-  );
-}
-
 function toNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : NaN;
@@ -59,32 +51,82 @@ function buildOperatingExpensePayload(expense = {}) {
   };
 }
 
+function adaptOperatingExpense(row = {}) {
+  const metadata = row.metadata || {};
+  return {
+    id: row.id,
+    business_id: row.business_id,
+    cash_session_id: row.cash_session_id,
+    concept: row.description || metadata.concept || "Gasto operativo",
+    category: metadata.category || "Gasto general",
+    expense_date: metadata.expense_date || row.created_at?.slice?.(0, 10) || "",
+    payment_method: row.method || "cash",
+    amount: Number(row.amount || 0),
+    total: Number(row.amount || 0),
+    notes: metadata.notes || "",
+    vendor_name: metadata.vendor_name || "",
+    status: row.status || "valid",
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    source: "supabase",
+  };
+}
+
+export async function listOperatingExpenses(businessId) {
+  const normalizedBusinessId = String(businessId || "").trim();
+  if (!normalizedBusinessId) return [];
+
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("cash_movements")
+    .select("*")
+    .eq("business_id", normalizedBusinessId)
+    .in("type", ["operating_expense", "operational_expense"])
+    .neq("status", "reversed")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(adaptOperatingExpense);
+}
+
 export function subscribeToOperatingExpenses(businessId, callback) {
   if (!businessId) {
     callback([]);
     return () => {};
   }
 
-  callback([]);
-  return () => {};
-/*
-  const expensesQuery = query(
-    operatingExpensesCollection,
-    where("business_id", "==", businessId)
-  );
+  const client = getSupabaseClient();
+  let cancelled = false;
+  const publish = () => {
+    listOperatingExpenses(businessId)
+      .then((expenses) => {
+        if (!cancelled) callback(expenses);
+      })
+      .catch((error) => {
+        console.error("[operatingExpenses]", error);
+        if (!cancelled) callback([]);
+      });
+  };
 
-  return onSnapshot(expensesQuery, (snapshot) => {
-    callback(
-      sortOperatingExpenses(
-        snapshot.docs.map((snapshotDoc) => ({ id: snapshotDoc.id, ...snapshotDoc.data() }))
-      )
-    );
-  }, createSubscriptionErrorHandler({
-    scope: "operating_expenses:subscribeToOperatingExpenses",
-    callback,
-    emptyValue: [],
-  }));
-*/
+  const channel = client
+    .channel(`operating_expenses:${businessId}:${Date.now()}:${Math.random().toString(36).slice(2)}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "cash_movements",
+        filter: `business_id=eq.${businessId}`,
+      },
+      publish
+    )
+    .subscribe();
+
+  publish();
+  return () => {
+    cancelled = true;
+    client.removeChannel(channel);
+  };
 }
 
 export async function createOperatingExpense(expense) {
@@ -108,6 +150,7 @@ export async function createOperatingExpense(expense) {
       description: payload.concept,
       metadata: {
         source: "operating_expense",
+        concept: payload.concept,
         category: payload.category,
         expense_date: payload.expense_date,
         notes: payload.notes,

@@ -18,9 +18,9 @@ const LEVEL_OPTIONS = [
   { value: "low", label: "Baja" },
 ];
 
-function MetricCard({ label, value, tone = "bg-white text-slate-950 ring-slate-200" }) {
+function MetricCard({ label, value, tone = "bg-white text-slate-950 ring-slate-200", testId }) {
   return (
-    <article className={`rounded-2xl p-4 ring-1 ${tone}`}>
+    <article data-testid={testId} className={`rounded-2xl p-4 ring-1 ${tone}`}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</p>
       <p className="mt-2 text-xl font-black">{value}</p>
     </article>
@@ -83,6 +83,7 @@ export default function RecipeBookEditorModal({
               key={tab.id}
               type="button"
               onClick={() => onModalTabChange(tab.id)}
+              data-testid={`technical-sheet-tab-${tab.id}`}
               className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                 activeModalTab === tab.id
                   ? "bg-slate-950 text-white shadow-md shadow-slate-900/15"
@@ -101,6 +102,7 @@ export default function RecipeBookEditorModal({
                 label="Nombre"
                 required
                 value={form.name}
+                data-testid="technical-sheet-name-input"
                 onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               />
               <FormInput
@@ -143,6 +145,7 @@ export default function RecipeBookEditorModal({
                 onChange={(event) =>
                   setForm((current) => ({ ...current, productId: event.target.value }))
                 }
+                data-testid="technical-sheet-product-select"
               >
                 <option value="">Sin producto vinculado</option>
                 {products.map((product) => (
@@ -192,6 +195,7 @@ export default function RecipeBookEditorModal({
                 min="0.01"
                 step="0.01"
                 value={form.portions}
+                data-testid="technical-sheet-portions-input"
                 onChange={(event) =>
                   setForm((current) => ({ ...current, portions: event.target.value }))
                 }
@@ -271,6 +275,7 @@ export default function RecipeBookEditorModal({
               <button
                 type="button"
                 onClick={addComponentRow}
+                data-testid="technical-sheet-add-component-button"
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100"
               >
                 <Plus size={16} />
@@ -283,12 +288,14 @@ export default function RecipeBookEditorModal({
                 return (
                   <article
                     key={component.id}
+                    data-testid="technical-sheet-component-row"
                     className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200 xl:grid-cols-[1.35fr_0.6fr_0.5fr_0.65fr_0.65fr_auto]"
                   >
                     <FormSelect
                       label={`Origen ${index + 1}`}
                       value={sourceKey}
                       onChange={(event) => applySourceToComponent(index, event.target.value)}
+                      data-testid="technical-sheet-component-source"
                     >
                       <option value="">Seleccionar origen</option>
                       {sourceOptions.map((option) => (
@@ -306,6 +313,7 @@ export default function RecipeBookEditorModal({
                       min="0"
                       step="0.01"
                       value={component.quantity}
+                      data-testid="technical-sheet-component-quantity"
                       onChange={(event) => updateComponentRow(index, "quantity", event.target.value)}
                     />
                     <FormInput
@@ -319,6 +327,7 @@ export default function RecipeBookEditorModal({
                       min="0"
                       step="0.01"
                       value={component.unitCost}
+                      data-testid="technical-sheet-component-unit-cost"
                       onChange={(event) => updateComponentRow(index, "unitCost", event.target.value)}
                     />
                     <div className="rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
@@ -509,22 +518,23 @@ export default function RecipeBookEditorModal({
               options={MENU_CLASSIFICATIONS}
             />
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <MetricCard label="Costo total" value={formatCOP(previewCosting.totalCost)} />
-              <MetricCard label="Costo por porcion" value={formatCOP(previewCosting.costPerPortion)} />
+              <MetricCard testId="technical-sheet-total-cost" label="Costo total" value={formatCOP(previewCosting.totalCost)} />
+              <MetricCard testId="technical-sheet-cost-per-portion" label="Costo por porcion" value={formatCOP(previewCosting.costPerPortion)} />
               <MetricCard
+                testId="technical-sheet-suggested-price"
                 label="Precio sugerido"
                 value={formatCOP(previewCosting.suggestedPrice)}
                 tone="bg-[#fff7df] text-slate-950 ring-[#d4a72c]/25"
               />
-              <MetricCard label="Food cost" value={`${previewCosting.foodCostPercent.toFixed(1)}%`} />
-              <MetricCard label="Margen unitario" value={formatCOP(previewCosting.grossMargin)} />
-              <MetricCard label="Margen %" value={`${previewCosting.grossMarginPercent.toFixed(1)}%`} />
+              <MetricCard testId="technical-sheet-food-cost" label="Food cost" value={`${previewCosting.foodCostPercent.toFixed(1)}%`} />
+              <MetricCard testId="technical-sheet-gross-margin" label="Margen unitario" value={formatCOP(previewCosting.grossMargin)} />
+              <MetricCard testId="technical-sheet-gross-margin-percent" label="Margen %" value={`${previewCosting.grossMarginPercent.toFixed(1)}%`} />
             </div>
           </section>
         ) : null}
 
         {feedbackMessage ? (
-          <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+          <div data-testid="technical-sheet-error" className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
             {feedbackMessage}
           </div>
         ) : null}
@@ -540,6 +550,7 @@ export default function RecipeBookEditorModal({
           <button
             type="submit"
             disabled={isRecipeSubmitBlocked}
+            data-testid="technical-sheet-save-button"
             className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isSaving ? "Guardando..." : editingId ? "Actualizar ficha" : "Crear ficha"}

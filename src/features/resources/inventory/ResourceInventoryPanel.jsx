@@ -264,11 +264,18 @@ export default function ResourceInventoryPanel({
                 const isInactive = (supply.status || "active") === "inactive";
 
                 return (
-                  <tr key={supply.id} className={isInactive ? "bg-slate-50/70 text-slate-400" : "text-slate-700"}>
+                  <tr
+                    key={supply.id}
+                    data-testid="supply-row"
+                    data-supply-id={supply.id}
+                    data-current-stock={getSupplyCurrentStock(supply)}
+                    data-cost-per-base-unit={getSupplyCostPerBaseUnit(supply)}
+                    className={isInactive ? "bg-slate-50/70 text-slate-400" : "text-slate-700"}
+                  >
                     <td className="px-5 py-4">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-slate-950">{supply.name}</p>
+                          <p data-testid="supply-name" className="font-semibold text-slate-950">{supply.name}</p>
                           {waste >= 12 ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
                               <AlertTriangle size={12} />
@@ -283,9 +290,9 @@ export default function ResourceInventoryPanel({
                     </td>
                     <td className="px-5 py-4">{TYPE_LABELS[supply.type] || "Materia prima"}</td>
                     <td className="px-5 py-4 font-semibold text-slate-900">{getSupplyBaseUnit(supply)}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-900">{formatCOP(getSupplyCostPerBaseUnit(supply))}</td>
+                    <td data-testid="supply-cost-per-base-unit" className="px-5 py-4 font-semibold text-slate-900">{formatCOP(getSupplyCostPerBaseUnit(supply))}</td>
                     <td className="px-5 py-4">
-                      <p className="font-semibold text-slate-900">{getSupplyCurrentStock(supply)} {getSupplyBaseUnit(supply)}</p>
+                      <p data-testid="supply-current-stock" className="font-semibold text-slate-900">{getSupplyCurrentStock(supply)} {getSupplyBaseUnit(supply)}</p>
                       <p className="text-xs text-slate-500">Min {getSupplyMinimumStock(supply)} · Rep {getSupplyReorderPoint(supply).toFixed(1)}</p>
                     </td>
                     <td className="px-5 py-4">

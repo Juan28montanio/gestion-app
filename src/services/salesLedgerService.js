@@ -160,74 +160,12 @@ export function buildSalesLedger({ sales = [], saleItems = [], payments = [], le
 
 export async function getSalesLedger(businessId) {
   return getSupabaseSalesLedger(businessId);
-/*
-  const normalizedBusinessId = normalizeText(businessId);
-  if (!normalizedBusinessId) return [];
 
-  const [salesSnapshot, saleItemsSnapshot, paymentsSnapshot, legacySnapshot] = await Promise.all([
-    getDocs(query(collection(db, "sales"), where("business_id", "==", normalizedBusinessId))),
-    getDocs(query(collection(db, "saleItems"), where("business_id", "==", normalizedBusinessId))),
-    getDocs(query(collection(db, "payments"), where("business_id", "==", normalizedBusinessId))),
-    getDocs(query(collection(db, "sales_history"), where("business_id", "==", normalizedBusinessId))),
-  ]);
-
-  return buildSalesLedger({
-    sales: mapSnapshot(salesSnapshot),
-    saleItems: mapSnapshot(saleItemsSnapshot),
-    payments: mapSnapshot(paymentsSnapshot),
-    legacySales: mapSnapshot(legacySnapshot),
-  });
-*/
 }
 
 export function subscribeToSalesLedger(businessId, callback) {
   return subscribeToAppSalesLedger(businessId, callback);
-/*
-  const normalizedBusinessId = normalizeText(businessId);
-  if (!normalizedBusinessId) {
-    callback([]);
-    return () => {};
-  }
 
-  const state = {
-    sales: [],
-    saleItems: [],
-    payments: [],
-    legacySales: [],
-  };
-  let readyCount = 0;
-  let isReady = false;
-
-  const publish = () => {
-    if (!isReady && readyCount < 4) return;
-    isReady = true;
-    callback(buildSalesLedger(state));
-  };
-
-  const subscribe = (collectionName, key, scope) =>
-    onSnapshot(
-      query(collection(db, collectionName), where("business_id", "==", normalizedBusinessId)),
-      (snapshot) => {
-        state[key] = mapSnapshot(snapshot);
-        readyCount += 1;
-        publish();
-      },
-      createSubscriptionErrorHandler({
-        scope,
-        callback,
-        emptyValue: [],
-      })
-    );
-
-  const unsubscribers = [
-    subscribe("sales", "sales", "sales:subscribeToSalesLedger"),
-    subscribe("saleItems", "saleItems", "saleItems:subscribeToSalesLedger"),
-    subscribe("payments", "payments", "payments:subscribeToSalesLedger"),
-    subscribe("sales_history", "legacySales", "sales_history:subscribeToSalesLedger"),
-  ];
-
-  return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-*/
 }
 
 export function subscribeToSalesHistory(businessId, callback) {

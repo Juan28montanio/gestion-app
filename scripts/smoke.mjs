@@ -13,45 +13,72 @@ function assertIncludes(source, expected, label) {
   }
 }
 
-const [packageJson, financeService, inventoryService, workspaceService, functionsIndex, rules] = await Promise.all([
+const [
+  packageJson,
+  supabaseClient,
+  schema,
+  rls,
+  rpcCore,
+  inventorySchema,
+  financeSchema,
+  financeRpc,
+  operationalSchema,
+  operationalRpc,
+  securityGrants,
+  performanceIndexes,
+  openApiSpec,
+] = await Promise.all([
   read("package.json"),
-  read("src/services/financeService.js"),
-  read("src/services/inventoryService.js"),
-  read("src/services/workspaceService.js"),
-  read("functions/index.js"),
-  read("firestore.rules"),
+  read("src/lib/supabaseClient.js"),
+  read("database/supabase/schema.sql"),
+  read("database/supabase/rls.sql"),
+  read("database/supabase/rpc-core.sql"),
+  read("database/supabase/schema-inventory.sql"),
+  read("database/supabase/schema-finance.sql"),
+  read("database/supabase/rpc-finance.sql"),
+  read("database/supabase/schema-operational.sql"),
+  read("database/supabase/rpc-operational.sql"),
+  read("database/supabase/security-grants.sql"),
+  read("database/supabase/performance-indexes.sql"),
+  read("docs/openapi.json"),
 ]);
 
 const pkg = JSON.parse(packageJson);
 
-["lint", "test", "test:smoke"].forEach((scriptName) => {
+["lint", "test", "test:smoke", "check:supabase", "check:supabase:rpc", "build"].forEach((scriptName) => {
   if (!pkg.scripts?.[scriptName]) {
     throw new Error(`Smoke fallido: falta script ${scriptName}`);
   }
 });
 
-[
-  "sales",
-  "saleItems",
-  "payments",
-  "cashMovements",
-  "inventoryMovements",
-  "accountsReceivable",
-  "accountsPayable",
-].forEach((collectionName) => {
-  assertIncludes(rules, `match /${collectionName}/`, `reglas para ${collectionName}`);
-});
+assertIncludes(supabaseClient, "createClient", "cliente Supabase");
+assertIncludes(supabaseClient, "VITE_SUPABASE_URL", "variable Supabase URL");
+assertIncludes(schema, "create table if not exists public.businesses", "tabla businesses");
+assertIncludes(schema, "create table if not exists public.sales", "tabla sales");
+assertIncludes(schema, "create table if not exists public.cash_sessions", "tabla cash_sessions");
+assertIncludes(rls, "enable row level security", "RLS habilitado");
+assertIncludes(rls, "business_users", "politicas por miembros de negocio");
+assertIncludes(rpcCore, "create or replace function public.close_sale", "RPC close_sale");
+assertIncludes(rpcCore, "create or replace function public.close_cash_session", "RPC close_cash_session");
+assertIncludes(rpcCore, "create or replace function public.settle_sale_debt", "RPC settle_sale_debt");
+assertIncludes(inventorySchema, "create table if not exists public.supplies", "tabla supplies");
+assertIncludes(inventorySchema, "create table if not exists public.supply_categories", "tabla supply_categories");
+assertIncludes(financeSchema, "create table if not exists public.purchases", "tabla purchases");
+assertIncludes(financeSchema, "create table if not exists public.accounts_payable", "tabla accounts_payable");
+assertIncludes(financeRpc, "create or replace function public.save_purchase", "RPC save_purchase");
+assertIncludes(financeRpc, "create or replace function public.cancel_purchase", "RPC cancel_purchase");
+assertIncludes(financeRpc, "create or replace function public.confirm_purchase", "RPC confirm_purchase");
+assertIncludes(financeRpc, "create or replace function public.settle_account_payable", "RPC settle_account_payable");
+assertIncludes(operationalSchema, "create table if not exists public.tables", "tabla tables");
+assertIncludes(operationalSchema, "create table if not exists public.kitchen_tickets", "tabla kitchen_tickets");
+assertIncludes(operationalRpc, "create or replace function public.save_table_layout", "RPC save_table_layout");
+assertIncludes(operationalRpc, "create or replace function public.open_table_session", "RPC open_table_session");
+assertIncludes(securityGrants, "revoke execute on function public.save_purchase", "hardening RPC save_purchase");
+assertIncludes(securityGrants, "grant execute on function public.close_sale", "grants RPC authenticated");
+assertIncludes(performanceIndexes, "cash_movements_cash_session_id_idx", "indices FK caja");
+assertIncludes(performanceIndexes, "accounts_payable_supplier_id_idx", "indices FK cartera proveedores");
+assertIncludes(openApiSpec, "\"openapi\": \"3.0.3\"", "contrato OpenAPI");
+assertIncludes(openApiSpec, "/rest/v1/rpc/close_sale", "Swagger RPC close_sale");
+assertIncludes(openApiSpec, "/rest/v1/rpc/confirm_purchase", "Swagger RPC confirm_purchase");
 
-assertIncludes(financeService, "buildPosSaleDocuments", "creacion canonica de venta POS");
-assertIncludes(financeService, "applySaleInventoryImpact", "integracion de impacto de inventario");
-assertIncludes(inventoryService, "export async function applySaleInventoryImpact", "servicio applySaleInventoryImpact");
-assertIncludes(inventoryService, "export async function reverseSaleInventoryImpact", "servicio reverseSaleInventoryImpact");
-assertIncludes(inventoryService, "inventoryImpactStatus", "estado idempotente de inventario");
-assertIncludes(workspaceService, "httpsCallable", "reset via Cloud Functions");
-assertIncludes(functionsIndex, "assertAdminForBusiness", "proteccion admin backend");
-assertIncludes(functionsIndex, "exports.resetBusinessWorkspace", "funcion backend de reset");
-assertIncludes(functionsIndex, "auditLogs", "auditoria de reset/demo");
-assertIncludes(rules, "isOwnerOrAdmin", "roles owner/admin en reglas");
-assertIncludes(rules, "immutableBusinessId", "business_id inmutable en reglas");
-
-console.log("Smoke tecnico OK: contrato canonico, inventario, reglas y reset protegidos presentes.");
+console.log("Smoke tecnico OK: Supabase, RLS, RPCs y modelo operativo presentes.");

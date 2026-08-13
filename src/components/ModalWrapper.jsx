@@ -28,12 +28,12 @@ export default function ModalWrapper({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] bg-slate-950/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-100 bg-slate-950/50 backdrop-blur-sm">
       <div className="flex min-h-screen items-center justify-center px-4 py-6 sm:px-6 sm:py-8">
         <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
 
         <div
-          className={`relative z-[1] flex max-h-[88vh] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_120px_rgba(15,23,42,0.18)] ${maxWidthClass}`}
+          className={`relative z-10 flex max-h-[88vh] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_120px_rgba(15,23,42,0.18)] ${maxWidthClass}`}
         >
           <button
             type="button"

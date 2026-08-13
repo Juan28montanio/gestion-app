@@ -1,0 +1,1300 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SmartProfit Supabase Backend API",
+    "version": "0.1.0",
+    "description": "Contrato Swagger/OpenAPI para las RPCs criticas del backend Supabase de SmartProfit. Todas las operaciones usan el endpoint PostgREST de Supabase: /rest/v1/rpc/{function_name}."
+  },
+  "servers": [
+    {
+      "url": "https://{projectRef}.supabase.co",
+      "description": "Proyecto Supabase",
+      "variables": {
+        "projectRef": {
+          "default": "dmicvtkgbyoleckykzez",
+          "description": "Referencia del proyecto Supabase."
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "apiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Caja",
+      "description": "Apertura, cierre y movimientos de caja."
+    },
+    {
+      "name": "Ventas",
+      "description": "Cierre transaccional de ventas y pagos."
+    },
+    {
+      "name": "Salon",
+      "description": "Mesas, sesiones, pedidos y cocina."
+    },
+    {
+      "name": "Finanzas",
+      "description": "Compras, cuentas por pagar y cartera."
+    }
+  ],
+  "paths": {
+    "/rest/v1/rpc/open_cash_session": {
+      "post": {
+        "tags": ["Caja"],
+        "summary": "Abre una sesion de caja",
+        "description": "Crea una caja abierta para el negocio o devuelve la caja abierta existente.",
+        "operationId": "openCashSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenCashSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "UUID de la sesion de caja abierta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/close_cash_session": {
+      "post": {
+        "tags": ["Caja"],
+        "summary": "Cierra una sesion de caja",
+        "operationId": "closeCashSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseCashSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resumen de cierre de caja.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashSessionCloseResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/close_sale": {
+      "post": {
+        "tags": ["Ventas"],
+        "summary": "Cierra una venta",
+        "description": "Inserta venta, items, pagos y movimientos de caja de forma transaccional.",
+        "operationId": "closeSale",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseSaleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "UUID de la venta creada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/settle_sale_debt": {
+      "post": {
+        "tags": ["Finanzas"],
+        "summary": "Registra un abono de cartera",
+        "operationId": "settleSaleDebt",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleSaleDebtRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado del abono.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/save_table_layout": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Crea o actualiza una mesa",
+        "operationId": "saveTableLayout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveTableLayoutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "UUID de la mesa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/open_table_session": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Abre una sesion de mesa",
+        "operationId": "openTableSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenTableSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "UUID de la sesion de mesa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/send_order_to_kitchen": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Envia o actualiza un pedido en cocina",
+        "operationId": "sendOrderToKitchen",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendOrderToKitchenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "UUID del pedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/update_kitchen_ticket_status": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Actualiza el estado de un ticket de cocina",
+        "operationId": "updateKitchenTicketStatus",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateKitchenTicketStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Void"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/request_table_bill": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Marca una mesa como esperando pago",
+        "operationId": "requestTableBill",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TableOrderActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Void"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/release_clean_table": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Libera una mesa limpia",
+        "operationId": "releaseCleanTable",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TableActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Void"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/transfer_table_session": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Transfiere una sesion entre mesas",
+        "operationId": "transferTableSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferTableSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Void"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/cancel_table_order_item": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Cancela una linea de pedido",
+        "operationId": "cancelTableOrderItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelTableOrderItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Void"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/reassign_table_waiter": {
+      "post": {
+        "tags": ["Salon"],
+        "summary": "Reasigna el mesero de una mesa",
+        "operationId": "reassignTableWaiter",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReassignTableWaiterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Void"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/save_purchase": {
+      "post": {
+        "tags": ["Finanzas"],
+        "summary": "Crea o actualiza una compra",
+        "description": "Guarda encabezado e items de compra de forma transaccional; opcionalmente confirma la compra.",
+        "operationId": "savePurchase",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavePurchaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado del guardado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavePurchaseResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/cancel_purchase": {
+      "post": {
+        "tags": ["Finanzas"],
+        "summary": "Anula una compra no confirmada",
+        "operationId": "cancelPurchase",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelPurchaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado de anulacion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavePurchaseResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/confirm_purchase": {
+      "post": {
+        "tags": ["Finanzas"],
+        "summary": "Confirma una compra",
+        "description": "Confirma una compra, actualiza inventario y crea/actualiza la cuenta por pagar.",
+        "operationId": "confirmPurchase",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPurchaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado de confirmacion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseConfirmResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/rest/v1/rpc/settle_account_payable": {
+      "post": {
+        "tags": ["Finanzas"],
+        "summary": "Registra pago a proveedor",
+        "operationId": "settleAccountPayable",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleAccountPayableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado del pago.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayableSettlementResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT del usuario autenticado en Supabase Auth."
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "apikey",
+        "description": "Anon key o publishable key del proyecto Supabase."
+      }
+    },
+    "responses": {
+      "Void": {
+        "description": "Operacion completada sin cuerpo relevante."
+      },
+      "Unauthorized": {
+        "description": "No hay sesion autenticada o el token no es valido."
+      },
+      "Forbidden": {
+        "description": "El usuario no es miembro activo del negocio."
+      }
+    },
+    "schemas": {
+      "Uuid": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "OpenCashSessionRequest": {
+        "type": "object",
+        "required": ["p_business_id"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_opening_amount": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          },
+          "p_notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CloseCashSessionRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_cash_session_id", "p_counted_amount"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_cash_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_counted_amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p_notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CashSessionCloseResult": {
+        "type": "object",
+        "properties": {
+          "cash_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "counted_amount": {
+            "type": "number"
+          },
+          "expected_amount": {
+            "type": "number"
+          },
+          "difference_amount": {
+            "type": "number"
+          },
+          "payment_method_totals": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "CloseSaleRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_sale"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_sale": {
+            "$ref": "#/components/schemas/SalePayload"
+          },
+          "p_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SaleItemPayload"
+            },
+            "default": []
+          },
+          "p_payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentPayload"
+            },
+            "default": []
+          }
+        }
+      },
+      "SalePayload": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "cash_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "sale_number": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string",
+            "example": "quick_sale"
+          },
+          "subtotal": {
+            "type": "number",
+            "minimum": 0
+          },
+          "tax_total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "discount_total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SaleItemPayload": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "minimum": 0
+          },
+          "unit_price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "subtotal": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true
+      },
+      "PaymentPayload": {
+        "type": "object",
+        "required": ["amount"],
+        "properties": {
+          "method": {
+            "type": "string",
+            "example": "cash"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "reference": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "SettleSaleDebtRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_sale_id"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_sale_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_amount": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          },
+          "p_method": {
+            "type": "string",
+            "default": "cash"
+          },
+          "p_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "p_notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SaveTableLayoutRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_table"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table": {
+            "$ref": "#/components/schemas/TablePayload"
+          }
+        }
+      },
+      "TablePayload": {
+        "type": "object",
+        "required": ["number"],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 2
+          },
+          "zone": {
+            "type": "string",
+            "default": "Salon principal"
+          },
+          "status": {
+            "type": "string",
+            "default": "free"
+          },
+          "icon": {
+            "type": "string",
+            "default": "UtensilsCrossed"
+          },
+          "shape": {
+            "type": "string",
+            "default": "square"
+          },
+          "size": {
+            "type": "string",
+            "default": "md"
+          },
+          "position": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            }
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "OpenTableSessionRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_table_id", "p_waiter_name"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_waiter_name": {
+            "type": "string"
+          },
+          "p_guests_count": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "p_customer_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_customer_name": {
+            "type": "string"
+          },
+          "p_notes": {
+            "type": "string"
+          }
+        }
+      },
+      "SendOrderToKitchenRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_table_id", "p_session_id", "p_items"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_order_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/OrderItemPayload"
+            }
+          },
+          "p_customer_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_customer_name": {
+            "type": "string"
+          }
+        }
+      },
+      "OrderItemPayload": {
+        "type": "object",
+        "required": ["quantity"],
+        "properties": {
+          "lineId": {
+            "type": "string"
+          },
+          "productId": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "unitPrice": {
+            "type": "number",
+            "minimum": 0
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "UpdateKitchenTicketStatusRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_ticket_id", "p_status"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_ticket_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_status": {
+            "type": "string",
+            "enum": ["pending", "preparing", "ready", "delivered", "cancelled"]
+          }
+        }
+      },
+      "TableActionRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_table_id"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          }
+        }
+      },
+      "TableOrderActionRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_table_id", "p_session_id", "p_order_id"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_order_id": {
+            "$ref": "#/components/schemas/Uuid"
+          }
+        }
+      },
+      "TransferTableSessionRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_source_table_id", "p_target_table_id", "p_session_id"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_source_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_target_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_order_id": {
+            "$ref": "#/components/schemas/Uuid"
+          }
+        }
+      },
+      "CancelTableOrderItemRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_table_id", "p_session_id", "p_order_id", "p_line_id", "p_reason"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_order_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_line_id": {
+            "type": "string"
+          },
+          "p_reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ReassignTableWaiterRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_table_id", "p_session_id", "p_waiter_name"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_table_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_waiter_name": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfirmPurchaseRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_purchase_id"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_purchase_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SavePurchaseRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_purchase", "p_items"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_purchase_id": {
+            "$ref": "#/components/schemas/Uuid",
+            "nullable": true
+          },
+          "p_purchase": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "p_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "p_confirm": {
+            "type": "boolean",
+            "default": false
+          },
+          "p_notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CancelPurchaseRequest": {
+        "type": "object",
+        "required": ["p_purchase_id", "p_reason"],
+        "properties": {
+          "p_purchase_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_reason": {
+            "type": "string"
+          }
+        }
+      },
+      "SettleAccountPayableRequest": {
+        "type": "object",
+        "required": ["p_business_id", "p_account_payable_id", "p_amount"],
+        "properties": {
+          "p_business_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_account_payable_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "p_amount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "p_method": {
+            "type": "string",
+            "default": "cash"
+          },
+          "p_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "p_notes": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "SettlementResult": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "payment_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "cash_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "method": {
+            "type": "string"
+          },
+          "paid_amount": {
+            "type": "number"
+          },
+          "pending_amount": {
+            "type": "number"
+          },
+          "payment_status": {
+            "type": "string"
+          }
+        }
+      },
+      "PurchaseConfirmResult": {
+        "type": "object",
+        "properties": {
+          "purchase_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "payable_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "payment_status": {
+            "type": "string"
+          },
+          "pending_amount": {
+            "type": "number"
+          }
+        }
+      },
+      "SavePurchaseResult": {
+        "type": "object",
+        "properties": {
+          "purchase_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "confirm_result": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          }
+        }
+      },
+      "PayableSettlementResult": {
+        "type": "object",
+        "properties": {
+          "account_payable_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "cash_session_id": {
+            "$ref": "#/components/schemas/Uuid"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "method": {
+            "type": "string"
+          },
+          "paid_amount": {
+            "type": "number"
+          },
+          "pending_amount": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
