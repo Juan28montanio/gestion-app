@@ -50,10 +50,13 @@ export async function signInWithEmailPassword(email, password) {
 
 export async function signUpBusinessOwner({ email, password, displayName }) {
   const client = getSupabaseClient();
+  const redirectUrl = `${window.location.origin}/`;
+
   const { data, error } = await client.auth.signUp({
     email: String(email || "").trim().toLowerCase(),
     password,
     options: {
+      emailRedirectTo: redirectUrl,
       data: {
         display_name: String(displayName || "").trim(),
       },

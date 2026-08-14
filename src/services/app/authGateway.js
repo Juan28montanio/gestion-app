@@ -11,6 +11,7 @@ import {
   signOut,
   signUpBusinessOwner,
 } from "../supabase/authService";
+import { bootstrapBusinessForCurrentUser } from "../supabase/bootstrapService";
 
 async function getBusinessForUser(userId) {
   const businessUser = await getBusinessUser(userId);
@@ -79,13 +80,16 @@ export async function logout() {
   return signOut();
 }
 
-export async function registerOwner({ businessName: _businessName, adminName, email, password }) {
+export async function registerOwner({ businessName, adminName, email, password }) {
   const user = await signUpBusinessOwner({ email, password, displayName: adminName });
   // Business bootstrap remains an admin/manual step until public self-service rules are hardened.
   if (!user?.id) return user;
-  throw new Error(
-    `Cuenta creada para ${email}. Falta asociarla a un negocio Supabase antes de ingresar.`
-  );
+  await bootstrapBusinessForCurrentUser({
+    businessName,
+    displayName: adminName,
+  });
+
+  return user
 }
 
 export async function updateBusinessAccount(businessId, values) {
