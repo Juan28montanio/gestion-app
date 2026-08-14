@@ -23,43 +23,39 @@
   - crea datos E2E marcados con `metadata.e2e = true`;
   - valida ficha, venta con explosion, snapshot, reversa y stock insuficiente.
 
-## Bloqueo detectado en Supabase remoto
+## Estado de Supabase remoto
 
-El frontend y la migracion local contienen el motor de rentabilidad, pero el Supabase configurado en `.env` no tiene desplegada la RPC:
-
-```text
-public.create_or_update_technical_sheet
-```
-
-Playwright falla con:
+Validacion actualizada el 2026-08-14 contra:
 
 ```text
-Could not find the function public.create_or_update_technical_sheet(...) in the schema cache
+project-ref: dmicvtkgbyoleckykzez
+business_id E2E: c08a64ca-23dd-4599-b680-6192d14676aa
 ```
 
-Esto significa que el contrato E2E de rentabilidad esta listo, pero el backend remoto debe sincronizarse antes de que la suite quede en verde.
+Las RPCs de rentabilidad estan presentes y pasan contratos remotos:
 
-## Paso de despliegue requerido
+- `create_or_update_technical_sheet`
+- `recalculate_product_cost`
+- `close_sale_with_inventory_explosion`
 
-Autenticarse con Supabase CLI y aplicar la migracion backend:
+La suite `e2e/smartprofit-profitability-flows.e2e.spec.ts` queda en verde: 7/7.
 
-```bash
-npx supabase login
-npx supabase link --project-ref <project-ref>
-npx supabase db push
+## Historial de migraciones
+
+El 2026-08-14 se verifico que la migracion local grande:
+
+```text
+20260813000100_smartprofit_backend.sql
 ```
 
-Luego refrescar PostgREST si el schema cache tarda en reconocer funciones nuevas:
+ya existia funcionalmente en remoto aunque faltaba en el historial de `supabase_migrations`.
 
-```sql
-notify pgrst, 'reload schema';
-```
+Accion aplicada:
 
-Si se aplica manualmente desde SQL Editor, ejecutar en este orden:
-
-1. `database/supabase/schema-profitability.sql`
-2. `database/supabase/rpc-profitability.sql`
-3. `database/supabase/security-grants.sql`
+- Se verificaron tablas, RPCs, RLS y politicas clave.
+- Se ejecuto `npx supabase migration repair 20260813000100 --status applied --linked`.
+- `npx supabase migration list --linked` quedo alineado.
+- `npx supabase db push --linked --dry-run` responde `Remote database is up to date`.
 
 ## Comandos de cierre
 
@@ -72,6 +68,25 @@ npm run build
 npx playwright test e2e/smartprofit-profitability-flows.e2e.spec.ts
 npx playwright test e2e/smartprofit-critical-flows.e2e.spec.ts
 ```
+
+Resultado 2026-08-14:
+
+- `npm run test`: pasa.
+- `npm run test:sql`: pasa, 116 pruebas SQL.
+- `npm run test:smoke`: pasa.
+- `npm run lint`: pasa sin warnings.
+- `npm run build`: pasa.
+- `npm run check:supabase`: pasa.
+- `npm run check:supabase:rpc`: pasa, incluyendo RPCs de rentabilidad.
+- `npx playwright test e2e/smartprofit-profitability-flows.e2e.spec.ts --reporter=list`: 7/7.
+- `npx playwright test e2e/smartprofit-critical-flows.e2e.spec.ts --reporter=list`: 23/23.
+
+Higiene de ventas historicas aplicada:
+
+- Script agregado: `npm run backfill:legacy-payments`.
+- Modo aplicacion: `npm run backfill:legacy-payments:apply`.
+- Resultado aplicado: 31 ventas monetarias historicas reconstruidas, 38 pagos creados, $813.000 COP conciliados.
+- Residual esperado: 25 ventas no monetarias en cero sin pagos asociados.
 
 ## Demo operativa en menos de 10 minutos
 

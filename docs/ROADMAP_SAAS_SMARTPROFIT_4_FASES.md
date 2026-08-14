@@ -247,3 +247,14 @@ La siguiente inversion tecnica deberia ser la Fase 2: fichas tecnicas persistent
 7. Crear reportes de rentabilidad por producto.
 8. Agregar tests SQL y E2E de venta con descuento de inventario.
 
+## Estado actual de transicion Fase 2 -> Fase 3
+
+Actualizado el 2026-08-14:
+
+- Fase 2 queda funcionalmente cerrada para demo controlada.
+- Migraciones remotas estan reconciliadas.
+- Lint, unit tests, smoke, build, SQL tests, checks Supabase y E2E principales estan en verde.
+- Higiene de ventas historicas monetarias aplicada.
+- Brechas menores para iniciar Fase 3 resueltas en `docs/FASE3_ALISTAMIENTO_OPERATIVO.md`.
+
+La Fase 3 debe iniciar por la capa SaaS transversal: entornos, permisos por accion, invitaciones, planes, suscripciones, webhooks idempotentes y panel interno de soporte.

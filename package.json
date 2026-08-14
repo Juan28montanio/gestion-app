@@ -19,6 +19,12 @@
     "test:smoke": "node scripts/smoke.mjs",
     "check:supabase": "node scripts/check-supabase-data.mjs",
     "check:supabase:rpc": "node scripts/check-supabase-rpc.mjs",
+    "backfill:legacy-payments": "node scripts/backfill-legacy-sale-payments.mjs",
+    "backfill:legacy-payments:apply": "node scripts/backfill-legacy-sale-payments.mjs --apply",
+    "check:phase3:readiness": "node scripts/check-phase3-readiness.mjs",
+    "demo:profitability": "node scripts/seed-demo-profitability.mjs",
+    "demo:profitability:apply": "node scripts/seed-demo-profitability.mjs --apply",
+    "report:profitability": "node scripts/report-profitability-snapshots.mjs",
     "check:backend": "npm run test:sql && npm run check:supabase && npm run check:supabase:rpc",
     "build": "vite build",
     "preview": "vite preview"

@@ -22,6 +22,8 @@ const [
   inventorySchema,
   financeSchema,
   financeRpc,
+  profitabilitySchema,
+  profitabilityRpc,
   operationalSchema,
   operationalRpc,
   securityGrants,
@@ -36,6 +38,8 @@ const [
   read("database/supabase/schema-inventory.sql"),
   read("database/supabase/schema-finance.sql"),
   read("database/supabase/rpc-finance.sql"),
+  read("database/supabase/schema-profitability.sql"),
+  read("database/supabase/rpc-profitability.sql"),
   read("database/supabase/schema-operational.sql"),
   read("database/supabase/rpc-operational.sql"),
   read("database/supabase/security-grants.sql"),
@@ -69,6 +73,11 @@ assertIncludes(financeRpc, "create or replace function public.save_purchase", "R
 assertIncludes(financeRpc, "create or replace function public.cancel_purchase", "RPC cancel_purchase");
 assertIncludes(financeRpc, "create or replace function public.confirm_purchase", "RPC confirm_purchase");
 assertIncludes(financeRpc, "create or replace function public.settle_account_payable", "RPC settle_account_payable");
+assertIncludes(profitabilitySchema, "create table if not exists public.technical_sheets", "tabla technical_sheets");
+assertIncludes(profitabilitySchema, "create table if not exists public.product_cost_snapshots", "tabla product_cost_snapshots");
+assertIncludes(profitabilityRpc, "create or replace function public.create_or_update_technical_sheet", "RPC create_or_update_technical_sheet");
+assertIncludes(profitabilityRpc, "create or replace function public.close_sale_with_inventory_explosion", "RPC close_sale_with_inventory_explosion");
+assertIncludes(profitabilityRpc, "create or replace function public.reverse_inventory_explosion", "RPC reverse_inventory_explosion");
 assertIncludes(operationalSchema, "create table if not exists public.tables", "tabla tables");
 assertIncludes(operationalSchema, "create table if not exists public.kitchen_tickets", "tabla kitchen_tickets");
 assertIncludes(operationalRpc, "create or replace function public.save_table_layout", "RPC save_table_layout");
@@ -80,5 +89,7 @@ assertIncludes(performanceIndexes, "accounts_payable_supplier_id_idx", "indices 
 assertIncludes(openApiSpec, "\"openapi\": \"3.0.3\"", "contrato OpenAPI");
 assertIncludes(openApiSpec, "/rest/v1/rpc/close_sale", "Swagger RPC close_sale");
 assertIncludes(openApiSpec, "/rest/v1/rpc/confirm_purchase", "Swagger RPC confirm_purchase");
+assertIncludes(openApiSpec, "/rest/v1/rpc/create_or_update_technical_sheet", "Swagger RPC create_or_update_technical_sheet");
+assertIncludes(openApiSpec, "/rest/v1/rpc/close_sale_with_inventory_explosion", "Swagger RPC close_sale_with_inventory_explosion");
 
 console.log("Smoke tecnico OK: Supabase, RLS, RPCs y modelo operativo presentes.");

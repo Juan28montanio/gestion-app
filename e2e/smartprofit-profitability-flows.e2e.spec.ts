@@ -25,8 +25,11 @@ const SELECTORS = {
   appHeader: byTestId("app-header"),
   businessName: byTestId("business-name"),
   syncStatus: byTestId("sync-status-text"),
+  cashLockOverlay: byTestId("cash-lock-overlay"),
+  cashLockGoFinanceButton: byTestId("cash-lock-go-finance-button"),
   navPos: byTestId("nav-module-pos"),
   navCatalog: byTestId("nav-module-inventory"),
+  cashModule: byTestId("cash-module"),
   posModule: byTestId("pos-module"),
   productItem: byTestId("product-item"),
   productName: byTestId("product-name"),
@@ -127,7 +130,24 @@ async function loginWithValidCredentials(page: Page) {
   await expect(page.locator(SELECTORS.syncStatus)).toBeVisible();
 }
 
+async function resolveCashLockOverlayIfPresent(page: Page) {
+  const overlay = page.locator(SELECTORS.cashLockOverlay);
+  const isLocked = await overlay
+    .waitFor({ state: "visible", timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!isLocked) {
+    return;
+  }
+
+  await page.locator(SELECTORS.cashLockGoFinanceButton).click();
+  await expect(page.locator(SELECTORS.cashModule)).toBeVisible({ timeout: 30_000 });
+  await expect(overlay).toBeHidden({ timeout: 10_000 });
+}
+
 async function navigateToModule(page: Page, selector: string, readySelector?: string) {
+  await resolveCashLockOverlayIfPresent(page);
   await page.locator(selector).click();
   await expect(page.locator(SELECTORS.appHeader)).toBeVisible();
   if (readySelector) {

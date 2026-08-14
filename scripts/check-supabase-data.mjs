@@ -170,14 +170,21 @@ async function main() {
 
   const salesWithoutPayments = sales.filter((row) => !saleIdsWithPayments.has(row.id));
   const pendingSalesWithoutPayments = salesWithoutPayments.filter((row) => Number(row.pending_amount || 0) > 0);
-  const paidSalesWithoutPayments = salesWithoutPayments.filter((row) => {
+  const paidMonetarySalesWithoutPayments = salesWithoutPayments.filter((row) => {
     const pendingAmount = Number(row.pending_amount || 0);
-    const paidAmount = Number(row.paid_amount || 0);
     const total = Number(row.total || 0);
-    return pendingAmount <= 0 && (paidAmount > 0 || total === 0 || row.payment_status === "paid");
+    return pendingAmount <= 0 && total > 0 && row.payment_status === "paid";
+  });
+  const nonMonetarySalesWithoutPayments = salesWithoutPayments.filter((row) => {
+    const pendingAmount = Number(row.pending_amount || 0);
+    const total = Number(row.total || 0);
+    return pendingAmount <= 0 && total <= 0;
   });
   const unusualSalesWithoutPayments = salesWithoutPayments.filter(
-    (row) => !pendingSalesWithoutPayments.includes(row) && !paidSalesWithoutPayments.includes(row)
+    (row) =>
+      !pendingSalesWithoutPayments.includes(row) &&
+      !paidMonetarySalesWithoutPayments.includes(row) &&
+      !nonMonetarySalesWithoutPayments.includes(row)
   );
   const itemsWithoutSale = saleItems.filter((row) => row.sale_id && !saleIds.has(row.sale_id));
   const paymentsWithoutSale = payments.filter((row) => row.sale_id && !saleIds.has(row.sale_id));
@@ -209,7 +216,8 @@ async function main() {
     diagnostics: {
       salesWithoutPayments: salesWithoutPayments.length,
       pendingSalesWithoutPayments: pendingSalesWithoutPayments.length,
-      paidSalesWithoutPayments: paidSalesWithoutPayments.length,
+      paidMonetarySalesWithoutPayments: paidMonetarySalesWithoutPayments.length,
+      nonMonetarySalesWithoutPayments: nonMonetarySalesWithoutPayments.length,
       unusualSalesWithoutPayments: unusualSalesWithoutPayments.length,
       itemsWithoutSale: itemsWithoutSale.length,
       paymentsWithoutSale: paymentsWithoutSale.length,

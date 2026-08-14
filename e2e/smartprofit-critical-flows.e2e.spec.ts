@@ -50,6 +50,8 @@ const SELECTORS = {
   businessName: byTestId("business-name"),
   currentUser: byTestId("user-name"),
   syncStatus: byTestId("sync-status-text"),
+  cashLockOverlay: byTestId("cash-lock-overlay"),
+  cashLockGoFinanceButton: byTestId("cash-lock-go-finance-button"),
 
   // Module Navigation
   moduleSalon: byTestId("nav-module-salon"),
@@ -236,6 +238,24 @@ async function loginWithValidCredentials(page: Page) {
   await expect(page.locator(SELECTORS.syncStatus)).toBeVisible();
 }
 
+async function resolveCashLockOverlayIfPresent(page: Page) {
+  const overlay = page.locator(SELECTORS.cashLockOverlay);
+  const isLocked = await overlay
+    .waitFor({ state: "visible", timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!isLocked) {
+    return;
+  }
+
+  await page.locator(SELECTORS.cashLockGoFinanceButton).click();
+  await expect(page.locator(SELECTORS.cashModule)).toBeVisible({
+    timeout: COMPLEX_OP_TIMEOUT,
+  });
+  await expect(overlay).toBeHidden({ timeout: 10_000 });
+}
+
 /**
  * Navigate to a specific module
  */
@@ -244,6 +264,7 @@ async function navigateToModule(
   selector: string,
   readySelector?: string
 ) {
+  await resolveCashLockOverlayIfPresent(page);
   await page.locator(selector).click();
   await expect(page.locator(SELECTORS.appHeader)).toBeVisible();
   if (readySelector) {

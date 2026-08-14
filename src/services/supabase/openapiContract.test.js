@@ -11,11 +11,20 @@ function read(path) {
 function listSqlRpcNames(...sources) {
   const names = new Set();
   const functionPattern = /create\s+or\s+replace\s+function\s+public\.([a-z0-9_]+)\s*\(/gi;
+  const internalFunctionNames = new Set([
+    "profitability_build_costing",
+    "profitability_component_cost",
+    "profitability_normalize_percent",
+  ]);
 
   for (const source of sources) {
     for (const match of source.matchAll(functionPattern)) {
       const functionName = match[1];
-      if (!functionName.startsWith("assert_") && !functionName.includes("_assert_")) {
+      if (
+        !functionName.startsWith("assert_") &&
+        !functionName.includes("_assert_") &&
+        !internalFunctionNames.has(functionName)
+      ) {
         names.add(functionName);
       }
     }
@@ -38,7 +47,8 @@ describe("Supabase OpenAPI contract", () => {
     const sqlRpcNames = listSqlRpcNames(
       read("database/supabase/rpc-core.sql"),
       read("database/supabase/rpc-operational.sql"),
-      read("database/supabase/rpc-finance.sql")
+      read("database/supabase/rpc-finance.sql"),
+      read("database/supabase/rpc-profitability.sql")
     );
     const documentedRpcNames = Object.keys(openApi.paths)
       .map((path) => path.match(/^\/rest\/v1\/rpc\/([a-z0-9_]+)$/)?.[1])

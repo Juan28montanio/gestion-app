@@ -368,3 +368,74 @@ Si este paso queda en verde, avanzar con:
 2. Datos demo reales para mostrar el flujo comercial.
 3. Preparacion de Fase 3: planes, suscripciones, invitaciones y billing.
 
+## Resultado de validacion - 2026-08-14
+
+Proyecto Supabase validado:
+
+```text
+project-ref: dmicvtkgbyoleckykzez
+business_id E2E: c08a64ca-23dd-4599-b680-6192d14676aa
+```
+
+Estado:
+
+- [x] Supabase CLI enlazado al proyecto remoto.
+- [x] `npm run test` pasa: 8 archivos, 22 tests.
+- [x] `npm run test:sql` pasa: 5 archivos, 116 pruebas SQL.
+- [x] `npm run test:smoke` pasa.
+- [x] `npm run lint` pasa sin errores ni warnings.
+- [x] `npm run build` pasa.
+- [x] `npm run check:supabase` pasa contra remoto.
+- [x] `npm run check:supabase:rpc` pasa contra remoto e incluye RPCs core y de rentabilidad sin mutar datos.
+- [x] `npx playwright test e2e/smartprofit-profitability-flows.e2e.spec.ts --reporter=list` pasa: 7/7.
+- [x] `npx playwright test e2e/smartprofit-critical-flows.e2e.spec.ts --reporter=list` pasa: 23/23.
+
+Correcciones aplicadas durante la validacion:
+
+- `CashLockOverlay` expone `data-testid="cash-lock-overlay"` y `data-testid="cash-lock-go-finance-button"`.
+- Las suites E2E de rentabilidad y flujos criticos resuelven el bloqueo operativo de caja por la ruta real de usuario antes de navegar a POS/catalogo.
+- `check:supabase:rpc` ahora valida tambien `create_or_update_technical_sheet`, `recalculate_product_cost` y `close_sale_with_inventory_explosion` con fallos esperados seguros.
+
+Observaciones:
+
+- La proteccion de caja por cierre pendiente es correcta desde UX/negocio; el ajuste fue en automatizacion para reconocerla y operar como lo haria un usuario.
+- La higiene de ventas historicas fue aplicada: 31 ventas monetarias heredadas desde Firebase quedaron respaldadas por 38 pagos reconstruidos desde `metadata.firebase.payment_breakdown`.
+- Quedan 25 ventas sin pagos asociados porque son registros no monetarios en cero; `check:supabase` las reporta aparte como `nonMonetarySalesWithoutPayments`.
+- El historial remoto de migraciones fue reconciliado: `20260813000100_smartprofit_backend.sql` quedo marcada como aplicada despues de verificar tablas, RPCs, RLS y politicas clave.
+
+Decision tecnica:
+
+```text
+Fase 2 puede considerarse lista para demo controlada y preparacion de Fase 3.
+Antes de Fase 3 productiva, mantener staging separado y automatizar estas validaciones en CI.
+```
+
+## Recomendaciones profesionales para entrar a Fase 3
+
+1. Mantener migraciones reconciliadas antes de crear nuevas features: `npx supabase db push --linked --dry-run` debe responder `Remote database is up to date`.
+2. Crear entornos separados `staging` y `production`: los E2E con datos reales deben correr por defecto en staging, con variables `E2E_SMARTPROFIT_*` dedicadas.
+3. Mantener datos E2E aislados: todo fixture debe llevar `metadata.e2e = true`, `run_id` y limpieza/archivo automatico verificable.
+4. Convertir los 5 warnings de lint en deuda cerrada antes de Fase 3, para que cualquier warning nuevo sea senal real y no ruido.
+5. Agregar CI por capas: unit/smoke/build en cada push, SQL/RLS en PRs de backend, E2E criticos nocturnos y antes de release.
+6. Endurecer RLS con pruebas por rol para Fase 3: owner, admin, cashier/waiter y usuario sin membresia.
+7. Documentar un runbook de caja: apertura, cierre pendiente, cierre de jornada anterior, errores esperados y pasos de soporte.
+8. Preparar observabilidad: logs de RPC fallidas, errores de inventario insuficiente, tiempos de cierre de venta y alertas para transacciones incompletas.
+9. Crear dataset demo estable: productos preparados, insumos, ficha tecnica, venta, movimiento de inventario y snapshot historico listos para presentacion.
+10. Definir puerta de salida de Fase 3: billing/suscripciones no debe mezclarse con cambios no reconciliados de migracion ni con datos historicos ambiguos.
+
+## Brechas menores resueltas para iniciar Fase 3
+
+Actualizado el 2026-08-14:
+
+- [x] Separacion de entornos preparada con `.env.staging.example`, `.env.production.example` y `SMARTPROFIT_ENV`.
+- [x] CI base preparado con `.github/workflows/phase-gates.yml`.
+- [x] Dataset demo estable preparado con `npm run demo:profitability`.
+- [x] Runbook operativo de caja creado en `docs/RUNBOOK_CAJA_SOPORTE.md`.
+- [x] Reporte tecnico de rentabilidad historica disponible con `npm run report:profitability`.
+- [x] Residual historico no monetario documentado y separado en `npm run check:supabase`.
+
+Documento de alistamiento:
+
+```text
+docs/FASE3_ALISTAMIENTO_OPERATIVO.md
+```

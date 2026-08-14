@@ -64,7 +64,6 @@ import {
   buildSupplyChainInsights,
   createEmptyOperatingExpenseForm,
   formatDuration,
-  getBalanceStatus,
   getLocalDateInputValue,
   getMovementVisual,
   getPreviousRangeConfig,
@@ -407,8 +406,6 @@ export default function AdminDashboard({
     [previousFilteredMovements]
   );
   const balance = filteredSummary.income - filteredSummary.expense;
-  const todayBalance = todaySummary.income - todaySummary.expense;
-  const todayBalanceStatus = useMemo(() => getBalanceStatus(todayBalance), [todayBalance]);
   const balanceVariation = useMemo(
     () =>
       getVariation(

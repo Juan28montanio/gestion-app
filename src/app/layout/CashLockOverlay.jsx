@@ -1,6 +1,9 @@
 export default function CashLockOverlay({ cashLockInfo, onGoFinance }) {
   return (
-    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+    <div
+      data-testid="cash-lock-overlay"
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+    >
       <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-7 shadow-2xl">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-600">
           Cierre pendiente
@@ -11,6 +14,7 @@ export default function CashLockOverlay({ cashLockInfo, onGoFinance }) {
         <p className="mt-3 text-sm leading-6 text-slate-600">{cashLockInfo.message}</p>
         <button
           type="button"
+          data-testid="cash-lock-go-finance-button"
           onClick={onGoFinance}
           className="mt-6 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
         >

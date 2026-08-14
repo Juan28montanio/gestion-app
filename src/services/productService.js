@@ -416,38 +416,6 @@ function normalizeCategoryPayload(category, businessId) {
   };
 }
 
-function normalizeModifierPayload(modifier, businessId, productId = "") {
-  const normalizedBusinessId = normalizeText(modifier?.businessId || modifier?.business_id || businessId);
-  const normalizedProductId = normalizeText(modifier?.productId || modifier?.product_id || productId);
-  const name = normalizeText(modifier?.name);
-  const priceDelta = normalizeNumber(modifier?.priceDelta ?? modifier?.price_delta, 0);
-  const affectsInventory = Boolean(modifier?.affectsInventory ?? modifier?.affects_inventory);
-
-  if (!normalizedBusinessId) throw new Error("El business_id del modificador es obligatorio.");
-  if (!normalizedProductId) throw new Error("El producto del modificador es obligatorio.");
-  if (!name) throw new Error("El nombre del modificador es obligatorio.");
-  if (!Number.isFinite(priceDelta)) throw new Error("El delta de precio debe ser numerico.");
-  if (affectsInventory && !modifier?.linkedInventoryItemId && !modifier?.linkedTechnicalSheetId) {
-    throw new Error("Un modificador que afecta inventario requiere insumo o ficha asociada.");
-  }
-
-  return {
-    businessId: normalizedBusinessId,
-    business_id: normalizedBusinessId,
-    productId: normalizedProductId,
-    product_id: normalizedProductId,
-    name,
-    priceDelta,
-    price_delta: priceDelta,
-    affectsInventory,
-    affects_inventory: affectsInventory,
-    linkedInventoryItemId: normalizeText(modifier?.linkedInventoryItemId || modifier?.linked_inventory_item_id),
-    linkedTechnicalSheetId: normalizeText(modifier?.linkedTechnicalSheetId || modifier?.linked_technical_sheet_id),
-    stationImpact: normalizeText(modifier?.stationImpact || modifier?.station_impact),
-    active: modifier?.active ?? true,
-  };
-}
-
 export function subscribeToProducts(businessId, callback) {
   return subscribeToCatalogProducts(businessId, (products) => callback(sortByOrderAndName(products)));
 }

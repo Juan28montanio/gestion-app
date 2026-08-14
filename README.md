@@ -46,7 +46,7 @@ npm run preview
 
 ## Swagger / OpenAPI
 
-La documentacion del backend Supabase esta en `docs/openapi.json` y cubre las RPCs publicas de caja, ventas, salon y finanzas.
+La documentacion del backend Supabase esta en `docs/openapi.json` y cubre las RPCs publicas de caja, ventas, salon, finanzas y rentabilidad.
 
 Para verla en Swagger UI, abre `docs/swagger.html` en el navegador o sirve el repo con cualquier servidor estatico. Las llamadas documentadas usan el formato PostgREST de Supabase:
 

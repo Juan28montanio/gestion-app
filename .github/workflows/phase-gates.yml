@@ -1,0 +1,78 @@
+name: Phase Gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - codex/**
+  workflow_dispatch:
+
+jobs:
+  local-quality:
+    name: Local quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Smoke contract
+        run: npm run test:smoke
+
+      - name: Build
+        run: npm run build
+
+      - name: Phase 3 readiness without remote secrets
+        run: npm run check:phase3:readiness
+
+  supabase-contract:
+    name: Supabase contract gate
+    runs-on: ubuntu-latest
+    needs: local-quality
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+    env:
+      SMARTPROFIT_ENV: staging
+      VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      SUPABASE_CHECK_EMAIL: ${{ secrets.STAGING_SUPABASE_CHECK_EMAIL }}
+      SUPABASE_CHECK_PASSWORD: ${{ secrets.STAGING_SUPABASE_CHECK_PASSWORD }}
+      SUPABASE_CHECK_BUSINESS_ID: ${{ secrets.STAGING_SUPABASE_CHECK_BUSINESS_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Supabase data check
+        run: npm run check:supabase
+
+      - name: Supabase RPC check
+        run: npm run check:supabase:rpc
+
+      - name: Phase 3 readiness with staging secrets
+        run: npm run check:phase3:readiness -- --strict
+

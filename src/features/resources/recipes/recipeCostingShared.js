@@ -50,7 +50,7 @@ export function getSuggestedDeltaLabel(currentPrice, suggestedPrice) {
   return `Hay espacio para bajar ${formatCOP(Math.abs(delta))} si quieres ganar competitividad.`;
 }
 
-export function buildProductFlowSummary({ product, recipeBook }) {
+export function buildProductFlowSummary({ recipeBook }) {
   return {
     compact: recipeBook ? "Ficha conectada" : "Sin ficha conectada",
     detail: recipeBook

@@ -209,6 +209,55 @@ async function main() {
     )
   );
 
+  results.push(
+    await expectRpcFailure(
+      client,
+      "create_or_update_technical_sheet",
+      {
+        p_business_id: businessId,
+        p_technical_sheet_id: null,
+        p_sheet: {
+          name: "safe rpc smoke technical sheet",
+          type: "final_product",
+          category: "safe rpc smoke",
+          status: "active",
+          sale_price: 0,
+          yield: { portions: 1 },
+          costing: { currentSalePrice: 0, targetFoodCost: 30 },
+        },
+        p_components: [],
+        p_activate: true,
+      },
+      ["Technical sheet must include at least one component"]
+    )
+  );
+
+  results.push(
+    await expectRpcFailure(
+      client,
+      "recalculate_product_cost",
+      {
+        p_business_id: businessId,
+        p_product_id: "00000000-0000-0000-0000-000000000000",
+      },
+      ["Active technical sheet not found for product"]
+    )
+  );
+
+  results.push(
+    await expectRpcFailure(
+      client,
+      "close_sale_with_inventory_explosion",
+      {
+        p_business_id: businessId,
+        p_sale: { total: -1, subtotal: -1, source_type: "quick_sale" },
+        p_items: [],
+        p_payments: [],
+      },
+      ["Sale total cannot be negative"]
+    )
+  );
+
   console.log("Supabase RPC check");
   results.forEach((result) => console.log(formatResult(result)));
 
@@ -220,7 +269,7 @@ async function main() {
     return;
   }
 
-  console.log("\nOK: RPC core aplicada y validada sin mutar datos.");
+  console.log("\nOK: RPC core y rentabilidad aplicadas y validadas sin mutar datos.");
 }
 
 main().catch((error) => {

@@ -78,24 +78,6 @@ export default function SupplierManager({
   const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
   const safePurchases = Array.isArray(purchases) ? purchases.filter(isActivePurchase) : [];
   const safeCategoryOptions = Array.isArray(categoryOptions) ? categoryOptions : [];
-  const supplierSummary = useMemo(() => {
-    const supplierIdsWithPurchases = new Set(
-      safePurchases.map((purchase) => purchase.supplier_id).filter(Boolean)
-    );
-
-    return {
-      total: safeSuppliers.length,
-      withRecentFlow: safeSuppliers.filter((supplier) => supplierIdsWithPurchases.has(supplier.id)).length,
-      creditTerms: safeSuppliers.filter(
-        (supplier) =>
-          String(supplier.payment_terms || supplier.paymentTerms || "Contado").toLowerCase() === "credito"
-      ).length,
-      withoutContact: safeSuppliers.filter(
-        (supplier) => !String(supplier.mobile || supplier.phone || supplier.email || "").trim()
-      ).length,
-    };
-  }, [safePurchases, safeSuppliers]);
-
   const supplierSpend = useMemo(() => {
     return safePurchases.reduce((acc, purchase) => {
       const supplierId = purchase.supplier_id;
