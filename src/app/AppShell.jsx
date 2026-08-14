@@ -23,6 +23,7 @@ import CashLockOverlay from "./layout/CashLockOverlay";
 import { DecisionCenterProvider, useDecisionCenter } from "./decision-center/DecisionCenterContext";
 import DecisionCenterDrawer from "./decision-center/DecisionCenterDrawer";
 import OnboardingChecklist from "../components/OnboardingChecklist";
+import { bootstrapBusinessForCurrentUser } from "../services/supabase/bootstrapService";
 
 const CHUNK_RELOAD_KEY = "smartprofit:chunk-reload";
 const SECTION_ROUTES = {
@@ -120,11 +121,39 @@ function AppShellContent() {
   const [openCashSession, setOpenCashSession] = useState(null);
   const [cashLockDismissed, setCashLockDismissed] = useState(false);
   const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const [authNotice, setAuthNotice] = useState("");
+  const [businessSetupForm, setBusinessSetupForm] = useState({ businessName: "", adminName: "" });
+  const [businessSetupError, setBusinessSetupError] = useState("");
+  const [isBusinessSetupBusy, setIsBusinessSetupBusy] = useState(false);
   const [auditChallenge, setAuditChallenge] = useState(null);
   const [sectionRenderNonce, setSectionRenderNonce] = useState(0);
   const { entriesBySection, isOpen: isDecisionCenterOpen, openDecisionCenter, closeDecisionCenter } = useDecisionCenter();
 
   useEffect(() => {
+    const params = new URLSearchParams(
+      window.location.hash?.startsWith("#")
+        ? window.location.hash.slice(1)
+        : window.location.search.slice(1)
+    );
+    const authErrorCode = params.get("error_code") || params.get("error");
+    const authErrorDescription = params.get("error_description") || "";
+
+    if (authErrorCode) {
+      const normalizedCode = authErrorCode.toLowerCase();
+      const normalizedDescription = authErrorDescription.toLowerCase();
+      const isExpiredLink =
+        normalizedCode.includes("otp_expired") ||
+        normalizedDescription.includes("invalid") ||
+        normalizedDescription.includes("expired");
+
+      setAuthNotice(
+        isExpiredLink
+          ? "El enlace de confirmacion ya fue usado o expiro. Solicita un nuevo registro o inicia sesion si el correo ya quedo confirmado."
+          : authErrorDescription || "No fue posible completar la confirmacion de Supabase."
+      );
+      window.history.replaceState({}, "", window.location.pathname || "/");
+    }
+
     const handleNavigation = () => {
       setPathname(window.location.pathname);
       setActiveSection(resolveSectionFromPath(window.location.pathname));
@@ -253,6 +282,14 @@ function AppShellContent() {
   const userDisplayName =
     userProfile?.display_name || currentUser?.displayName || currentUser?.email || "Administrador";
 
+  useEffect(() => {
+    if (!currentUser) return;
+    setBusinessSetupForm((current) => ({
+      ...current,
+      adminName: current.adminName || currentUser.displayName || currentUser.email || "",
+    }));
+  }, [currentUser]);
+
   const currentSectionMeta = SECTION_META[activeSection] || {
     title: "Panel",
     description: "Consulta y administra la operacion del negocio.",
@@ -282,9 +319,34 @@ function AppShellContent() {
   const handleRegister = async ({ businessName, adminName, email, password }) => {
     setIsAuthBusy(true);
     try {
-      await registerOwner({ businessName, adminName, email, password });
+      return await registerOwner({ businessName, adminName, email, password });
     } finally {
       setIsAuthBusy(false);
+    }
+  };
+
+  const handleCompleteBusinessSetup = async (event) => {
+    event.preventDefault();
+    setBusinessSetupError("");
+
+    const businessName = String(businessSetupForm.businessName || "").trim();
+    const adminName = String(businessSetupForm.adminName || "").trim();
+    if (!businessName) {
+      setBusinessSetupError("El nombre del negocio es obligatorio.");
+      return;
+    }
+
+    setIsBusinessSetupBusy(true);
+    try {
+      await bootstrapBusinessForCurrentUser({
+        businessName,
+        displayName: adminName || currentUser?.displayName || currentUser?.email || "",
+      });
+      window.location.reload();
+    } catch (error) {
+      setBusinessSetupError(error instanceof Error ? error.message : "No fue posible asociar el negocio.");
+    } finally {
+      setIsBusinessSetupBusy(false);
     }
   };
 
@@ -346,7 +408,12 @@ function AppShellContent() {
   if (!currentUser) {
     return (
       <Suspense fallback={<SplashScreen />}>
-        <AuthScreen onLogin={handleLogin} onRegister={handleRegister} isBusy={isAuthBusy} />
+        <AuthScreen
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          isBusy={isAuthBusy}
+          notice={authNotice}
+        />
       </Suspense>
     );
   }
@@ -363,20 +430,57 @@ function AppShellContent() {
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">
             La sesion inicio correctamente, pero Supabase no encontro una membresia activa en
-            <span className="font-semibold"> business_users</span>. Asocia este usuario al negocio antes de operar POS y caja.
+            <span className="font-semibold"> business_users</span>. Completa el negocio para terminar el acceso.
           </p>
           {authError ? (
             <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
               {authError.message || "No fue posible resolver el negocio activo."}
             </div>
           ) : null}
-          <button
-            type="button"
-            onClick={logout}
-            className="mt-5 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-          >
-            Cerrar sesion
-          </button>
+          <form onSubmit={handleCompleteBusinessSetup} className="mt-5 grid gap-4">
+            <label className="grid gap-2 text-sm text-slate-700">
+              <span className="font-medium">Nombre del negocio</span>
+              <input
+                value={businessSetupForm.businessName}
+                onChange={(event) =>
+                  setBusinessSetupForm((current) => ({ ...current, businessName: event.target.value }))
+                }
+                className="h-[52px] rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
+                required
+              />
+            </label>
+            <label className="grid gap-2 text-sm text-slate-700">
+              <span className="font-medium">Nombre del administrador</span>
+              <input
+                value={businessSetupForm.adminName}
+                onChange={(event) =>
+                  setBusinessSetupForm((current) => ({ ...current, adminName: event.target.value }))
+                }
+                className="h-[52px] rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
+              />
+            </label>
+            {businessSetupError ? (
+              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+                {businessSetupError}
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={isBusinessSetupBusy}
+                className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+              >
+                {isBusinessSetupBusy ? "Asociando..." : "Completar negocio"}
+              </button>
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700"
+              >
+                Cerrar sesion
+              </button>
+            </div>
+          </form>
         </section>
       </main>
     );

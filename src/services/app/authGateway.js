@@ -12,11 +12,40 @@ import {
   signUpBusinessOwner,
 } from "../supabase/authService";
 import { bootstrapBusinessForCurrentUser } from "../supabase/bootstrapService";
+import {
+  clearPendingBusinessRegistration,
+  findPendingBusinessRegistrationForEmail,
+  normalizeAuthEmail,
+  savePendingBusinessRegistration,
+} from "./pendingBusinessRegistration";
 
 async function getBusinessForUser(userId) {
   const businessUser = await getBusinessUser(userId);
   const business = businessUser?.businesses || (businessUser?.business_id ? await getBusiness(businessUser.business_id) : null);
   return buildAuthSession({ user: { id: userId }, businessUser, business });
+}
+
+async function completePendingBusinessRegistration(user) {
+  const pending = findPendingBusinessRegistrationForEmail(user?.email);
+  if (!pending) return null;
+
+  const bootstrapResult = await bootstrapBusinessForCurrentUser({
+    businessName: pending.businessName,
+    displayName: pending.adminName,
+  });
+  clearPendingBusinessRegistration();
+  return bootstrapResult;
+}
+
+async function getOrCreateBusinessForUser(user) {
+  let session = await getBusinessForUser(user.id);
+  if (session.businessId) return session;
+
+  const bootstrapResult = await completePendingBusinessRegistration(user);
+  if (!bootstrapResult?.business_id) return session;
+
+  session = await getBusinessForUser(user.id);
+  return session;
 }
 
 export async function getCurrentAuthSession() {
@@ -25,7 +54,7 @@ export async function getCurrentAuthSession() {
   if (error) throw error;
   if (!data.user) return buildAuthSession({});
 
-  const session = await getBusinessForUser(data.user.id);
+  const session = await getOrCreateBusinessForUser(data.user);
   return {
     ...session,
     currentUser: normalizeAuthUser(data.user),
@@ -42,7 +71,7 @@ export function subscribeToAuthSession(callback) {
     }
 
     try {
-      const session = await getBusinessForUser(user.id);
+      const session = await getOrCreateBusinessForUser(user);
       if (!isCancelled) {
         callback({
           ...session,
@@ -81,15 +110,23 @@ export async function logout() {
 }
 
 export async function registerOwner({ businessName, adminName, email, password }) {
-  const user = await signUpBusinessOwner({ email, password, displayName: adminName });
-  // Business bootstrap remains an admin/manual step until public self-service rules are hardened.
+  const normalizedEmail = normalizeAuthEmail(email);
+  savePendingBusinessRegistration({ businessName, adminName, email: normalizedEmail });
+
+  const user = await signUpBusinessOwner({ email: normalizedEmail, password, displayName: adminName });
   if (!user?.id) return user;
+
+  if (user.needsEmailConfirmation) {
+    return user;
+  }
+
   await bootstrapBusinessForCurrentUser({
     businessName,
     displayName: adminName,
   });
+  clearPendingBusinessRegistration();
 
-  return user
+  return user;
 }
 
 export async function updateBusinessAccount(businessId, values) {

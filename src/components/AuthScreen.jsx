@@ -37,15 +37,17 @@ function AuthField({ label, type = "text", value, onChange, placeholder, hint, t
   );
 }
 
-export default function AuthScreen({ onLogin, onRegister, isBusy }) {
+export default function AuthScreen({ onLogin, onRegister, isBusy, notice = "" }) {
   const [mode, setMode] = useState("login");
   const [loginForm, setLoginForm] = useState(EMPTY_LOGIN);
   const [registerForm, setRegisterForm] = useState(EMPTY_REGISTER);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const handleLogin = async (event) => {
     event.preventDefault();
     setError("");
+    setSuccess("");
 
     try {
       await onLogin(loginForm);
@@ -57,6 +59,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
   const handleRegister = async (event) => {
     event.preventDefault();
     setError("");
+    setSuccess("");
 
     if (registerForm.password.length < 6) {
       setError("La contrasena debe tener al menos 6 caracteres.");
@@ -69,7 +72,19 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
     }
 
     try {
-      await onRegister(registerForm);
+      const result = await onRegister(registerForm);
+      if (result?.needsEmailConfirmation) {
+        setSuccess("Cuenta creada. Revisa tu correo para confirmar el acceso; despues podras iniciar sesion.");
+        setMode("login");
+        setLoginForm({
+          email: registerForm.email,
+          password: "",
+        });
+        return;
+      }
+
+      setSuccess("Cuenta y negocio creados. Ya puedes ingresar.");
+      setMode("login");
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "No fue posible crear la cuenta.");
     }
@@ -154,6 +169,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                 type="button"
                 onClick={() => {
                   setError("");
+                  setSuccess("");
                   setMode("login");
                 }}
                 data-testid="auth-login-tab"
@@ -167,6 +183,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                 type="button"
                 onClick={() => {
                   setError("");
+                  setSuccess("");
                   setMode("register");
                 }}
                 data-testid="auth-register-tab"
@@ -177,6 +194,16 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                 Crear cuenta
               </button>
             </div>
+            {notice ? (
+              <div role="status" className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                {notice}
+              </div>
+            ) : null}
+            {success ? (
+              <div role="status" className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
+                {success}
+              </div>
+            ) : null}
 
             {mode === "login" ? (
               <form data-testid="login-form" onSubmit={handleLogin} className="grid gap-5">
@@ -233,6 +260,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                     type="button"
                     onClick={() => {
                       setError("");
+                      setSuccess("");
                       setMode("register");
                     }}
                     data-testid="login-register-link"
@@ -334,6 +362,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy }) {
                     type="button"
                     onClick={() => {
                       setError("");
+                      setSuccess("");
                       setMode("login");
                     }}
                     data-testid="go-to-login-button"
