@@ -109,7 +109,7 @@ export default function AuthScreen({ onLogin, onRegister, isBusy, notice = "" })
   };
 
   return (
-    <main className="min-h-screen bg-[#f6f7f2] px-4 py-4 text-slate-950 sm:px-6 sm:py-6">
+    <main className="min-h-screen bg-[#f5f6ef] px-4 py-4 text-slate-950 sm:px-6 sm:py-6">
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-[1480px] gap-4 xl:min-h-[calc(100vh-3rem)] xl:grid-cols-[minmax(0,1.02fr)_minmax(420px,0.68fr)] xl:gap-4">
         <section className="order-2 relative overflow-hidden rounded-lg border border-[#d8ddcf] bg-[#fdfdf9] p-5 shadow-[0_18px_60px_rgba(15,23,42,0.10)] sm:p-8 xl:order-1">
           <div className="relative grid h-full content-between gap-7">
@@ -131,13 +131,13 @@ export default function AuthScreen({ onLogin, onRegister, isBusy, notice = "" })
               </p>
               </div>
 
-              <div className="relative min-h-[280px] overflow-hidden rounded-lg border border-[#d8ddcf] bg-white">
+              <div className="relative min-h-[280px] overflow-hidden rounded-lg border border-[#d8ddcf] bg-[linear-gradient(180deg,#ffffff_0%,#f3f7eb_100%)]">
                 <img
-                  src="/smartprofit_logo.png"
+                  src="/smartprofit-brand-clean.png"
                   alt="SmartProfit - El control que tu rentabilidad merece"
-                  className="absolute left-1/2 top-1/2 h-[118%] w-[118%] -translate-x-1/2 -translate-y-1/2 object-contain opacity-95"
+                  className="absolute left-1/2 top-[40%] h-[82%] w-[82%] -translate-x-1/2 -translate-y-1/2 object-contain opacity-95 sm:h-[88%] sm:w-[88%]"
                 />
-                <div className="absolute inset-x-0 bottom-0 bg-white/90 px-4 py-3 backdrop-blur-sm">
+                <div className="absolute inset-x-0 bottom-0 border-t border-emerald-900/10 bg-white/92 px-4 py-3 backdrop-blur-sm">
                   <p className="text-sm font-semibold text-slate-950">POS, costos y caja en una cuenta</p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
                     Todo listo para operar con el negocio asociado a Supabase.

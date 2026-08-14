@@ -23,8 +23,8 @@ export default function MobileSidebarDrawer({
         onClick={onClose}
       />
 
-      <aside className="absolute inset-y-0 left-0 flex w-[min(86vw,340px)] flex-col border-r border-slate-200 bg-[#f8fafc] px-4 py-4 shadow-2xl">
-        <div className="shrink-0 flex items-center gap-3 rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+      <aside className="absolute inset-y-0 left-0 flex w-[min(86vw,340px)] flex-col border-r border-[#d8ddcf] bg-[#f5f6ef] px-4 py-4 shadow-2xl">
+        <div className="shrink-0 flex items-center gap-3 rounded-lg border border-[#d8ddcf] bg-white px-4 py-4 shadow-sm">
           <BusinessAvatar business={business} />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-slate-950">
@@ -34,10 +34,10 @@ export default function MobileSidebarDrawer({
           </div>
         </div>
 
-        <div className="mt-4 flex min-h-0 flex-1 flex-col rounded-[26px] border border-slate-200 bg-white/70 p-3 shadow-sm">
+        <div className="mt-4 flex min-h-0 flex-1 flex-col rounded-lg border border-[#d8ddcf] bg-white/80 p-3 shadow-sm">
           <div className="mb-3 flex shrink-0 items-center justify-between border-b border-slate-100 px-2 pb-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Navegacion
               </p>
               <p className="mt-1 text-xs text-slate-500">
@@ -59,11 +59,11 @@ export default function MobileSidebarDrawer({
           </div>
         </div>
 
-        <div className="mt-4 shrink-0 border-t border-slate-200 pt-4">
+        <div className="mt-4 shrink-0 border-t border-[#d8ddcf] pt-4">
           <button
             type="button"
             onClick={onLogout}
-            className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="flex w-full items-center gap-3 rounded-lg border border-[#d8ddcf] bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-[#f5f6ef]"
           >
             <LogOut size={18} />
             Cerrar sesion

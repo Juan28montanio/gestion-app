@@ -35,7 +35,7 @@ export default function ResourceWorkspaceHeader({
 
   return (
     <>
-      <section className="rounded-[28px] bg-white/85 p-6 shadow-lg ring-1 ring-white/70 backdrop-blur">
+      <section className="rounded-lg border border-[#d8ddcf] bg-white/90 p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">Centro de recursos</h2>
@@ -43,7 +43,7 @@ export default function ResourceWorkspaceHeader({
               Organiza abastecimiento, compras y costeo sin mezclar el catalogo comercial.
             </p>
           </div>
-          <div className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <div className="rounded-lg bg-[#f5f6ef] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-900 ring-1 ring-[#d8ddcf]">
             Ingenieria del negocio
           </div>
         </div>
@@ -52,9 +52,9 @@ export default function ResourceWorkspaceHeader({
           {resourceStats.map((stat) => (
             <article
               key={stat.id}
-              className="min-w-[220px] flex-1 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4"
+              className="min-w-[220px] flex-1 rounded-lg border border-[#d8ddcf] bg-[#f8faf3] px-4 py-4"
             >
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {stat.label}
               </p>
               <p className="mt-3 text-lg font-semibold text-slate-900">{stat.value}</p>
@@ -63,28 +63,28 @@ export default function ResourceWorkspaceHeader({
           ))}
         </div>
 
-        <div className="mt-5 rounded-[24px] border border-slate-200 bg-white px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+        <div className="mt-5 rounded-lg border border-[#d8ddcf] bg-white px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-900">
             Flujo activo
           </p>
           <h3 className="mt-2 text-base font-semibold text-slate-900">{activeTabCopy.title}</h3>
           <p className="mt-2 text-sm leading-6 text-slate-500">{activeTabCopy.body}</p>
         </div>
 
-        <div className="mt-5 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-4 py-4">
+        <div className="mt-5 rounded-lg border border-[#d8ddcf] bg-[linear-gradient(135deg,#ffffff_0%,#f8fbf3_100%)] px-4 py-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Centro de decisiones
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-600">{resourceDecisionSummary}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div
-                className={`inline-flex items-center rounded-full px-3 py-2 text-xs font-semibold ${
+                className={`inline-flex items-center rounded-lg px-3 py-2 text-xs font-semibold ${
                   resourceDecisionItems.length > 0
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-500"
+                    ? "bg-[#10251d] text-white"
+                    : "bg-[#f5f6ef] text-slate-500"
                 }`}
               >
                 {resourceDecisionItems.length} lectura
@@ -95,10 +95,10 @@ export default function ResourceWorkspaceHeader({
                 type="button"
                 onClick={onOpenDecisionCenter}
                 disabled={resourceDecisionItems.length === 0}
-                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
                   resourceDecisionItems.length > 0
-                    ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                    ? "border-[#d8ddcf] bg-white text-slate-700 hover:bg-[#f5f6ef]"
+                    : "cursor-not-allowed border-[#d8ddcf] bg-[#f5f6ef] text-slate-400"
                 }`}
               >
                 Ver panel
@@ -108,7 +108,7 @@ export default function ResourceWorkspaceHeader({
         </div>
       </section>
 
-      <section className="rounded-[28px] bg-white/85 p-4 shadow-lg ring-1 ring-white/70 backdrop-blur">
+      <section className="rounded-lg border border-[#d8ddcf] bg-white/90 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="flex flex-wrap gap-2">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -117,10 +117,10 @@ export default function ResourceWorkspaceHeader({
                 key={tab.id}
                 type="button"
                 onClick={() => onSelectTab(tab.id)}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
                   activeTab === tab.id
-                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    ? "bg-[#10251d] text-white"
+                    : "bg-[#f5f6ef] text-slate-600 hover:bg-[#eef3e8]"
                 }`}
               >
                 <Icon size={15} />

@@ -1,14 +1,14 @@
-import LogoImage from "../../components/LogoImage";
 import { SmartProfitIsotype } from "../../components/SmartProfitMark";
+import LogoImage from "../../components/LogoImage";
 
-export default function BusinessAvatar({ business, className = "h-11 w-11 rounded-2xl" }) {
+export default function BusinessAvatar({ business, className = "h-11 w-11 rounded-lg" }) {
   if (business?.logo_url) {
     return (
       <LogoImage
         url={business.logo_url}
         alt={business?.name || "Negocio"}
         className={className}
-        imageClassName={`${className} object-contain bg-white p-1.5 ring-1 ring-slate-200`}
+        imageClassName={`${className} object-contain bg-white p-1.5 ring-1 ring-emerald-900/10`}
         fallbackClassName="ring-1 ring-slate-200"
       />
     );
@@ -16,9 +16,9 @@ export default function BusinessAvatar({ business, className = "h-11 w-11 rounde
 
   return (
     <div
-      className={`flex items-center justify-center bg-[linear-gradient(180deg,#111827_0%,#1f2937_100%)] text-white ring-1 ring-slate-200 ${className}`}
+      className={`flex items-center justify-center bg-white p-1.5 ring-1 ring-emerald-900/10 ${className}`}
     >
-      <SmartProfitIsotype className="h-6 w-6" />
+      <SmartProfitIsotype className="h-full w-full object-contain" />
     </div>
   );
 }

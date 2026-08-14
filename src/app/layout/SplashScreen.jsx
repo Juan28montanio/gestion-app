@@ -1,12 +1,12 @@
 export default function SplashScreen() {
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#f6f7f2] px-6">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#f5f6ef] px-6">
       <div className="w-full max-w-lg rounded-lg border border-[#d8ddcf] bg-white px-8 py-10 text-center shadow-[0_18px_60px_rgba(15,23,42,0.10)]">
         <div className="mx-auto flex w-full justify-center">
           <img
-            src="/smartprofit_logo.png"
+            src="/smartprofit-brand-clean.png"
             alt="SmartProfit"
-            className="h-28 w-auto object-contain"
+            className="h-32 w-auto object-contain"
           />
         </div>
         <h1 className="mt-6 text-3xl font-black tracking-[-0.03em] text-slate-950">

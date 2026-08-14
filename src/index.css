@@ -1,16 +1,17 @@
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600&display=swap");
 @import "tailwindcss";
 @source "./**/*.{js,jsx,ts,tsx}";
 
 @theme {
-  --font-sans: "Instrument Sans", "Segoe UI", sans-serif;
+  --font-sans: "Onest", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "Consolas", monospace;
 }
 
 :root {
   font-family: var(--font-sans);
   color: #0f172a;
-  background: #f4f6f8;
+  background: #f5f6ef;
+  accent-color: #047857;
 }
 
 * {
@@ -26,9 +27,9 @@ body {
   min-height: 100vh;
   font-family: var(--font-sans);
   background:
-    radial-gradient(circle at top left, rgba(15, 23, 42, 0.04), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(148, 163, 184, 0.14), transparent 26%),
-    #f4f6f8;
+    radial-gradient(circle at top left, rgba(4, 120, 87, 0.08), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(183, 139, 32, 0.12), transparent 26%),
+    #f5f6ef;
   color: #0f172a;
 }
 
@@ -54,6 +55,16 @@ button {
 input::placeholder,
 textarea::placeholder {
   color: #94a3b8;
+}
+
+::selection {
+  background: rgba(4, 120, 87, 0.18);
+  color: #0f172a;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(4, 120, 87, 0.32);
+  outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {

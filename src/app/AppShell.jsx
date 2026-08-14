@@ -420,9 +420,9 @@ function AppShellContent() {
 
   if (!businessId) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f4f6f8] px-4 text-slate-900">
-        <section className="w-full max-w-xl rounded-[28px] border border-amber-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-600">
+      <main className="flex min-h-screen items-center justify-center bg-[#f5f6ef] px-4 text-slate-900">
+        <section className="w-full max-w-xl rounded-lg border border-[#d8ddcf] bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#75560d]">
             Acceso Supabase pendiente
           </p>
           <h1 className="mt-3 text-2xl font-bold text-slate-950">
@@ -433,7 +433,7 @@ function AppShellContent() {
             <span className="font-semibold"> business_users</span>. Completa el negocio para terminar el acceso.
           </p>
           {authError ? (
-            <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+            <div className="mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
               {authError.message || "No fue posible resolver el negocio activo."}
             </div>
           ) : null}
@@ -445,7 +445,7 @@ function AppShellContent() {
                 onChange={(event) =>
                   setBusinessSetupForm((current) => ({ ...current, businessName: event.target.value }))
                 }
-                className="h-[52px] rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
+                className="h-[52px] rounded-lg border border-slate-200 px-4 text-sm text-slate-900 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-900/10"
                 required
               />
             </label>
@@ -456,11 +456,11 @@ function AppShellContent() {
                 onChange={(event) =>
                   setBusinessSetupForm((current) => ({ ...current, adminName: event.target.value }))
                 }
-                className="h-[52px] rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-900/5"
+                className="h-[52px] rounded-lg border border-slate-200 px-4 text-sm text-slate-900 outline-none focus:border-emerald-700 focus:ring-4 focus:ring-emerald-900/10"
               />
             </label>
             {businessSetupError ? (
-              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
+              <div className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
                 {businessSetupError}
               </div>
             ) : null}
@@ -468,14 +468,14 @@ function AppShellContent() {
               <button
                 type="submit"
                 disabled={isBusinessSetupBusy}
-                className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
+                className="rounded-lg bg-[#10251d] px-4 py-3 text-sm font-semibold text-white disabled:opacity-70"
               >
                 {isBusinessSetupBusy ? "Asociando..." : "Completar negocio"}
               </button>
               <button
                 type="button"
                 onClick={logout}
-                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700"
+                className="rounded-lg border border-[#d8ddcf] px-4 py-3 text-sm font-semibold text-slate-700"
               >
                 Cerrar sesion
               </button>
@@ -489,7 +489,7 @@ function AppShellContent() {
   return (
     <>
       <CartProvider>
-        <main className="min-h-screen bg-[#f4f6f8] text-slate-900">
+        <main className="min-h-screen bg-[#f5f6ef] text-slate-900">
           {shouldShowCashLockOverlay ? (
             <CashLockOverlay
               cashLockInfo={cashLockInfo}

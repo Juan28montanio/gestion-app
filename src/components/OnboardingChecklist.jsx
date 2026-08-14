@@ -113,7 +113,7 @@ export default function OnboardingChecklist({ businessId, activeSection, onNavig
   }
 
   return (
-    <section className="mb-5 rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+    <section className="mb-5 rounded-lg border border-[#d8ddcf] bg-white px-4 py-4 shadow-sm">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <p className="text-sm font-bold text-slate-950">Camino a la primera venta</p>
@@ -122,14 +122,14 @@ export default function OnboardingChecklist({ businessId, activeSection, onNavig
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+          <span className="rounded-lg bg-[#f5f6ef] px-3 py-2 text-xs font-semibold text-slate-600 ring-1 ring-[#d8ddcf]">
             {completedCount}/{steps.length}
           </span>
           {nextStep ? (
             <button
               type="button"
               onClick={() => onNavigate?.(nextStep.section)}
-              className="rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white"
+              className="rounded-lg bg-[#10251d] px-4 py-2 text-xs font-semibold text-white"
             >
               Continuar
             </button>
@@ -137,7 +137,7 @@ export default function OnboardingChecklist({ businessId, activeSection, onNavig
           <button
             type="button"
             onClick={() => setState((current) => ({ ...current, dismissed: true }))}
-            className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
+            className="rounded-lg border border-[#d8ddcf] px-3 py-2 text-xs font-semibold text-slate-600"
           >
             Ocultar
           </button>
@@ -152,7 +152,7 @@ export default function OnboardingChecklist({ businessId, activeSection, onNavig
               key={step.id}
               type="button"
               onClick={() => onNavigate?.(step.section)}
-              className={`flex min-h-[76px] items-start gap-2 rounded-2xl border px-3 py-3 text-left ${
+              className={`flex min-h-[76px] items-start gap-2 rounded-lg border px-3 py-3 text-left ${
                 step.complete
                   ? "border-emerald-200 bg-emerald-50 text-emerald-900"
                   : "border-slate-200 bg-slate-50 text-slate-600"
