@@ -3,7 +3,16 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", "playwright-report/**", "test-results/**", "coverage/**"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      "playwright-report/**",
+      "test-results/**",
+      "coverage/**",
+      ".agents/**",
+      ".codex/**",
+      ".impeccable/**",
+    ],
   },
   js.configs.recommended,
   {
